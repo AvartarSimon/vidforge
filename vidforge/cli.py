@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__, ffmpeg, project as proj
+from . import __version__, env, ffmpeg, project as proj
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -47,10 +47,26 @@ def cmd_build(args: argparse.Namespace) -> int:
 
 
 def cmd_voices(args: argparse.Namespace) -> int:
-    from .tts import edge
-    for v in edge.list_voices(args.lang):
-        tags = ",".join(v.get("VoiceTag", {}).get("VoicePersonalities", []))
-        print(f"{v['ShortName']:<32} {v['Gender']:<7} {tags}")
+    from .tts import get_provider
+    env.load_dotenv()
+    provider = get_provider(args.provider)
+    for name, desc in provider.list_voices(args.lang):
+        print(f"{name:<44} {desc}")
+    return 0
+
+
+def cmd_assets(args: argparse.Namespace) -> int:
+    """Fetch pexels:… assets only, so the pictures can be reviewed before a long render."""
+    from . import assets
+    try:
+        p = proj.load(args.project)
+    except proj.ProjectError as e:
+        print(f"project error: {e}", file=sys.stderr)
+        return 2
+    env.load_dotenv(p.root)
+    assets.resolve_all(p, log=print)
+    for s in p.segments:
+        print(f"  {s.id:<12} {'video' if s.video else 'image':<5} {s.video or s.image}")
     return 0
 
 
@@ -62,6 +78,11 @@ def cmd_doctor(_: argparse.Namespace) -> int:
         print("edge-tts: ok")
     except ImportError:
         print("edge-tts: MISSING (pip install edge-tts)")
+    dotenv = env.load_dotenv()
+    print(f".env: {dotenv or 'none found'}")
+    import os
+    for k, hint in env.KEYS.items():
+        print(f"{k}: {'set' if os.environ.get(k) else 'not set'}  — {hint}")
     return 0
 
 
@@ -90,15 +111,24 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--no-burn", action="store_true", help="never burn (only write final.srt)")
     s.set_defaults(fn=cmd_build)
 
-    s = sub.add_parser("voices", help="list edge-tts voices")
-    s.add_argument("--lang", help="locale prefix, e.g. en, en-US, zh")
+    s = sub.add_parser("voices", help="list voices of a TTS provider")
+    s.add_argument("--provider", default="edge", choices=["edge", "elevenlabs"])
+    s.add_argument("--lang", help="edge: locale prefix (en, en-US, zh); elevenlabs: substring filter")
     s.set_defaults(fn=cmd_voices)
+
+    s = sub.add_parser("assets", help="download pexels:… assets of a project without rendering")
+    s.add_argument("project")
+    s.set_defaults(fn=cmd_assets)
 
     s = sub.add_parser("doctor", help="check ffmpeg / dependencies")
     s.set_defaults(fn=cmd_doctor)
 
     args = ap.parse_args(argv)
-    return args.fn(args)
+    try:
+        return args.fn(args)
+    except RuntimeError as e:          # missing API key, provider HTTP error, ffmpeg failure
+        print(f"error: {e}", file=sys.stderr)
+        return 4
 
 
 if __name__ == "__main__":

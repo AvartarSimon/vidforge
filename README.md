@@ -1,5 +1,7 @@
 # vidforge
 
+> 中文分步指南：**[QUICKSTART.zh.md](QUICKSTART.zh.md)**
+
 Script-to-video assembly line for narrated explainer videos (history, tech, …).
 No editor UI: one `project.json` describes a video, `vidforge build` renders it.
 
@@ -12,9 +14,13 @@ project.json ──► edge-tts per segment ──► word timings ──► fin
                                                                                   └──► thumbnail.jpg
 ```
 
-Stage 1 needs **no API key**: Microsoft Edge neural voices (free, unofficial), your own
-images, ffmpeg. AI image/video generation, stock-footage APIs and YouTube upload are
-later providers, not prerequisites.
+The default path needs **no API key**: Microsoft Edge neural voices (free, unofficial), your own
+images, ffmpeg. Optional providers, enabled by a key in `.env` (see `.env.example`):
+
+| Provider | Key | Turns on |
+|---|---|---|
+| ElevenLabs | `ELEVENLABS_API_KEY` | `"tts": {"provider": "elevenlabs", "model": "eleven_multilingual_v2"}`, `voice` = name or voice_id; word timings from `/with-timestamps` |
+| Pexels | `PEXELS_API_KEY` | `"image": "pexels:<query>"` / `"video": "pexels:<query>"` per segment; downloads to `assets/pexels/`, indexed so rebuilds are offline; `build/credits.txt` |
 
 ## Install
 
@@ -38,6 +44,9 @@ vidforge init my-video              # empty project.json + assets/
 vidforge voices --lang en-US        # pick a voice (zh-CN-YunxiNeural, en-US-AndrewNeural, …)
 vidforge build my-video --only-tts  # synthesize narration only, proof-listen before rendering
 vidforge build my-video --burn      # burn subtitles (otherwise final.srt is a sidecar for YouTube upload)
+vidforge assets my-video            # fetch pexels:… assets only, review them before a long render
+vidforge voices --provider elevenlabs
+python -m unittest discover -s tests   # 11 tests, no network
 ```
 
 ## project.json
@@ -46,8 +55,9 @@ vidforge build my-video --burn      # burn subtitles (otherwise final.srt is a s
 {
   "title": "The Year Without a Summer",
   "language": "en",
-  "voice": "en-US-AndrewNeural",      // any edge-tts voice; per-segment "voice" overrides
-  "rate": "-3%",                       // speaking rate
+  "voice": "en-US-AndrewNeural",      // edge-tts voice, or an ElevenLabs voice name/id; per-segment "voice" overrides
+  "rate": "-3%",                       // speaking rate (ElevenLabs: mapped to speed 0.7–1.2)
+  "tts": { "provider": "edge" },       // or elevenlabs + model/stability/similarity_boost/style
   "width": 1920, "height": 1080, "fps": 30,
   "motion_amount": 0.15,               // zoom factor / pan distance (fraction of frame)
   "bgm": { "file": "assets/bgm.mp3", "volume_db": -18, "fade_out": 3 },   // or null
@@ -55,8 +65,10 @@ vidforge build my-video --burn      # burn subtitles (otherwise final.srt is a s
   "thumbnail_text": "THE YEAR\nWITHOUT A SUMMER",
   "segments": [
     { "id": "hook", "text": "In 1815, a volcano …", "image": "assets/01.jpg",
-      "motion": "zoom_in", "pause_after": 0.6 }
-    // motion: zoom_in | zoom_out | pan_left | pan_right | none
+      "motion": "zoom_in", "pause_after": 0.6 },
+    { "id": "farm", "text": "…", "image": "pexels:snow covered farm field" },
+    { "id": "rain", "text": "…", "video": "pexels:rain on window" }   // looped/trimmed to the narration
+    // motion: zoom_in | zoom_out | pan_left | pan_right | none (stills only)
   ]
 }
 ```
@@ -83,7 +95,7 @@ jitter). Measured on this machine: ~1.3× real time at 1080p30 — a 20-minute v
 
 ## Roadmap
 
-- providers: ElevenLabs / Azure TTS; Pexels / Pixabay stock clips; local Flux image generation; Kling / MiniMax clips for intros
+- providers: Azure TTS; Pixabay; local Flux image generation; Kling / MiniMax clips for intros
 - `"kind": "remotion"` segments for animated maps, timelines and charts
 - YouTube Data API upload with title, description, chapters, thumbnail, subtitles
 - second-language build of the same project (zh voice + zh subtitles for 头条)

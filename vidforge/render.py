@@ -29,12 +29,14 @@ def _zoompan_exprs(motion: str, amount: float, frames: int) -> tuple[str, str, s
 
 
 def render_segment(project: Project, seg: Segment, audio: Path, out: Path) -> float:
-    """Render one segment: still image + camera move, narration + trailing pause.
-
-    Returns the clip duration in seconds.
-    """
+    """Render one segment: still image + camera move (or a video background), narration +
+    trailing pause. Returns the clip duration in seconds."""
     narration = ffmpeg.duration(audio)
     dur = narration + seg.pause_after
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if seg.video is not None:
+        _render_video_segment(project, seg, audio, out, dur)
+        return dur
     frames = max(1, round(dur * project.fps))
     sw, sh = project.width * project.supersample, project.height * project.supersample
     z, x, y = _zoompan_exprs(seg.motion, project.motion_amount, frames)
@@ -46,7 +48,6 @@ def render_segment(project: Project, seg: Segment, audio: Path, out: Path) -> fl
     )
     af = f"apad=pad_dur={seg.pause_after}"
 
-    out.parent.mkdir(parents=True, exist_ok=True)
     ffmpeg.run([
         "-y",
         "-i", str(seg.image),
@@ -60,6 +61,26 @@ def render_segment(project: Project, seg: Segment, audio: Path, out: Path) -> fl
         str(out),
     ])
     return dur
+
+
+def _render_video_segment(project: Project, seg: Segment, audio: Path, out: Path, dur: float) -> None:
+    """Video background: looped if shorter than the narration, trimmed if longer, cover-fit
+    to the frame; its own sound is dropped."""
+    w, h = project.width, project.height
+    vf = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},"
+          f"fps={project.fps},setsar=1,format=yuv420p")
+    ffmpeg.run([
+        "-y",
+        "-stream_loop", "-1", "-i", str(seg.video),
+        "-i", str(audio),
+        "-filter_complex", f"[0:v]{vf}[v];[1:a]apad=pad_dur={seg.pause_after}[a]",
+        "-map", "[v]", "-map", "[a]",
+        "-t", f"{dur:.3f}",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-r", str(project.fps),
+        "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+        "-movflags", "+faststart",
+        str(out),
+    ])
 
 
 def concat(clips: list[Path], out: Path) -> None:

@@ -20,14 +20,34 @@ class ProjectError(ValueError):
     pass
 
 
+ASSET_PREFIXES = ("pexels:",)
+
+
 @dataclass
 class Segment:
     id: str
     text: str
-    image: Path                      # absolute after load
+    image: Path | None = None        # absolute after load / after asset resolution
+    video: Path | None = None        # a video background instead of a still (looped/trimmed to the narration)
+    source: str | None = None        # unresolved asset spec, e.g. "pexels:mount tambora volcano"
+    source_kind: str = "image"       # what `source` should fetch: image | video
     motion: str = "zoom_in"
     pause_after: float = 0.5         # seconds of silence appended after the narration
     voice: str | None = None         # override the project voice for this segment
+
+    @property
+    def needs_asset(self) -> bool:
+        return self.image is None and self.video is None
+
+
+@dataclass
+class TtsConfig:
+    provider: str = "edge"           # edge | elevenlabs
+    model: str = "eleven_multilingual_v2"
+    stability: float = 0.5
+    similarity_boost: float = 0.75
+    style: float = 0.0
+    speaker_boost: bool = True
 
 
 @dataclass
@@ -63,6 +83,7 @@ class Project:
     bgm: Bgm | None = None
     subtitles: SubtitleStyle = field(default_factory=SubtitleStyle)
     thumbnail_text: str | None = None
+    tts: TtsConfig = field(default_factory=TtsConfig)
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
     @property
@@ -101,16 +122,28 @@ def load(path: str | Path) -> Project:
         text = str(_req(s, "text", ctx)).strip()
         if not text:
             raise ProjectError(f"{ctx}: text is empty")
-        image = resolve(_req(s, "image", ctx))
-        if not image.exists():
-            raise ProjectError(f"{ctx}: image not found: {image}")
+        image = video = source = None
+        source_kind = "image"
+        if "video" in s and "image" in s:
+            raise ProjectError(f"{ctx}: give either 'image' or 'video', not both")
+        key = "video" if "video" in s else "image"
+        spec = str(_req(s, key, ctx))
+        if spec.startswith(ASSET_PREFIXES):
+            source, source_kind = spec, key
+        else:
+            local = resolve(spec)
+            if not local.exists():
+                raise ProjectError(f"{ctx}: {key} not found: {local}")
+            if key == "video":
+                video = local
+            else:
+                image = local
         motion = s.get("motion", "zoom_in")
         if motion not in MOTIONS:
             raise ProjectError(f"{ctx}: motion '{motion}' not in {MOTIONS}")
         segments.append(Segment(
-            id=sid, text=text, image=image, motion=motion,
-            pause_after=float(s.get("pause_after", 0.5)),
-            voice=s.get("voice"),
+            id=sid, text=text, image=image, video=video, source=source, source_kind=source_kind,
+            motion=motion, pause_after=float(s.get("pause_after", 0.5)), voice=s.get("voice"),
         ))
     if not segments:
         raise ProjectError("project has no segments")
@@ -130,6 +163,10 @@ def load(path: str | Path) -> Project:
     if fps <= 0:
         raise ProjectError("fps must be > 0")
 
+    tts = TtsConfig(**{k: v for k, v in data.get("tts", {}).items() if k in TtsConfig.__dataclass_fields__})
+    if tts.provider not in ("edge", "elevenlabs"):
+        raise ProjectError(f"tts.provider '{tts.provider}' not in ('edge', 'elevenlabs')")
+
     return Project(
         title=str(_req(data, "title", "project")),
         segments=segments,
@@ -146,6 +183,7 @@ def load(path: str | Path) -> Project:
         bgm=bgm,
         subtitles=sub,
         thumbnail_text=data.get("thumbnail_text"),
+        tts=tts,
         raw=data,
     )
 
@@ -155,6 +193,7 @@ TEMPLATE: dict[str, Any] = {
     "language": "en",
     "voice": "en-US-AndrewNeural",
     "rate": "+0%",
+    "tts": {"provider": "edge"},
     "width": 1920, "height": 1080, "fps": 30,
     "bgm": None,
     "subtitles": {"burn": False, "max_chars": 42, "font": "Arial", "font_size": 22},
@@ -164,5 +203,9 @@ TEMPLATE: dict[str, Any] = {
          "image": "assets/01.jpg", "motion": "zoom_in", "pause_after": 0.6},
         {"id": "part1", "text": "Each segment is one image plus the words spoken over it.",
          "image": "assets/02.jpg", "motion": "pan_right"},
+        {"id": "part2", "text": "An image can also come from Pexels by search query (needs PEXELS_API_KEY).",
+         "image": "pexels:old library books", "motion": "zoom_out"},
+        {"id": "part3", "text": "Or a stock video clip, looped or trimmed to the narration.",
+         "video": "pexels:ocean waves aerial"},
     ],
 }
