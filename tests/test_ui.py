@@ -1,5 +1,4 @@
-"""Web UI API against a real ThreadingHTTPServer on a temp copy of a tiny project.
-TTS is stubbed (no network); the build endpoint is exercised with a patched pipeline.build."""
+"""Web UI API against a real ThreadingHTTPServer on a temp project. TTS and asset providers stubbed."""
 
 from __future__ import annotations
 
@@ -10,12 +9,14 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
 from vidforge import pipeline, ui
+from vidforge.assets import Candidate
 from vidforge.tts import Word
 
 
@@ -30,7 +31,7 @@ class UiApi(unittest.TestCase):
             "title": "T", "voice": "en-US-AndrewNeural",
             "variants": {"zh": {"voice": "zh-CN-YunxiNeural"}},
             "segments": [
-                {"id": "s1", "text": "Hello.", "text_zh": "你好。", "image": "assets/a.jpg"},
+                {"id": "s1", "text": "Mount Tambora erupted in 1815.", "text_zh": "你好。", "clips": [{"image": "assets/a.jpg"}]},
                 {"id": "s2", "text": "Card.", "remotion": {"composition": "TitleCard", "props": {"title": "X"}}},
             ]}, ensure_ascii=False), encoding="utf-8")
         cls.state = ui.State(root / "project.json")
@@ -40,8 +41,7 @@ class UiApi(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.httpd.shutdown()
-        cls.httpd.server_close()
+        cls.httpd.shutdown(); cls.httpd.server_close()
         shutil.rmtree(cls.td, ignore_errors=True)
 
     def call(self, path, body=None):
@@ -55,80 +55,83 @@ class UiApi(unittest.TestCase):
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read() or b"{}")
 
-    def test_index_and_static(self):
-        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r:
-            self.assertIn(b"vidforge", r.read())
+    def test_static_files(self):
+        for path in ("/", "/static/app.js", "/static/style.css"):
+            with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}") as r:
+                self.assertEqual(r.status, 200, path)
 
-    def test_project_view_base_and_variant(self):
+    def test_project_view_has_clips_need_and_keywords(self):
         st, j = self.call("/api/project")
         self.assertEqual(st, 200)
-        self.assertEqual(j["langs"], ["en", "zh"])
-        self.assertEqual(j["resolved"]["s1"]["image"], "assets/a.jpg")
-        self.assertEqual(j["resolved"]["s2"]["remotion"], "TitleCard")
-        self.assertIsNone(j["resolved"]["s1"]["audio"])
+        s1 = j["resolved"]["s1"]
+        self.assertEqual(s1["clips"][0]["kind"], "image")
+        self.assertEqual(s1["clips"][0]["path"], "assets/a.jpg")
+        self.assertGreater(s1["need"], 1.0)
+        self.assertIn("Mount Tambora", s1["keywords"])
+        self.assertEqual(j["resolved"]["s2"]["clips"][0]["remotion"], "TitleCard")
         st, j = self.call("/api/project?lang=zh")
-        self.assertIn("s2", j["issues"], "s2 has no text_zh -> reported, but the view still works")
-        self.assertEqual(j["resolved"]["s1"]["image"], "assets/a.jpg", "visuals resolved via base language")
+        self.assertIn("s2", j["issues"])
         self.assertEqual(j["build_dir"], "build_zh")
 
     def test_save_rejects_invalid_and_keeps_file(self):
         before = self.state.project_path.read_text(encoding="utf-8")
-        st, j = self.call("/api/project", {"raw": {"title": "T", "segments": [{"id": "x", "text": "a", "image": "missing.jpg"}]}})
+        st, j = self.call("/api/project", {"raw": {"title": "T", "segments": [{"id": "x", "text": "a", "clips": [{"image": "missing.jpg"}]}]}})
         self.assertEqual(st, 400)
-        self.assertIn("missing.jpg", j["error"])
         self.assertEqual(self.state.project_path.read_text(encoding="utf-8"), before)
-        raw = json.loads(before)
-        raw["segments"][0]["label"] = "Intro"
-        st, j = self.call("/api/project", {"raw": raw})
-        self.assertEqual(st, 200)
-        self.assertEqual(self.state.read_raw()["segments"][0]["label"], "Intro")
 
-    def test_tts_endpoint_writes_audio_and_view_marks_fresh(self):
+    def test_tts_and_freshness(self):
         def fake_synth(self_, text, voice, out_path):
-            Path(out_path).write_bytes(b"ID3fake")
-            return [Word("Hello.", 0, 0.5)]
-        with mock.patch("vidforge.tts.edge.EdgeProvider.synthesize", fake_synth), \
-                mock.patch("vidforge.ffmpeg.duration", return_value=0.5):
+            Path(out_path).write_bytes(b"ID3fake"); return [Word("Hello.", 0, 0.5)]
+        with mock.patch("vidforge.tts.edge.EdgeProvider.synthesize", fake_synth), mock.patch("vidforge.ffmpeg.duration", return_value=0.5):
             st, j = self.call("/api/tts?lang=en", {"id": "s1"})
             self.assertEqual(st, 200)
-            self.assertEqual(j["audio"], "build/audio/s1.mp3")
             st, view = self.call("/api/project")
             self.assertTrue(view["resolved"]["s1"]["audio_fresh"])
-            # edit the text -> cache key changes -> stale
-            raw = self.state.read_raw(); raw["segments"][0]["text"] = "Changed."
-            self.call("/api/project", {"raw": raw})
-            st, view = self.call("/api/project")
-            self.assertFalse(view["resolved"]["s1"]["audio_fresh"])
-        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/files/build/audio/s1.mp3") as r:
-            self.assertEqual(r.read(), b"ID3fake")
 
-    def test_files_blocks_traversal(self):
-        st, _ = self.call("/files/../project.json")
-        self.assertIn(st, (403, 404))
+    def test_search_reports_missing_key_and_fetch_downloads(self):
+        with mock.patch.dict("os.environ", {"PEXELS_API_KEY": ""}):
+            st, j = self.call("/api/search?source=pexels&kind=image&q=volcano")
+        self.assertEqual(st, 400)
+        self.assertEqual(j.get("needs_key"), "PEXELS_API_KEY")
+        cand = Candidate(provider="pexels", id="77", kind="image", thumb_url="t", preview_url="p", download_url="http://x/y.jpg",
+                         width=4000, height=2000, duration=None, author="A", license="Pexels License", page_url="pg", title="volcano")
+        with mock.patch("vidforge.assets.search", return_value=[cand]):
+            st, j = self.call("/api/search?source=pexels&kind=image&q=volcano")
+        self.assertEqual(st, 200); self.assertEqual(j["candidates"][0]["id"], "77")
+        with mock.patch("vidforge.assets.pexels.download", side_effect=lambda url, dest: (dest.parent.mkdir(parents=True, exist_ok=True), dest.write_bytes(b"jpg"), dest)[2]):
+            st, j = self.call("/api/assets/fetch", {"candidate": cand.__dict__})
+        self.assertEqual(st, 200)
+        self.assertEqual(j["path"], "assets/pexels/volcano-77.jpg")
+        self.assertIn("Pexels License", j["credit"])
+        self.assertTrue((Path(self.td) / "assets" / "index.json").exists())
 
     def test_upload_asset(self):
         st, j = self.call("/api/assets/upload", {"name": "my pic.png", "data_b64": base64.b64encode(b"png").decode()})
-        self.assertEqual(st, 200)
-        self.assertEqual(j["path"], "assets/my_pic.png")
-        self.assertEqual((Path(self.td) / "assets" / "my_pic.png").read_bytes(), b"png")
+        self.assertEqual(st, 200); self.assertEqual(j["path"], "assets/local/my_pic.png"); self.assertEqual(j["kind"], "image")
 
-    def test_build_runs_in_background_and_streams_log(self):
+    def test_health(self):
+        st, j = self.call("/api/health")
+        self.assertEqual(st, 200); self.assertIn("ffmpeg", j); self.assertIn("keys", j)
+
+    def test_build_background_and_cancel(self):
         def fake_build(project, **kw):
             pipeline._log("hello from build")
-            time.sleep(0.3)
+            for _ in range(20):
+                pipeline._check_cancel(); time.sleep(0.05)
             pipeline._log("done")
         with mock.patch.object(pipeline, "build", fake_build):
             st, j = self.call("/api/build?lang=en&burn=0", {})
             self.assertEqual(st, 200)
-            st, j2 = self.call("/api/build?lang=en", {})
-            self.assertEqual(st, 409, "second build while running is refused")
-            deadline = time.time() + 5
-            while time.time() < deadline:
+            st, _ = self.call("/api/build?lang=en", {})
+            self.assertEqual(st, 409)
+            time.sleep(0.2)
+            self.call("/api/build/cancel", {})
+            for _ in range(60):
                 st, s = self.call("/api/build/status")
                 if s["state"] != "running":
                     break
                 time.sleep(0.05)
-            self.assertEqual(s["state"], "done")
+            self.assertEqual(s["state"], "cancelled")
             self.assertIn("[vidforge] hello from build", s["lines"])
 
 

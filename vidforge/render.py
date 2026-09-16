@@ -1,123 +1,320 @@
-"""ffmpeg rendering: Ken Burns clip per segment, concat, BGM mix, subtitle burn."""
+"""ffmpeg rendering: clips -> segment clip -> concat -> BGM mix / subtitle burn.
+
+Quality model
+    draft : crf 23, preset veryfast, 1x supersample   (layout previews, ~3x faster)
+    final : crf 18, preset medium,  2x supersample    (upload quality)
+Segments are encoded once at final quality; concat is a stream copy; the finishing pass
+re-encodes only when subtitles are burned. Hardware encoders (NVENC / QSV / AMF /
+VideoToolbox) are used for the *segment* encodes when `encoder: auto` finds one — they
+cut render time 3–6x on long videos; libx264 stays the default when none is present.
+"""
 
 from __future__ import annotations
 
+import subprocess
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from . import ffmpeg
-from .project import Project, Segment
+from .project import Clip, Project, Segment
+
+MIN_IMAGE_SECONDS = 1.5
 
 
-def _zoompan_exprs(motion: str, amount: float, frames: int) -> tuple[str, str, str]:
-    """Return (zoom, x, y) expressions for ffmpeg's zoompan.
+# -- encoder selection ------------------------------------------------------------------------
+@lru_cache(maxsize=None)
+def available_encoders() -> set[str]:
+    try:
+        out = subprocess.run([ffmpeg.find_binary("ffmpeg"), "-hide_banner", "-encoders"],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
+    except ffmpeg.FfmpegError:
+        return set()
+    return {line.split()[1] for line in out.splitlines() if line.startswith(" V") and len(line.split()) > 1}
 
-    `on` is the output frame index in [0, d); progress p = on/d runs 0 -> 1.
+
+@lru_cache(maxsize=None)
+def encoder_works(name: str) -> bool:
+    """A listed hardware encoder may still fail (no GPU, driver); probe with a 1-frame encode."""
+    if name == "libx264":
+        return True
+    try:
+        r = subprocess.run([ffmpeg.find_binary("ffmpeg"), "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                            "-i", "color=c=black:s=256x256:r=30", "-frames:v", "3", "-c:v", name, "-f", "null", "-"],
+                           capture_output=True, text=True, timeout=30)
+        return r.returncode == 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def pick_encoder(project: Project) -> str:
+    if project.encoder != "auto":
+        return project.encoder
+    for cand in ("h264_nvenc", "h264_qsv", "h264_amf", "h264_videotoolbox"):
+        if cand in available_encoders() and encoder_works(cand):
+            return cand
+    return "libx264"
+
+
+def video_codec_args(project: Project, encoder: str | None = None) -> list[str]:
+    enc = encoder or pick_encoder(project)
+    final = project.quality == "final"
+    if enc == "libx264":
+        return ["-c:v", "libx264", "-preset", "medium" if final else "veryfast", "-crf", "18" if final else "23",
+                "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"]
+    if enc == "h264_nvenc":
+        return ["-c:v", "h264_nvenc", "-preset", "p5" if final else "p2", "-rc", "vbr", "-cq", "19" if final else "24",
+                "-b:v", "0", "-pix_fmt", "yuv420p", "-profile:v", "high"]
+    if enc == "h264_qsv":
+        return ["-c:v", "h264_qsv", "-global_quality", "19" if final else "24", "-preset", "medium" if final else "veryfast",
+                "-pix_fmt", "nv12", "-profile:v", "high"]
+    if enc == "h264_amf":
+        return ["-c:v", "h264_amf", "-quality", "quality" if final else "speed", "-rc", "cqp", "-qp_i", "19", "-qp_p", "21",
+                "-pix_fmt", "yuv420p"]
+    if enc == "h264_videotoolbox":
+        return ["-c:v", "h264_videotoolbox", "-q:v", "65" if final else "50", "-pix_fmt", "yuv420p", "-profile:v", "high"]
+    return ["-c:v", enc]
+
+
+AUDIO_ARGS = ["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
+
+
+# -- clip planning ------------------------------------------------------------------------------
+@dataclass
+class PlannedClip:
+    clip: Clip
+    seconds: float
+    loop: bool = False       # video shorter than `seconds`: loop it
+
+
+def plan_clips(seg: Segment, target: float) -> list[PlannedClip]:
+    """Decide how long each clip shows so the segment lasts exactly `target` seconds.
+
+    natural lengths: video slice (out-in) or the full video (probed), image `duration`;
+    images without duration share what is left equally (>= MIN_IMAGE_SECONDS).
+    Too long  -> shrink flexible images first, then cut from the end (`fit` is about
+                 too-short; audio always wins when clips run over).
+    Too short -> `stretch`: extend the last clip (video loops, image holds longer);
+                 `trim`: same, there is nothing else sensible to do without a gap.
     """
+    if not seg.clips:
+        raise ValueError(f"segment {seg.id} has no clips")
+    natural: list[float | None] = []
+    for c in seg.clips:
+        if c.remotion is not None:
+            natural.append(None)                       # rendered to exactly its share
+        elif c.video is not None:
+            if c.slice_length:
+                natural.append(c.slice_length)
+            else:
+                full = ffmpeg.duration(c.video)
+                natural.append(max(0.1, full - (c.in_ or 0.0)))
+        else:
+            natural.append(c.duration)
+
+    fixed = sum(n for n in natural if n is not None)
+    flexible = [i for i, n in enumerate(natural) if n is None]
+    share = max(MIN_IMAGE_SECONDS, (target - fixed) / len(flexible)) if flexible else 0.0
+    seconds = [n if n is not None else share for n in natural]
+
+    total = sum(seconds)
+    if total > target + 0.01:
+        # 1) flexible images -> minimum  2) fixed-duration images -> minimum (a typed hold is
+        # softer than a deliberately sliced video)  3) cut video/remotion clips from the end
+        excess = total - target
+        soft = flexible + [i for i, c in enumerate(seg.clips) if c.image is not None and i not in flexible]
+        for i in soft:
+            take = min(max(0.0, seconds[i] - MIN_IMAGE_SECONDS), excess)
+            seconds[i] -= take
+            excess -= take
+        for i in range(len(seconds) - 1, -1, -1):
+            if excess <= 0.01:
+                break
+            if seg.clips[i].image is not None:
+                continue
+            take = min(seconds[i], excess)               # a clip cut to nothing is dropped below
+            seconds[i] -= take
+            excess -= take
+        if excess > 0.01:                              # only images left: cut them too, from the end
+            for i in range(len(seconds) - 1, -1, -1):
+                take = min(seconds[i] if i > 0 else seconds[i], excess)
+                seconds[i] -= take
+                excess -= take
+                if excess <= 0.01:
+                    break
+    elif total < target - 0.01:
+        seconds[-1] += target - total
+
+    planned = []
+    for c, s in zip(seg.clips, seconds):
+        if s <= 0.05:
+            continue
+        loop = c.video is not None and c.remotion is None and (c.slice_length or ffmpeg.duration(c.video) - (c.in_ or 0.0)) < s - 0.05
+        planned.append(PlannedClip(c, round(s, 3), loop))
+    return planned
+
+
+# -- clip rendering ---------------------------------------------------------------------------------
+def _zoompan_exprs(motion: str, amount: float, frames: int) -> tuple[str, str, str]:
     p = f"(on/{frames})"
-    center_x = "iw/2-(iw/zoom/2)"
-    center_y = "ih/2-(ih/zoom/2)"
+    center_x, center_y = "iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)"
     z_max = 1 + amount
     if motion == "zoom_in":
         return f"1+{amount}*{p}", center_x, center_y
     if motion == "zoom_out":
         return f"{z_max}-{amount}*{p}", center_x, center_y
-    if motion == "pan_right":          # camera moves right: visible window slides left -> right
+    if motion == "pan_right":
         return f"{z_max}", f"(iw-iw/zoom)*{p}", center_y
     if motion == "pan_left":
         return f"{z_max}", f"(iw-iw/zoom)*(1-{p})", center_y
-    return "1", "0", "0"               # none
+    return "1", "0", "0"
 
 
-def render_segment(project: Project, seg: Segment, audio: Path, out: Path) -> float:
-    """Render one segment: still image + camera move (or a video background), narration +
-    trailing pause. Returns the clip duration in seconds."""
-    narration = ffmpeg.duration(audio)
-    dur = narration + seg.pause_after
+def render_clip(project: Project, pc: PlannedClip, out: Path, encoder: str) -> None:
+    """One clip -> silent mp4 of exactly pc.seconds at project size/fps."""
+    c, dur = pc.clip, pc.seconds
+    w, h, fps = project.width, project.height, project.fps
     out.parent.mkdir(parents=True, exist_ok=True)
-    if seg.video is not None:
-        _render_video_segment(project, seg, audio, out, dur)
-        return dur
-    frames = max(1, round(dur * project.fps))
-    sw, sh = project.width * project.supersample, project.height * project.supersample
-    z, x, y = _zoompan_exprs(seg.motion, project.motion_amount, frames)
+    if c.video is not None:
+        args = ["-y"]
+        if pc.loop:
+            args += ["-stream_loop", "-1"]
+        if c.in_:
+            args += ["-ss", f"{c.in_:.3f}"]
+        args += ["-i", str(c.video), "-an",
+                 "-vf", f"scale={w}:{h}:force_original_aspect_ratio=increase:flags=lanczos,crop={w}:{h},fps={fps},setsar=1",
+                 "-t", f"{dur:.3f}", *video_codec_args(project, encoder), str(out)]
+        ffmpeg.run(args)
+        return
+    ss = project.effective_supersample
+    sw, sh = w * ss, h * ss
+    frames = max(1, round(dur * fps))
+    z, x, y = _zoompan_exprs(c.motion, project.motion_amount, frames)
+    zp = f"zoompan=z='{z}':x='{x}':y='{y}':d={frames}:s={w}x{h}:fps={fps},setsar=1"
+    if image_needs_fill(c.image, w, h):
+        # portrait / square picture: blurred, darkened copy fills the frame, the whole picture sits on top
+        vf = (f"[0:v]split=2[bg][fg];"
+              f"[bg]scale={sw}:{sh}:force_original_aspect_ratio=increase:flags=bicubic,crop={sw}:{sh},"
+              f"boxblur=luma_radius=min(h\,w)/20:luma_power=2,eq=brightness=-0.15[bgb];"
+              f"[fg]scale={sw}:{sh}:force_original_aspect_ratio=decrease:flags=lanczos[fgs];"
+              f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,{zp}[v]")
+        ffmpeg.run(["-y", "-i", str(c.image), "-filter_complex", vf, "-map", "[v]", "-t", f"{dur:.3f}", "-r", str(fps),
+                    *video_codec_args(project, encoder), str(out)])
+        return
+    vf = f"scale={sw}:{sh}:force_original_aspect_ratio=increase:flags=lanczos,crop={sw}:{sh},{zp}"
+    ffmpeg.run(["-y", "-i", str(c.image), "-vf", vf, "-t", f"{dur:.3f}", "-r", str(fps),
+                *video_codec_args(project, encoder), str(out)])
 
-    vf = (
-        f"scale={sw}:{sh}:force_original_aspect_ratio=increase,crop={sw}:{sh},"
-        f"zoompan=z='{z}':x='{x}':y='{y}':d={frames}:s={project.width}x{project.height}:fps={project.fps},"
-        f"format=yuv420p"
-    )
-    af = f"apad=pad_dur={seg.pause_after}"
 
-    ffmpeg.run([
-        "-y",
-        "-i", str(seg.image),
-        "-i", str(audio),
-        "-filter_complex", f"[0:v]{vf}[v];[1:a]{af}[a]",
-        "-map", "[v]", "-map", "[a]",
-        "-t", f"{dur:.3f}",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-r", str(project.fps),
-        "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
-        "-movflags", "+faststart",
-        str(out),
-    ])
-    return dur
+@lru_cache(maxsize=4096)
+def image_size(path: str) -> tuple[int, int]:
+    from PIL import Image
+    with Image.open(path) as im:
+        return im.size
 
 
-def _render_video_segment(project: Project, seg: Segment, audio: Path, out: Path, dur: float) -> None:
-    """Video background: looped if shorter than the narration, trimmed if longer, cover-fit
-    to the frame; its own sound is dropped."""
-    w, h = project.width, project.height
-    vf = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},"
-          f"fps={project.fps},setsar=1,format=yuv420p")
-    ffmpeg.run([
-        "-y",
-        "-stream_loop", "-1", "-i", str(seg.video),
-        "-i", str(audio),
-        "-filter_complex", f"[0:v]{vf}[v];[1:a]apad=pad_dur={seg.pause_after}[a]",
-        "-map", "[v]", "-map", "[a]",
-        "-t", f"{dur:.3f}",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-r", str(project.fps),
-        "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
-        "-movflags", "+faststart",
-        str(out),
-    ])
+def image_needs_fill(path: Path, w: int, h: int) -> bool:
+    """True when cover-cropping would discard more than ~1/3 of the picture (portrait, square,
+    tall maps): then we letterbox over a blurred fill instead."""
+    try:
+        iw, ih = image_size(str(path))
+    except Exception:  # noqa: BLE001
+        return False
+    frame = w / h
+    ratio = iw / ih if ih else frame
+    return ratio < frame * 0.72 or ratio > frame * 1.6
+
+
+def _xfade_join(project: Project, parts: list[Path], seconds: list[float], out: Path, encoder: str) -> None:
+    """Crossfade consecutive clips (re-encode). Total length = sum(seconds) - (n-1)*t."""
+    t = project.transition
+    args = ["-y"]
+    for p in parts:
+        args += ["-i", str(p)]
+    filt, prev, offset = [], "[0:v]", 0.0
+    for i in range(1, len(parts)):
+        offset += seconds[i - 1] - t
+        label = f"[v{i}]" if i < len(parts) - 1 else "[v]"
+        filt.append(f"{prev}[{i}:v]xfade=transition=fade:duration={t:.3f}:offset={offset:.3f}{label}")
+        prev = label
+    args += ["-filter_complex", ";".join(filt), "-map", "[v]", "-an", *video_codec_args(project, encoder), str(out)]
+    ffmpeg.run(args)
+
+
+def render_segment(project: Project, seg: Segment, audio: Path, out: Path, *, encoder: str | None = None,
+                   cache_dir: Path | None = None) -> float:
+    """All clips of a segment, fitted to the narration, muxed with the voice. Returns seconds."""
+    encoder = encoder or pick_encoder(project)
+    narration = ffmpeg.duration(audio)
+    target = narration + seg.pause_after
+    planned = plan_clips(seg, target)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    work = (cache_dir or out.parent) / f"{out.stem}_parts"
+    work.mkdir(parents=True, exist_ok=True)
+
+    t = project.transition if len(planned) > 1 and project.transition > 0 else 0.0
+    if t:
+        # each clip must be longer by the overlap it loses; keep ends exact
+        for i, pc in enumerate(planned):
+            if i < len(planned) - 1:
+                pc.seconds += t
+    parts: list[Path] = []
+    for i, pc in enumerate(planned):
+        part = work / f"{i:02d}.mp4"
+        render_clip(project, pc, part, encoder)
+        parts.append(part)
+
+    if len(parts) == 1:
+        visual = parts[0]
+    else:
+        visual = work / "joined.mp4"
+        if t:
+            _xfade_join(project, parts, [p.seconds for p in planned], visual, encoder)
+        else:
+            concat(parts, visual)
+
+    ffmpeg.run(["-y", "-i", str(visual), "-i", str(audio),
+                "-filter_complex", f"[1:a]apad=pad_dur={seg.pause_after}[a]",
+                "-map", "0:v", "-map", "[a]", "-c:v", "copy", *AUDIO_ARGS,
+                "-t", f"{target:.3f}", "-movflags", "+faststart", str(out)])
+    return target
 
 
 def concat(clips: list[Path], out: Path) -> None:
     """Lossless concat of clips that share codec parameters (they do — same render call)."""
     list_file = out.with_suffix(".txt")
-    list_file.write_text(
-        "".join(f"file '{str(c.resolve()).replace(chr(92), '/')}'\n" for c in clips),
-        encoding="utf-8",
-    )
+    list_file.write_text("".join(f"file '{str(c.resolve()).replace(chr(92), '/')}'\n" for c in clips), encoding="utf-8")
     ffmpeg.run(["-y", "-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", str(out)])
 
 
 def finalize(project: Project, merged: Path, srt: Path | None, total: float, out: Path) -> None:
-    """Mix BGM under the narration and optionally burn subtitles. One encode pass."""
+    """Mix BGM under the narration (ducked while the voice speaks) and optionally burn
+    subtitles. One encode pass; video is stream-copied when nothing is burned."""
     args: list[str] = ["-y", "-i", str(merged)]
     filters: list[str] = []
     maps: list[str] = []
 
-    # video
     if srt is not None and project.subtitles.burn:
         st = project.subtitles
         style = (f"FontName={st.font},FontSize={st.font_size},Outline=1,Shadow=0,"
                  f"MarginV={st.margin_v},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000")
         filters.append(f"[0:v]subtitles='{ffmpeg.filter_path(srt)}':force_style='{style}'[v]")
-        maps += ["-map", "[v]", "-c:v", "libx264", "-preset", "medium", "-crf", "19"]
+        maps += ["-map", "[v]", *video_codec_args(project, "libx264")]
     else:
         maps += ["-map", "0:v", "-c:v", "copy"]
 
-    # audio
     if project.bgm is not None:
         b = project.bgm
         args += ["-stream_loop", "-1", "-i", str(b.file)]
         fade_start = max(0.0, total - b.fade_out)
-        filters.append(
-            f"[1:a]volume={b.volume_db}dB,afade=t=out:st={fade_start:.3f}:d={b.fade_out}[bg];"
-            f"[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[a]"
-        )
+        chain = f"[1:a]volume={b.volume_db}dB,afade=t=out:st={fade_start:.3f}:d={b.fade_out}[bg]"
+        if b.duck:
+            # voice on the sidechain pushes the music down ~10 dB while speaking, recovers in 0.4 s
+            filters.append(f"[0:a]asplit=2[voice][sc];{chain};"
+                           f"[bg][sc]sidechaincompress=threshold=0.02:ratio=6:attack=20:release=400:makeup=1[bgd];"
+                           f"[voice][bgd]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[a]")
+        else:
+            filters.append(f"{chain};[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[a]")
         maps += ["-map", "[a]"]
     else:
         maps += ["-map", "0:a"]

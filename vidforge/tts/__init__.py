@@ -66,4 +66,7 @@ def get_provider(name: str, **kwargs) -> TtsProvider:
     if name == "elevenlabs":
         from .elevenlabs import ElevenLabsProvider
         return ElevenLabsProvider(rate=kwargs.get("rate", "+0%"), **kwargs.get("config", {}))
+    if name == "silent":
+        from .silent import SilentProvider
+        return SilentProvider(rate=kwargs.get("rate", "+0%"))
     raise ValueError(f"unknown TTS provider '{name}'")
