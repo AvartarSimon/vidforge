@@ -22,12 +22,36 @@ from .project import Project
 from .tts import get_provider, synthesize_cached
 
 
+_sink = None   # set_log() lets a host (the web UI) capture build output
+
+
+def set_log(fn) -> None:
+    global _sink
+    _sink = fn
+
+
 def _log(msg: str) -> None:
-    print(f"[vidforge] {msg}", flush=True)
+    line = f"[vidforge] {msg}"
+    if _sink is not None:
+        _sink(line)
+    else:
+        print(line, flush=True)
 
 
 def _safe(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", name)
+
+
+def synthesize_segment(project: Project, seg_id: str) -> tuple[Path, float]:
+    """TTS for one segment only (the UI's proof-listen). Returns (mp3 path, seconds)."""
+    seg = next(s for s in project.segments if s.id == seg_id)
+    bd = project.build_dir
+    (bd / "audio").mkdir(parents=True, exist_ok=True)
+    env.load_dotenv(project.root)
+    tts = get_provider(project.tts.provider, rate=project.rate, config=project.tts.__dict__)
+    audio = bd / "audio" / f"{_safe(seg.id)}.mp3"
+    synthesize_cached(tts, seg.text, seg.voice or project.voice, audio)
+    return audio, ffmpeg.duration(audio)
 
 
 def build(project: Project, *, only_tts: bool = False, burn: bool | None = None) -> Path:

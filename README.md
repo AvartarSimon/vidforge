@@ -3,7 +3,8 @@
 > 中文分步指南：**[QUICKSTART.zh.md](QUICKSTART.zh.md)**
 
 Script-to-video assembly line for narrated explainer videos (history, tech, …).
-No editor UI: one `project.json` describes a video, `vidforge build` renders it.
+One `project.json` describes a video, `vidforge build` renders it; `vidforge ui` opens a local web page
+to edit segments, swap visuals, proof-listen each segment and watch the build.
 
 ```
 project.json ──► edge-tts per segment ──► word timings ──► final.srt
@@ -48,10 +49,11 @@ vidforge build my-video --only-tts  # synthesize narration only, proof-listen be
 vidforge build my-video --burn      # burn subtitles (otherwise final.srt is a sidecar for YouTube upload)
 vidforge assets my-video            # fetch pexels:… assets only, review them before a long render
 vidforge voices --provider elevenlabs
+vidforge ui my-video                # local web UI (127.0.0.1:8765): edit, proof-listen, build, play the result
 vidforge remotion setup|studio      # animated segments: install once / open Remotion Studio
 vidforge upload my-video [--lang zh] [--privacy unlisted] [--publish-at 2026-10-01T09:00:00Z]
 vidforge i18n export my-video --lang zh   # translation sheet -> fill -> `i18n import` -> `build --lang zh`
-python -m unittest discover -s tests      # 23 tests, no network
+python -m unittest discover -s tests      # 30 tests, no network
 ```
 
 ## project.json
@@ -105,7 +107,6 @@ jitter). Measured on this machine: ~1.3× real time at 1080p30 — a 20-minute v
 
 ## Roadmap
 
-- local web UI (edit segments, proof-listen, build button)
 - providers: Azure TTS; Pixabay; local Flux image generation; Kling / MiniMax clips for intros
 - more Remotion compositions: map with moving markers, quote card, side-by-side comparison
 

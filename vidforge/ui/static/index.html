@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vidforge</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1b1f24; --muted:#6b7280; --line:#e5e7eb; --accent:#e76f51; --ok:#2a9d8f; --err:#c0392b; --warn:#b7791f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1115; --card:#181b21; --fg:#e5e7eb; --muted:#9ca3af; --line:#2a2f3a; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+  header { display:flex; align-items:center; gap:14px; padding:10px 18px; border-bottom:1px solid var(--line); background:var(--card); position:sticky; top:0; z-index:5; }
+  header h1 { font-size:16px; margin:0; }
+  header .path { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+  .pill { font-size:12px; padding:2px 8px; border-radius:999px; background:var(--line); }
+  .pill.ok { background:var(--ok); color:#fff; } .pill.err { background:var(--err); color:#fff; } .pill.run { background:var(--accent); color:#fff; }
+  main { display:grid; grid-template-columns: minmax(0,1fr) 420px; gap:16px; padding:16px 18px; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:12px; }
+  .seg { display:grid; grid-template-columns: 200px minmax(0,1fr); gap:12px; }
+  .seg .thumb { width:200px; height:112px; border-radius:6px; background:#222; display:flex; align-items:center; justify-content:center; color:#ccc; font-size:12px; overflow:hidden; position:relative; }
+  .seg .thumb img { width:100%; height:100%; object-fit:cover; }
+  .seg .thumb .tag { position:absolute; left:6px; top:6px; background:rgba(0,0,0,.6); color:#fff; padding:1px 6px; border-radius:4px; font-size:11px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:4px 0; }
+  .row label { color:var(--muted); font-size:12px; }
+  input, select, textarea, button { font:inherit; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:5px 8px; }
+  textarea { width:100%; min-height:64px; resize:vertical; }
+  textarea.props { font-family:ui-monospace,Consolas,monospace; font-size:12px; min-height:90px; }
+  input.id { width:110px; } input.label { width:150px; } input.num { width:64px; } input.path { flex:1; min-width:180px; }
+  button { cursor:pointer; background:var(--card); }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; padding:8px 16px; }
+  button.primary:disabled { opacity:.5; cursor:default; }
+  button.small { padding:2px 7px; font-size:12px; }
+  .muted { color:var(--muted); font-size:12px; }
+  .stale { color:var(--warn); }
+  .err { color:var(--err); }
+  pre.log { background:#0f1115; color:#d1d5db; padding:10px; border-radius:6px; max-height:280px; overflow:auto; font-size:12px; white-space:pre-wrap; margin:8px 0 0; }
+  video { width:100%; border-radius:6px; background:#000; }
+  .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+  .grid2 > div { display:flex; flex-direction:column; gap:2px; }
+  .grid2 input, .grid2 select { width:100%; }
+  audio { height:28px; width:100%; margin-top:4px; }
+  .banner { padding:8px 12px; border-radius:6px; margin-bottom:10px; }
+  .banner.err { background:#fde2e0; color:#7f1d1d; } @media (prefers-color-scheme: dark) { .banner.err { background:#3b1414; color:#fecaca; } }
+  .chapters { font-family:ui-monospace,Consolas,monospace; font-size:12px; white-space:pre; }
+  .drop { border:1px dashed var(--line); border-radius:6px; padding:4px 8px; font-size:12px; color:var(--muted); cursor:pointer; }
+  .drop:hover { border-color:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>vidforge</h1>
+  <span class="path" id="path"></span>
+  <label class="muted">语言 <select id="lang"></select></label>
+  <span class="pill" id="saveState">已保存</span>
+</header>
+<main>
+  <section>
+    <div id="issues"></div>
+    <div id="segments"></div>
+    <div class="row"><button id="addSeg">＋ 添加一段</button><span class="muted">新段默认是一张标题卡（Remotion），可改成图片/视频。</span></div>
+  </section>
+  <aside>
+    <div class="card">
+      <div class="grid2">
+        <div><label class="muted">标题</label><input id="f_title"></div>
+        <div><label class="muted">封面文字（\n 换行）</label><input id="f_thumb"></div>
+        <div><label class="muted">声音</label><input id="f_voice" list="voiceList"><datalist id="voiceList"></datalist></div>
+        <div><label class="muted">语速</label><input id="f_rate" placeholder="-3%"></div>
+        <div><label class="muted">配音服务</label><select id="f_provider"><option value="edge">edge（免费）</option><option value="elevenlabs">ElevenLabs</option></select></div>
+        <div><label class="muted">字幕</label><select id="f_burn"><option value="false">只出 .srt</option><option value="true">烧进画面</option></select></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="primary" id="buildBtn">▶ 渲染</button>
+        <button id="ttsAllBtn" title="只合成全部配音，不渲染画面">全部试听</button>
+        <span class="pill" id="buildState">空闲</span>
+        <span class="muted" id="elapsed"></span>
+      </div>
+      <pre class="log" id="log" hidden></pre>
+    </div>
+    <div class="card" id="result" hidden>
+      <div class="row" style="justify-content:space-between"><b>成片</b><span class="muted" id="resultMeta"></span></div>
+      <video id="player" controls playsinline></video>
+      <div class="row" style="margin-top:8px">
+        <a id="dlVideo" download>final.mp4</a> · <a id="dlSrt" download>final.srt</a> · <a id="dlThumb" target="_blank">thumbnail.jpg</a>
+      </div>
+      <div class="row"><img id="thumbImg" style="width:160px;border-radius:4px" alt=""><div class="chapters" id="chapters"></div></div>
+      <div class="muted" id="buildPath"></div>
+    </div>
+  </aside>
+</main>
+
+<script>
+const $ = (s, el=document) => el.querySelector(s);
+let P = null;           // /api/project response
+let raw = null;         // editable project.json
+let lang = new URLSearchParams(location.search).get('lang');
+let saveTimer = null, pollTimer = null, ttsQueue = [];
+
+const api = async (url, opts) => {
+  const r = await fetch(url, opts && opts.body ? {method:'POST', headers:{'Content-Type':'application/json'}, ...opts, body: JSON.stringify(opts.body)} : opts);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+};
+const fileUrl = (rel, bust) => rel ? `/files/${rel.split('/').map(encodeURIComponent).join('/')}${bust ? '?t=' + bust : ''}` : null;
+const isBase = () => lang === P.base_lang;
+const textKey = () => isBase() ? 'text' : `text_${lang}`;
+const labelKey = () => isBase() ? 'label' : `label_${lang}`;
+const variant = () => { raw.variants = raw.variants || {}; raw.variants[lang] = raw.variants[lang] || {}; return raw.variants[lang]; };
+const topGet = (k) => isBase() ? raw[k] : (variant()[k] ?? raw[k]);
+const topSet = (k, v) => { if (isBase()) raw[k] = v; else variant()[k] = v; markDirty(); };
+const nested = (k, sub) => isBase() ? ((raw[k] = raw[k] || {})) : ((variant()[k] = variant()[k] || {}));
+const nestedGet = (k, sub) => (isBase() ? (raw[k]||{})[sub] : ((variant()[k]||{})[sub] ?? (raw[k]||{})[sub]));
+
+async function load(keep=false) {
+  P = await api(`/api/project?lang=${encodeURIComponent(lang || '')}`);
+  raw = P.raw; lang = P.lang;
+  $('#path').textContent = P.root;
+  const sel = $('#lang'); sel.innerHTML = P.langs.map(l => `<option ${l===lang?'selected':''}>${l}</option>`).join('');
+  $('#issues').innerHTML = P.issues ? `<div class="banner err">⚠ ${P.issues}</div>` : '';
+  renderSettings(); renderSegments(); renderResult();
+}
+
+function renderSettings() {
+  $('#f_title').value = topGet('title') || '';
+  $('#f_thumb').value = (topGet('thumbnail_text') || '').replace(/\n/g, '\\n');
+  $('#f_voice').value = topGet('voice') || '';
+  $('#f_rate').value = topGet('rate') || '';
+  $('#f_provider').value = (nestedGet('tts','provider')) || 'edge';
+  $('#f_burn').value = String(!!nestedGet('subtitles','burn'));
+}
+$('#f_title').oninput = e => topSet('title', e.target.value);
+$('#f_thumb').oninput = e => topSet('thumbnail_text', e.target.value.replace(/\\n/g, '\n'));
+$('#f_voice').oninput = e => topSet('voice', e.target.value);
+$('#f_rate').oninput = e => topSet('rate', e.target.value);
+$('#f_provider').onchange = e => { nested('tts').provider = e.target.value; markDirty(); };
+$('#f_burn').onchange = e => { nested('subtitles').burn = e.target.value === 'true'; markDirty(); };
+$('#f_voice').onfocus = async () => {
+  if ($('#voiceList').children.length) return;
+  try { const v = await api(`/api/voices?provider=${$('#f_provider').value}&lang=${isBase() ? '' : lang}`);
+        $('#voiceList').innerHTML = v.map(x => `<option value="${x.name.split(' ')[0]}">${x.desc}</option>`).join(''); } catch {}
+};
+$('#lang').onchange = e => { lang = e.target.value; history.replaceState(null, '', `?lang=${lang}`); load(); };
+
+function visualKind(s) {
+  if (s.remotion) return 'remotion';
+  if (typeof s.video === 'string') return s.video.startsWith('pexels:') ? 'pexels_video' : 'video';
+  if (typeof s.image === 'string') return s.image.startsWith('pexels:') ? 'pexels_image' : 'image';
+  return 'image';
+}
+
+function renderSegments() {
+  const box = $('#segments'); box.innerHTML = '';
+  raw.segments.forEach((s, i) => {
+    const r = P.resolved[s.id] || {};
+    const kind = visualKind(s);
+    const card = document.createElement('div'); card.className = 'card seg';
+    // ---- thumbnail
+    let thumb = '';
+    if (r.image) thumb = `<img src="${fileUrl(r.image)}" alt="">`;
+    else if (r.video) thumb = `<img src="/api/poster/${encodeURIComponent(s.id)}?lang=${lang}" alt="">`;
+    else if (kind === 'remotion') thumb = `<div>${s.remotion.composition}<br><span class="muted">动画段</span></div>`;
+    else if (kind.startsWith('pexels')) thumb = `<div>Pexels 未获取<br><span class="muted">点「获取」</span></div>`;
+    else thumb = `<div>无画面</div>`;
+    const tag = kind === 'remotion' ? 'Remotion' : kind.includes('video') ? '视频' : '图片';
+    // ---- audio line
+    const audio = r.audio ? `<audio controls preload="none" src="${fileUrl(r.audio)}?t=${r.duration}"></audio>
+       <div class="muted">${r.duration ? r.duration.toFixed(1) + ' s' : ''} ${r.audio_fresh ? '' : '<span class="stale">· 文字已改，配音需重新试听</span>'}</div>` : `<div class="muted">尚未配音</div>`;
+    card.innerHTML = `
+      <div>
+        <div class="thumb">${thumb}<span class="tag">${tag}</span></div>
+        <div class="row" style="margin-top:6px">
+          <button class="small" data-act="tts">▶ 试听</button>
+          <button class="small" data-act="up" ${i===0?'disabled':''}>↑</button>
+          <button class="small" data-act="down" ${i===raw.segments.length-1?'disabled':''}>↓</button>
+          <button class="small" data-act="del" title="删除这一段">✕</button>
+        </div>
+        <div class="audio">${audio}</div>
+      </div>
+      <div>
+        <div class="row">
+          <input class="id" value="${esc(s.id)}" data-k="id" title="段 id（文件名/章节）">
+          <input class="label" value="${esc(s[labelKey()] || '')}" data-k="${labelKey()}" placeholder="章节名（可选）">
+          <label>运镜 <select data-k="motion" ${kind!=='image'&&kind!=='pexels_image'?'disabled':''}>
+            ${['zoom_in','zoom_out','pan_left','pan_right','none'].map(m=>`<option ${s.motion===m||(!s.motion&&m==='zoom_in')?'selected':''}>${m}</option>`).join('')}</select></label>
+          <label>停顿 <input class="num" type="number" step="0.1" min="0" value="${s.pause_after ?? 0.5}" data-k="pause_after"> s</label>
+        </div>
+        <textarea data-k="${textKey()}" placeholder="${isBase() ? '这一段的旁白' : `旁白（${lang}）— 还没翻译`}">${esc(s[textKey()] || '')}</textarea>
+        <div class="row">
+          <label>画面 <select data-act="kind">
+            ${[['image','本地图片'],['pexels_image','Pexels 图片'],['video','本地视频'],['pexels_video','Pexels 视频'],['remotion','动画（Remotion）']].map(([k,n])=>`<option value="${k}" ${kind===k?'selected':''}>${n}</option>`).join('')}</select></label>
+          ${kind === 'remotion' ? `<label>组件 <select data-act="comp">${['TitleCard','Timeline','BarChart'].map(c=>`<option ${s.remotion.composition===c?'selected':''}>${c}</option>`).join('')}</select></label>`
+            : kind.startsWith('pexels') ? `<input class="path" data-act="query" value="${esc((s.image||s.video).slice(7))}" placeholder="英文搜索词"><button class="small" data-act="fetch">${r.image||r.video?'换一张':'获取'}</button>`
+            : `<input class="path" data-act="path" value="${esc(s.image||s.video||'')}" placeholder="assets/xxx.jpg"><label class="drop">选择文件…<input type="file" hidden data-act="file" accept="${kind==='video'?'video/*':'image/*'}"></label>`}
+        </div>
+        ${kind === 'remotion' ? `<textarea class="props" data-act="props" spellcheck="false">${esc(JSON.stringify(s.remotion.props || {}, null, 1))}</textarea><div class="muted err" data-act="propsErr"></div>` : ''}
+      </div>`;
+    // ---- wiring
+    card.querySelectorAll('[data-k]').forEach(el => el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
+      const k = el.dataset.k; let v = el.value;
+      if (k === 'pause_after') v = parseFloat(v);
+      if (k === 'id') { v = v.trim(); if (!v) return; }
+      if ((k.startsWith('label') || k.startsWith('text')) && v === '') delete s[k]; else s[k] = v;
+      markDirty();
+    }));
+    const act = (name) => card.querySelector(`[data-act="${name}"]`);
+    act('tts').onclick = () => tts(s.id, card);
+    act('up').onclick = () => { raw.segments.splice(i-1, 0, raw.segments.splice(i,1)[0]); markDirty(true); };
+    act('down').onclick = () => { raw.segments.splice(i+1, 0, raw.segments.splice(i,1)[0]); markDirty(true); };
+    act('del').onclick = () => { if (confirm(`删除段「${s.id}」？`)) { raw.segments.splice(i,1); markDirty(true); } };
+    act('kind').onchange = e => setKind(s, e.target.value);
+    if (act('comp')) act('comp').onchange = e => { s.remotion.composition = e.target.value; markDirty(); };
+    if (act('query')) act('query').oninput = e => { const key = kind==='pexels_video'?'video':'image'; s[key] = 'pexels:' + e.target.value; markDirty(); };
+    if (act('fetch')) act('fetch').onclick = async () => { await save(); act('fetch').textContent='获取中…'; try { await api(`/api/assets/fetch?lang=${lang}`, {body:{id:s.id}}); await load(); } catch(e) { alert(e.message); act('fetch').textContent='获取'; } };
+    if (act('path')) act('path').oninput = e => { const key = kind==='video'?'video':'image'; delete s.image; delete s.video; s[key] = e.target.value; markDirty(); };
+    if (act('file')) act('file').onchange = async e => {
+      const f = e.target.files[0]; if (!f) return;
+      const b64 = await new Promise(res => { const rd = new FileReader(); rd.onload = () => res(rd.result.split(',')[1]); rd.readAsDataURL(f); });
+      const j = await api('/api/assets/upload', {body:{name: f.name, data_b64: b64}});
+      const key = kind==='video'?'video':'image'; delete s.image; delete s.video; s[key] = j.path; markDirty(true);
+    };
+    if (act('props')) act('props').oninput = e => {
+      try { s.remotion.props = JSON.parse(e.target.value); act('propsErr').textContent=''; markDirty(); }
+      catch (err) { act('propsErr').textContent = 'JSON 有误：' + err.message; }
+    };
+    box.appendChild(card);
+  });
+}
+
+function setKind(s, kind) {
+  const text = s.text, keep = {...s};
+  delete s.image; delete s.video; delete s.remotion;
+  if (kind === 'remotion') s.remotion = {composition:'TitleCard', props:{title: s[labelKey()] || s.id}};
+  else if (kind === 'pexels_image') s.image = 'pexels:';
+  else if (kind === 'pexels_video') s.video = 'pexels:';
+  else if (kind === 'video') s.video = '';
+  else s.image = keep.image && !String(keep.image).startsWith('pexels:') ? keep.image : '';
+  markDirty(true);
+}
+
+$('#addSeg').onclick = () => {
+  let n = raw.segments.length + 1, id = `seg${n}`; while (raw.segments.some(s => s.id === id)) id = `seg${++n}`;
+  raw.segments.push({id, text: '在这里写这一段的旁白。', remotion: {composition:'TitleCard', props:{title:'新的一段'}}});
+  markDirty(true);
+};
+
+// ---- saving (debounced, validated server-side; invalid -> red banner, file untouched)
+function markDirty(rerender=false) {
+  $('#saveState').textContent = '未保存…'; $('#saveState').className = 'pill';
+  clearTimeout(saveTimer); saveTimer = setTimeout(save, 700);
+  if (rerender) renderSegments();
+}
+async function save() {
+  clearTimeout(saveTimer);
+  try { await api('/api/project', {body:{raw}}); $('#saveState').textContent = '已保存'; $('#saveState').className = 'pill ok'; $('#issues').innerHTML=''; }
+  catch (e) { $('#saveState').textContent = '未保存'; $('#saveState').className = 'pill err'; $('#issues').innerHTML = `<div class="banner err">⚠ 未保存：${esc(e.message)}</div>`; }
+}
+
+// ---- proof-listen
+async function tts(id, card) {
+  await save();
+  const btn = card.querySelector('[data-act="tts"]'); btn.disabled = true; btn.textContent = '合成中…';
+  try {
+    const j = await api(`/api/tts?lang=${lang}`, {body:{id}});
+    card.querySelector('.audio').innerHTML = `<audio controls autoplay src="${fileUrl(j.audio)}?t=${j.stamp}"></audio><div class="muted">${j.duration.toFixed(1)} s</div>`;
+  } catch (e) { alert(e.message); }
+  btn.disabled = false; btn.textContent = '▶ 试听';
+}
+$('#ttsAllBtn').onclick = async () => {
+  await save();
+  for (const s of raw.segments) { try { await api(`/api/tts?lang=${lang}`, {body:{id:s.id}}); } catch (e) { alert(`${s.id}: ${e.message}`); break; } }
+  load();
+};
+
+// ---- build
+$('#buildBtn').onclick = async () => {
+  await save();
+  try { await api(`/api/build?lang=${lang}&burn=${$('#f_burn').value==='true'?1:0}`, {body:{}}); } catch (e) { return alert(e.message); }
+  $('#log').hidden = false; poll();
+};
+async function poll() {
+  clearTimeout(pollTimer);
+  const st = await api('/api/build/status');
+  const pill = $('#buildState');
+  pill.textContent = {idle:'空闲', running:'渲染中', done:'完成', error:'失败'}[st.state];
+  pill.className = 'pill ' + ({running:'run', done:'ok', error:'err'}[st.state] || '');
+  $('#buildBtn').disabled = st.state === 'running';
+  $('#elapsed').textContent = st.started ? `${Math.round(st.elapsed)} s` : '';
+  if (st.lines.length) { $('#log').hidden = false; $('#log').textContent = st.lines.join('\n'); $('#log').scrollTop = 1e9; }
+  if (st.state === 'running') pollTimer = setTimeout(poll, 1000);
+  else if (st.finished && Date.now()/1000 - st.finished < 5) load();
+}
+function renderResult() {
+  const o = P.outputs; const box = $('#result');
+  box.hidden = !o.final; if (!o.final) return;
+  const v = $('#player'); const src = fileUrl(o.final, o.final_mtime);
+  if (v.dataset.src !== src) { v.src = src; v.dataset.src = src; }
+  $('#dlVideo').href = fileUrl(o.final); $('#dlSrt').href = fileUrl(o.srt) || '#'; $('#dlThumb').href = fileUrl(o.thumbnail) || '#';
+  $('#thumbImg').src = fileUrl(o.thumbnail, o.final_mtime) || '';
+  const tl = o.timeline || [];
+  $('#chapters').textContent = tl.map(t => { const s = Math.floor(t.start); return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')} ${t.label || t.id}`; }).join('\n');
+  const total = tl.length ? tl[tl.length-1].end : 0;
+  $('#resultMeta').textContent = `${lang} · ${Math.round(total)} s · ${new Date(o.final_mtime*1000).toLocaleString()}`;
+  $('#buildPath').textContent = `${P.root}\\${P.build_dir.replace(/\//g,'\\')}`;
+}
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+load().then(poll);
+</script>
+</body>
+</html>

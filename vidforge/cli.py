@@ -99,6 +99,12 @@ def cmd_i18n(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ui(args: argparse.Namespace) -> int:
+    from . import ui
+    ui.serve(args.project, port=args.port, open_browser=not args.no_browser)
+    return 0
+
+
 def cmd_remotion(args: argparse.Namespace) -> int:
     from . import remotion
     if args.action == "setup":
@@ -176,6 +182,12 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("project")
     s.add_argument("--lang", required=True)
     s.set_defaults(fn=cmd_i18n)
+
+    s = sub.add_parser("ui", help="local web UI for a project (edit, proof-listen, build)")
+    s.add_argument("project")
+    s.add_argument("--port", type=int, default=8765)
+    s.add_argument("--no-browser", action="store_true")
+    s.set_defaults(fn=cmd_ui)
 
     s = sub.add_parser("remotion", help="animated graphics: 'setup' installs Remotion once, 'studio' opens the editor")
     s.add_argument("action", choices=["setup", "studio"])
