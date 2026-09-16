@@ -184,6 +184,80 @@ vidforge build my-first-video --burn        # 想把字幕烧进画面就加 --b
 
 ---
 
+## 第 5 步：动态图形段（Remotion）——标题卡 / 时间轴 / 柱状图
+
+这是讲解类视频"有增值"的部分：时间轴、数据对比、章节标题。一次性安装（需要 Node.js ≥ 18，本机已装 Node 22）：
+
+```powershell
+vidforge remotion setup        # npm install，约 1 分钟；第一次渲染还会下载无头 Chrome（约 150 MB，2 分钟）
+```
+
+segment 里不写 image/video，改写 `remotion`，时长自动等于这段旁白的长度：
+
+```jsonc
+{ "id": "part2", "label": "The eruption", "text": "…",
+  "remotion": { "composition": "TitleCard", "props": { "kicker": "Part 2", "title": "The Eruption", "subtitle": "April 1815" } } },
+
+{ "id": "timeline", "text": "April 1815, the eruption. June 1816, snow …",
+  "remotion": { "composition": "Timeline", "props": { "title": "From eruption to famine",
+      "events": [ { "date": "Apr 1815", "text": "Tambora erupts" }, { "date": "Jun 1816", "text": "Snow in New England" } ] } } },
+
+{ "id": "vei", "text": "On the Volcanic Explosivity Index …",
+  "remotion": { "composition": "BarChart", "props": { "title": "Volcanic Explosivity Index", "max": 8,
+      "items": [ { "label": "Tambora 1815", "value": 7 }, { "label": "Krakatoa 1883", "value": 6 } ],
+      "source": "Source: Global Volcanism Program" } } }
+```
+
+三个组件：`TitleCard`（kicker/title/subtitle）、`Timeline`（events[] 逐条出现，`revealBy` 控制多快铺完）、`BarChart`（items[] label/value/color，`unit`、`max`、`source`）。所有组件接受 `"theme": {"bg","fg","muted","accent","font"}` 改配色。
+
+想改样式或加新组件：`vidforge remotion studio` 打开 Remotion Studio 实时预览；组件源码在 `vidforge\remotion\app\src\compositions\`。渲染结果按 props 哈希缓存，只改旁白不会重渲。
+
+> 许可：Remotion 对个人和 ≤3 人的公司免费；公司规模超过要买 license。
+
+---
+
+## 第 6 步：上传 YouTube（标题 / 简介 / 章节 / 字幕 / 封面 一次到位）
+
+一次性设置：
+1. https://console.cloud.google.com 新建项目 → 启用 **YouTube Data API v3** → 凭据 → OAuth 客户端 ID（桌面应用）→ 下载 JSON。
+2. 保存为 `C:\Users\<你>\.vidforge\client_secret.json`（Mac：`~/.vidforge/`）。
+3. `pip install -e ".[youtube]"`（装 Google 客户端库）。
+
+project.json 里加：
+
+```jsonc
+"youtube": { "description": "简介正文；章节和素材署名会自动追加在后面",
+             "tags": ["history", "1816"], "category_id": 27, "privacy": "private", "playlist_id": null }
+```
+
+```powershell
+vidforge upload my-first-video                                      # 第一次会弹浏览器授权，之后不再问
+vidforge upload my-first-video --publish-at 2026-10-01T09:00:00Z    # 定时发布
+```
+
+它做的事：上传 `final.mp4`；标题 = `youtube.title` 或项目 title；简介 = 你的文字 + 章节（由 `timeline.json` 生成，段的 `label` 就是章节名）+ Pexels 署名；设封面 `thumbnail.jpg`；把 `final.srt` 作为字幕轨上传；可选加进播放列表。`build\youtube.json` 记住 video id，再跑一次只更新元数据不会重复上传。
+
+必须知道的三件事：
+- **默认 private**。Google 对没有通过"YouTube API 审核"的 OAuth 应用上传的视频一律锁成私有，所以先私有上传、在 YouTube Studio 里手动改公开/定时是正确用法。
+- 配额每天 10,000 单位，一次上传约 2,000 → **一天最多 5 条**。
+- 自定义封面需要手机验证过的频道。
+
+---
+
+## 第 7 步：同一项目一键出中文版（供头条 / 西瓜）
+
+```powershell
+vidforge i18n export my-first-video --lang zh     # 生成 my-first-video\i18n_zh.json：列出每段英文原文 + 空的 zh
+# 把这个文件贴给我翻译，或自己填；填完：
+vidforge i18n import my-first-video --lang zh     # 写回 project.json：每段 text_zh、label_zh，标题/封面文字进 variants.zh
+vidforge build my-first-video --lang zh           # 输出到 build_zh\（英文版 build\ 不受影响）
+vidforge upload my-first-video --lang zh          # 如果中文版也要上 YouTube
+```
+
+机制：`variants.zh` 可覆盖任何顶层字段（import 时默认给 `voice: zh-CN-YunxiNeural`，建议再加 `"rate": "-5%"`、`"subtitles": {"font": "Microsoft YaHei", "font_size": 24}`、`"youtube": {...}`）；Remotion 的 props 里任何文字可以写成 `{"en": "…", "zh": "…"}`，两种语言各取所需。Pexels 素材两版共用。头条/西瓜没有上传 API，拿 `build_zh\final.mp4` + `thumbnail.jpg` 手动发。
+
+---
+
 ## 常见问题
 
 | 现象 | 处理 |
@@ -194,6 +268,9 @@ vidforge build my-first-video --burn        # 想把字幕烧进画面就加 --b
 | 配音读错了数字/缩写 | 在 `text` 里直接改成读法（"1815" → "eighteen fifteen"），字幕会跟着变，这是可接受的取舍 |
 | edge-tts 报错/无声 | 它是非官方接口，偶尔抖动；重跑即可。已生成的段有缓存不受影响 |
 | 想手工精修 | 把 `build\merged.mp4` + `final.srt` 拖进 DaVinci Resolve |
+| `remotion render failed` | 先 `vidforge remotion setup`；第一次渲染要等 Chrome 下载；`vidforge doctor` 里看 node 一行 |
+| `no 'text_zh' for segments: …` | 这些段还没翻译：`vidforge i18n export --lang zh` 导出后填 |
+| 上传后视频是私有的 | 正常（见第 6 步）；到 YouTube Studio 改公开或定时 |
 
 ## 典型工作流（一条 20 分钟视频）
 
@@ -201,4 +278,5 @@ vidforge build my-first-video --burn        # 想把字幕烧进画面就加 --b
 2. `vidforge build x --only-tts` → 听一遍 → 改文字 → 再听。
 3. 每段填 `image`/`video`：手头有的用本地图，没有的写 `pexels:` 搜索词 → `vidforge assets x` 看图。
 4. `vidforge build x` → 看成片 → 改 → 再 build（只重做改过的段）。
-5. 上传 `final.mp4`，字幕轨用 `final.srt`，封面 `thumbnail.jpg`，简介贴 chapters 和 `credits.txt`。
+5. `vidforge upload x`（私有）→ 在 Studio 里检查、定时公开。
+6. `vidforge i18n export x --lang zh` → 翻译 → `import` → `build --lang zh` → 手动发头条。

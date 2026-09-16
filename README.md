@@ -21,6 +21,8 @@ images, ffmpeg. Optional providers, enabled by a key in `.env` (see `.env.exampl
 |---|---|---|
 | ElevenLabs | `ELEVENLABS_API_KEY` | `"tts": {"provider": "elevenlabs", "model": "eleven_multilingual_v2"}`, `voice` = name or voice_id; word timings from `/with-timestamps` |
 | Pexels | `PEXELS_API_KEY` | `"image": "pexels:<query>"` / `"video": "pexels:<query>"` per segment; downloads to `assets/pexels/`, indexed so rebuilds are offline; `build/credits.txt` |
+| Remotion | Node.js + `vidforge remotion setup` | `"remotion": {"composition": "TitleCard" / "Timeline" / "BarChart", "props": {…}}` segments — animated graphics at exactly the narration length |
+| YouTube | `~/.vidforge/client_secret.json` + `pip install -e .[youtube]` | `vidforge upload <project>`: video + description (chapters + credits) + thumbnail + captions + playlist |
 
 ## Install
 
@@ -46,7 +48,10 @@ vidforge build my-video --only-tts  # synthesize narration only, proof-listen be
 vidforge build my-video --burn      # burn subtitles (otherwise final.srt is a sidecar for YouTube upload)
 vidforge assets my-video            # fetch pexels:… assets only, review them before a long render
 vidforge voices --provider elevenlabs
-python -m unittest discover -s tests   # 11 tests, no network
+vidforge remotion setup|studio      # animated segments: install once / open Remotion Studio
+vidforge upload my-video [--lang zh] [--privacy unlisted] [--publish-at 2026-10-01T09:00:00Z]
+vidforge i18n export my-video --lang zh   # translation sheet -> fill -> `i18n import` -> `build --lang zh`
+python -m unittest discover -s tests      # 23 tests, no network
 ```
 
 ## project.json
@@ -67,9 +72,14 @@ python -m unittest discover -s tests   # 11 tests, no network
     { "id": "hook", "text": "In 1815, a volcano …", "image": "assets/01.jpg",
       "motion": "zoom_in", "pause_after": 0.6 },
     { "id": "farm", "text": "…", "image": "pexels:snow covered farm field" },
-    { "id": "rain", "text": "…", "video": "pexels:rain on window" }   // looped/trimmed to the narration
+    { "id": "rain", "text": "…", "video": "pexels:rain on window" },  // looped/trimmed to the narration
+    { "id": "tl", "label": "From eruption to famine", "text": "…", "text_zh": "…",
+      "remotion": { "composition": "Timeline", "props": { "title": {"en": "From eruption", "zh": "从喷发"},
+                    "events": [ { "date": "Apr 1815", "text": "Tambora erupts" } ] } } }
     // motion: zoom_in | zoom_out | pan_left | pan_right | none (stills only)
-  ]
+  ],
+  "youtube":  { "description": "…", "tags": ["history"], "category_id": 27, "privacy": "private" },
+  "variants": { "zh": { "voice": "zh-CN-YunxiNeural", "title": "…", "subtitles": { "font": "Microsoft YaHei" } } }
 }
 ```
 
@@ -95,10 +105,9 @@ jitter). Measured on this machine: ~1.3× real time at 1080p30 — a 20-minute v
 
 ## Roadmap
 
+- local web UI (edit segments, proof-listen, build button)
 - providers: Azure TTS; Pixabay; local Flux image generation; Kling / MiniMax clips for intros
-- `"kind": "remotion"` segments for animated maps, timelines and charts
-- YouTube Data API upload with title, description, chapters, thumbnail, subtitles
-- second-language build of the same project (zh voice + zh subtitles for 头条)
+- more Remotion compositions: map with moving markers, quote card, side-by-side comparison
 
 ## Notes
 
