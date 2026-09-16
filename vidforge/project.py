@@ -34,6 +34,7 @@ class Segment:
     motion: str = "zoom_in"
     pause_after: float = 0.5         # seconds of silence appended after the narration
     voice: str | None = None         # override the project voice for this segment
+    label: str | None = None         # chapter name (defaults to a prettified id)
 
     @property
     def needs_asset(self) -> bool:
@@ -48,6 +49,17 @@ class TtsConfig:
     similarity_boost: float = 0.75
     style: float = 0.0
     speaker_boost: bool = True
+
+
+@dataclass
+class YouTubeConfig:
+    title: str | None = None         # defaults to project.title
+    description: str = ""
+    tags: list[str] = field(default_factory=list)
+    category_id: int = 27            # 27 Education, 22 People & Blogs, 28 Science & Technology, 24 Entertainment
+    privacy: str = "private"         # private | unlisted | public (public needs an audited OAuth app)
+    playlist_id: str | None = None
+    caption_name: str | None = None
 
 
 @dataclass
@@ -84,6 +96,7 @@ class Project:
     subtitles: SubtitleStyle = field(default_factory=SubtitleStyle)
     thumbnail_text: str | None = None
     tts: TtsConfig = field(default_factory=TtsConfig)
+    youtube: YouTubeConfig = field(default_factory=YouTubeConfig)
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
     @property
@@ -144,6 +157,7 @@ def load(path: str | Path) -> Project:
         segments.append(Segment(
             id=sid, text=text, image=image, video=video, source=source, source_kind=source_kind,
             motion=motion, pause_after=float(s.get("pause_after", 0.5)), voice=s.get("voice"),
+            label=s.get("label"),
         ))
     if not segments:
         raise ProjectError("project has no segments")
@@ -167,6 +181,10 @@ def load(path: str | Path) -> Project:
     if tts.provider not in ("edge", "elevenlabs"):
         raise ProjectError(f"tts.provider '{tts.provider}' not in ('edge', 'elevenlabs')")
 
+    yt = YouTubeConfig(**{k: v for k, v in data.get("youtube", {}).items() if k in YouTubeConfig.__dataclass_fields__})
+    if yt.privacy not in ("private", "unlisted", "public"):
+        raise ProjectError(f"youtube.privacy '{yt.privacy}' not in (private, unlisted, public)")
+
     return Project(
         title=str(_req(data, "title", "project")),
         segments=segments,
@@ -184,6 +202,7 @@ def load(path: str | Path) -> Project:
         subtitles=sub,
         thumbnail_text=data.get("thumbnail_text"),
         tts=tts,
+        youtube=yt,
         raw=data,
     )
 

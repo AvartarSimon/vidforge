@@ -69,7 +69,7 @@ def build(project: Project, *, only_tts: bool = False, burn: bool | None = None)
         clip = bd / "clips" / f"{_safe(seg.id)}.mp4"
         dur = render.render_segment(project, seg, audio, clip)
         cues += subtitles.build_cues(words, offset=cursor, max_chars=project.subtitles.max_chars)
-        timeline.append({"id": seg.id, "start": round(cursor, 3), "end": round(cursor + dur, 3)})
+        timeline.append({"id": seg.id, "label": seg.label, "start": round(cursor, 3), "end": round(cursor + dur, 3)})
         cursor += dur
         clips.append(clip)
         _log(f"  clip {seg.id:<12} {dur:6.2f}s  ({'video' if seg.video else seg.motion})")
@@ -113,4 +113,4 @@ def _credits(project: Project) -> str:
 
 def _chapter_line(t: dict) -> str:
     s = int(t["start"])
-    return f"  {s // 60:02d}:{s % 60:02d} {t['id']}"
+    return f"  {s // 60:02d}:{s % 60:02d} {t.get('label') or t['id']}"

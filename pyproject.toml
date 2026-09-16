@@ -12,6 +12,9 @@ dependencies = [
     "Pillow>=10.0",
 ]
 
+[project.optional-dependencies]
+youtube = ["google-api-python-client>=2.100", "google-auth-oauthlib>=1.2"]
+
 [project.scripts]
 vidforge = "vidforge.cli:main"
 

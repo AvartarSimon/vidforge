@@ -70,6 +70,18 @@ def cmd_assets(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_upload(args: argparse.Namespace) -> int:
+    from .upload import youtube
+    try:
+        p = proj.load(args.project)
+    except proj.ProjectError as e:
+        print(f"project error: {e}", file=sys.stderr)
+        return 2
+    env.load_dotenv(p.root)
+    youtube.upload(p, privacy=args.privacy, publish_at=args.publish_at)
+    return 0
+
+
 def cmd_doctor(_: argparse.Namespace) -> int:
     print(f"vidforge {__version__} · python {sys.version.split()[0]}")
     ffmpeg.print_versions()
@@ -119,6 +131,12 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("assets", help="download pexels:… assets of a project without rendering")
     s.add_argument("project")
     s.set_defaults(fn=cmd_assets)
+
+    s = sub.add_parser("upload", help="upload build/final.mp4 + thumbnail + captions to YouTube")
+    s.add_argument("project")
+    s.add_argument("--privacy", choices=["private", "unlisted", "public"], help="override youtube.privacy")
+    s.add_argument("--publish-at", help="schedule, ISO 8601 UTC e.g. 2026-10-01T09:00:00Z (video stays private until then)")
+    s.set_defaults(fn=cmd_upload)
 
     s = sub.add_parser("doctor", help="check ffmpeg / dependencies")
     s.set_defaults(fn=cmd_doctor)
