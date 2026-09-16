@@ -10,3 +10,4 @@ vidforge/remotion/app/out/
 examples/*/i18n_*.json
 examples/*/assets/
 examples/*/build*/
+last-project.txt

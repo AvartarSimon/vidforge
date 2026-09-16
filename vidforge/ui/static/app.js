@@ -310,6 +310,7 @@ function viewVisuals(v) {
 
 function renderPicker(seg, r) {
   const box = $('#picker');
+  if (!box || step !== 3 || selSeg !== seg.id) return;      // user moved on while a search was in flight
   if (picker.tab === 'upload') {
     box.innerHTML = `<div class="drop" id="drop">点击选择或拖入图片 / 视频文件（会复制到 assets/local/）<input type="file" id="file" hidden accept="image/*,video/*" multiple></div>`;
     const drop = $('#drop'); drop.onclick = () => $('#file').click();
