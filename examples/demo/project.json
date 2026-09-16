@@ -20,14 +20,16 @@
       "text": "In 1815, a volcano on the other side of the world cancelled summer in Europe. This is the story of the year without a summer.",
       "image": "assets/01_hook.jpg",
       "motion": "zoom_in",
-      "pause_after": 0.6
+      "pause_after": 0.6,
+      "text_zh": "一八一五年，地球另一端的一座火山，让整个欧洲失去了夏天。这就是“没有夏天的一年”的故事。"
     },
     {
       "id": "eruption",
       "text": "Mount Tambora, on the island of Sumbawa, erupted with a force ten times greater than Krakatoa. It threw so much ash into the stratosphere that sunlight itself dimmed.",
       "image": "assets/02_eruption.jpg",
       "motion": "pan_right",
-      "pause_after": 0.6
+      "pause_after": 0.6,
+      "text_zh": "松巴哇岛上的坦博拉火山爆发，威力是喀拉喀托火山的十倍。它把大量火山灰抛入平流层，连阳光都黯淡了。"
     },
     {
       "id": "timeline",
@@ -36,41 +38,72 @@
       "remotion": {
         "composition": "Timeline",
         "props": {
-          "title": "From eruption to famine",
+          "title": {
+            "en": "From eruption to famine",
+            "zh": "从喷发到饥荒"
+          },
           "events": [
             {
-              "date": "Apr 1815",
-              "text": "Tambora erupts"
+              "date": {
+                "en": "Apr 1815",
+                "zh": "1815年4月"
+              },
+              "text": {
+                "en": "Tambora erupts",
+                "zh": "坦博拉喷发"
+              }
             },
             {
-              "date": "Jun 1816",
-              "text": "Snow in New England"
+              "date": {
+                "en": "Jun 1816",
+                "zh": "1816年6月"
+              },
+              "text": {
+                "en": "Snow in New England",
+                "zh": "新英格兰下雪"
+              }
             },
             {
-              "date": "Jul 1816",
-              "text": "Harvest fails in France"
+              "date": {
+                "en": "Jul 1816",
+                "zh": "1816年7月"
+              },
+              "text": {
+                "en": "Harvest fails in France",
+                "zh": "法国绝收"
+              }
             },
             {
-              "date": "1817",
-              "text": "Bread riots"
+              "date": {
+                "en": "1817",
+                "zh": "1817年"
+              },
+              "text": {
+                "en": "Bread riots",
+                "zh": "面包暴动"
+              }
             }
           ]
         }
-      }
+      },
+      "text_zh": "一八一五年四月，火山喷发。一八一六年六月，新英格兰下雪。七月，法国粮食绝收。到一八一七年，面包暴动。",
+      "label_zh": "从喷发到饥荒"
     },
     {
       "id": "europe",
       "text": "By the following June, snow was falling in New England and crops were failing across France and Germany. Bread riots followed. Nobody yet understood why.",
       "image": "assets/03_europe.jpg",
       "motion": "zoom_out",
-      "pause_after": 0.6
+      "pause_after": 0.6,
+      "text_zh": "第二年六月，新英格兰在下雪，法国和德国的庄稼纷纷绝收。随之而来的是面包暴动。没有人知道为什么。"
     },
     {
       "id": "legacy",
       "text": "Out of that cold, wet summer came Frankenstein, written by Mary Shelley while trapped indoors by the rain. One eruption, one lost harvest, one monster that never died.",
       "image": "assets/04_legacy.jpg",
       "motion": "pan_left",
-      "pause_after": 0.6
+      "pause_after": 0.6,
+      "text_zh": "在那个又冷又湿的夏天，玛丽·雪莱被雨困在屋里，写出了《弗兰肯斯坦》。一次喷发，一季绝收，一个不死的怪物。"
     },
     {
       "id": "vei",
@@ -79,29 +112,61 @@
       "remotion": {
         "composition": "BarChart",
         "props": {
-          "title": "Volcanic Explosivity Index",
+          "title": {
+            "en": "Volcanic Explosivity Index",
+            "zh": "火山爆发指数"
+          },
           "max": 8,
           "items": [
             {
-              "label": "Tambora 1815",
+              "label": {
+                "en": "Tambora 1815",
+                "zh": "坦博拉 1815"
+              },
               "value": 7
             },
             {
-              "label": "Krakatoa 1883",
+              "label": {
+                "en": "Krakatoa 1883",
+                "zh": "喀拉喀托 1883"
+              },
               "value": 6
             },
             {
-              "label": "Pinatubo 1991",
+              "label": {
+                "en": "Pinatubo 1991",
+                "zh": "皮纳图博 1991"
+              },
               "value": 6
             },
             {
-              "label": "St. Helens 1980",
+              "label": {
+                "en": "St. Helens 1980",
+                "zh": "圣海伦斯 1980"
+              },
               "value": 5
             }
           ],
-          "source": "Source: Global Volcanism Program"
+          "source": {
+            "en": "Source: Global Volcanism Program",
+            "zh": "来源：全球火山活动项目"
+          }
         }
-      }
+      },
+      "text_zh": "在火山爆发指数上，坦博拉是七级。而人人都记得的喀拉喀托，只有六级。",
+      "label_zh": "它有多大"
     }
-  ]
+  ],
+  "variants": {
+    "zh": {
+      "rate": "-5%",
+      "subtitles": {
+        "font": "Microsoft YaHei",
+        "font_size": 24
+      },
+      "title": "没有夏天的一年",
+      "thumbnail_text": "没有夏天的\n一年",
+      "voice": "zh-CN-YunxiNeural"
+    }
+  }
 }

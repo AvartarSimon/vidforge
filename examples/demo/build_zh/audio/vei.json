@@ -1,0 +1,109 @@
+{
+ "key": "edge:2200200e5ab8c397",
+ "provider": "edge",
+ "voice": "zh-CN-YunxiNeural",
+ "words": [
+  {
+   "text": "在",
+   "start": 0.102625,
+   "duration": 0.263166,
+   "break_after": false
+  },
+  {
+   "text": "火山",
+   "start": 0.378958,
+   "duration": 0.447375,
+   "break_after": false
+  },
+  {
+   "text": "爆发",
+   "start": 0.852625,
+   "duration": 0.302625,
+   "break_after": false
+  },
+  {
+   "text": "指数",
+   "start": 1.168416,
+   "duration": 0.302625,
+   "break_after": false
+  },
+  {
+   "text": "上",
+   "start": 1.471041,
+   "duration": 0.302625,
+   "break_after": false
+  },
+  {
+   "text": "坦博拉",
+   "start": 2.010541,
+   "duration": 0.592125,
+   "break_after": false
+  },
+  {
+   "text": "是",
+   "start": 2.628958,
+   "duration": 0.184208,
+   "break_after": false
+  },
+  {
+   "text": "七",
+   "start": 2.813166,
+   "duration": 0.276291,
+   "break_after": false
+  },
+  {
+   "text": "级",
+   "start": 3.089458,
+   "duration": 0.342125,
+   "break_after": false
+  },
+  {
+   "text": "而",
+   "start": 4.026333,
+   "duration": 0.184208,
+   "break_after": false
+  },
+  {
+   "text": "人人",
+   "start": 4.223666,
+   "duration": 0.381583,
+   "break_after": false
+  },
+  {
+   "text": "都",
+   "start": 4.618416,
+   "duration": 0.14475,
+   "break_after": false
+  },
+  {
+   "text": "记得",
+   "start": 4.763166,
+   "duration": 0.25,
+   "break_after": false
+  },
+  {
+   "text": "的",
+   "start": 5.013166,
+   "duration": 0.078958,
+   "break_after": false
+  },
+  {
+   "text": "喀拉喀托",
+   "start": 5.118416,
+   "duration": 0.907875,
+   "break_after": false
+  },
+  {
+   "text": "只有",
+   "start": 6.342125,
+   "duration": 0.302625,
+   "break_after": false
+  },
+  {
+   "text": "六级",
+   "start": 6.657875,
+   "duration": 0.565791,
+   "break_after": false
+  }
+ ]
+}

@@ -9,6 +9,7 @@ Durations are never written by hand — they come from the synthesized audio.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -117,7 +118,44 @@ def _req(d: dict, key: str, ctx: str) -> Any:
     return d[key]
 
 
-def load(path: str | Path) -> Project:
+_LANG_RE = re.compile(r"^[a-z]{2,3}(-[A-Za-z]{2,4})?$")
+
+
+def localize(obj: Any, lang: str, fallback: str, langs: set[str]) -> Any:
+    """Resolve {"en": "...", "zh": "..."} dictionaries anywhere inside `obj` to one language.
+
+    A dict counts as localized text only when every key is one of the project's languages,
+    so ordinary prop objects are left alone.
+    """
+    if isinstance(obj, dict):
+        if obj and all(isinstance(k, str) and k in langs for k in obj):
+            return obj.get(lang, obj.get(fallback, next(iter(obj.values()))))
+        return {k: localize(v, lang, fallback, langs) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [localize(v, lang, fallback, langs) for v in obj]
+    return obj
+
+
+def _apply_variant(data: dict, lang: str) -> dict:
+    """Overlay variants[lang] onto the top-level document (one level deep for dict fields)."""
+    variant = (data.get("variants") or {}).get(lang)
+    if variant is None and lang != data.get("language", "en"):
+        raise ProjectError(f"no variants['{lang}'] in project.json — add at least {{\"voice\": …}} for that language")
+    out = dict(data)
+    out["language"] = lang
+    out.setdefault("out_dir", "build")
+    out["out_dir"] = (variant or {}).get("out_dir", f"build_{lang}")
+    for k, v in (variant or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict) and k != "variants":
+            out[k] = {**out[k], **v}
+        else:
+            out[k] = v
+    return out
+
+
+def load(path: str | Path, lang: str | None = None) -> Project:
+    """Load project.json. `lang` selects a language variant: segment `text_<lang>` /
+    `label_<lang>`, `variants[lang]` overrides, and localized Remotion props."""
     path = Path(path).resolve()
     if path.is_dir():
         path = path / "project.json"
@@ -126,6 +164,17 @@ def load(path: str | Path) -> Project:
     root = path.parent
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
+
+    base_lang = data.get("language", "en")
+    langs = {base_lang, *(data.get("variants") or {}).keys()}
+    if lang and not _LANG_RE.match(lang):
+        raise ProjectError(f"bad language code '{lang}'")
+    if lang and lang != base_lang:
+        data = _apply_variant(data, lang)
+    lang = lang or base_lang
+    text_key = "text" if lang == base_lang else f"text_{lang}"
+    label_key = "label" if lang == base_lang else f"label_{lang}"
+    missing: list[str] = []
 
     def resolve(p: str) -> Path:
         q = Path(p)
@@ -139,9 +188,11 @@ def load(path: str | Path) -> Project:
         if sid in seen:
             raise ProjectError(f"{ctx}: duplicate segment id '{sid}'")
         seen.add(sid)
-        text = str(_req(s, "text", ctx)).strip()
+        _req(s, "text", ctx)
+        text = str(s.get(text_key) or "").strip()
         if not text:
-            raise ProjectError(f"{ctx}: text is empty")
+            missing.append(sid)
+            text = "?"
         image = video = source = remotion = None
         source_kind = "image"
         visuals = [k for k in ("image", "video", "remotion") if k in s]
@@ -152,7 +203,8 @@ def load(path: str | Path) -> Project:
             r = s["remotion"]
             if not isinstance(r, dict) or "composition" not in r:
                 raise ProjectError(f"{ctx}: remotion needs {{'composition': …, 'props': {{…}}}}")
-            remotion = RemotionSpec(composition=str(r["composition"]), props=dict(r.get("props", {})))
+            remotion = RemotionSpec(composition=str(r["composition"]),
+                                    props=localize(dict(r.get("props", {})), lang, base_lang, langs))
         else:
             spec = str(s[key])
             if spec.startswith(ASSET_PREFIXES):
@@ -171,10 +223,13 @@ def load(path: str | Path) -> Project:
         segments.append(Segment(
             id=sid, text=text, image=image, video=video, source=source, source_kind=source_kind,
             motion=motion, pause_after=float(s.get("pause_after", 0.5)), voice=s.get("voice"),
-            label=s.get("label"), remotion=remotion,
+            label=s.get(label_key) or s.get("label"), remotion=remotion,
         ))
     if not segments:
         raise ProjectError("project has no segments")
+    if missing:
+        raise ProjectError(f"no '{text_key}' for segments: {', '.join(missing)} — "
+                           f"run `vidforge i18n export --lang {lang}` to get a translation sheet")
 
     bgm = None
     if data.get("bgm"):

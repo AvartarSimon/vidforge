@@ -1,0 +1,157 @@
+{
+ "key": "edge:07b74b5a85d28dcf",
+ "provider": "edge",
+ "voice": "zh-CN-YunxiNeural",
+ "words": [
+  {
+   "text": "第二",
+   "start": 0.102625,
+   "duration": 0.25,
+   "break_after": false
+  },
+  {
+   "text": "年",
+   "start": 0.352625,
+   "duration": 0.171041,
+   "break_after": false
+  },
+  {
+   "text": "六月",
+   "start": 0.536833,
+   "duration": 0.526333,
+   "break_after": false
+  },
+  {
+   "text": "新英格兰",
+   "start": 1.392125,
+   "duration": 0.763166,
+   "break_after": false
+  },
+  {
+   "text": "在",
+   "start": 2.181583,
+   "duration": 0.092125,
+   "break_after": false
+  },
+  {
+   "text": "下雪",
+   "start": 2.286833,
+   "duration": 0.592125,
+   "break_after": false
+  },
+  {
+   "text": "法国",
+   "start": 3.234208,
+   "duration": 0.565791,
+   "break_after": false
+  },
+  {
+   "text": "和",
+   "start": 3.826333,
+   "duration": 0.10525,
+   "break_after": false
+  },
+  {
+   "text": "德国",
+   "start": 3.94475,
+   "duration": 0.276291,
+   "break_after": false
+  },
+  {
+   "text": "的",
+   "start": 4.221041,
+   "duration": 0.092125,
+   "break_after": false
+  },
+  {
+   "text": "庄稼",
+   "start": 4.326333,
+   "duration": 0.539458,
+   "break_after": false
+  },
+  {
+   "text": "纷纷",
+   "start": 4.971041,
+   "duration": 0.473666,
+   "break_after": false
+  },
+  {
+   "text": "绝收",
+   "start": 5.457875,
+   "duration": 0.473666,
+   "break_after": false
+  },
+  {
+   "text": "随",
+   "start": 6.526333,
+   "duration": 0.315791,
+   "break_after": false
+  },
+  {
+   "text": "之",
+   "start": 6.842125,
+   "duration": 0.092083,
+   "break_after": false
+  },
+  {
+   "text": "而",
+   "start": 6.934208,
+   "duration": 0.10525,
+   "break_after": false
+  },
+  {
+   "text": "来",
+   "start": 7.039458,
+   "duration": 0.131583,
+   "break_after": false
+  },
+  {
+   "text": "的",
+   "start": 7.171041,
+   "duration": 0.10525,
+   "break_after": false
+  },
+  {
+   "text": "是",
+   "start": 7.276333,
+   "duration": 0.35525,
+   "break_after": false
+  },
+  {
+   "text": "面包",
+   "start": 7.763166,
+   "duration": 0.460541,
+   "break_after": false
+  },
+  {
+   "text": "暴动",
+   "start": 8.236833,
+   "duration": 0.368416,
+   "break_after": false
+  },
+  {
+   "text": "没有",
+   "start": 9.210541,
+   "duration": 0.35525,
+   "break_after": false
+  },
+  {
+   "text": "人",
+   "start": 9.565791,
+   "duration": 0.157875,
+   "break_after": false
+  },
+  {
+   "text": "知道",
+   "start": 9.736833,
+   "duration": 0.565791,
+   "break_after": false
+  },
+  {
+   "text": "为什么",
+   "start": 10.421041,
+   "duration": 0.60525,
+   "break_after": false
+  }
+ ]
+}

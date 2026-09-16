@@ -1,0 +1,175 @@
+{
+ "key": "edge:a4ec9e0637500e03",
+ "provider": "edge",
+ "voice": "zh-CN-YunxiNeural",
+ "words": [
+  {
+   "text": "在",
+   "start": 0.102625,
+   "duration": 0.171041,
+   "break_after": false
+  },
+  {
+   "text": "那个",
+   "start": 0.286833,
+   "duration": 0.210541,
+   "break_after": false
+  },
+  {
+   "text": "又",
+   "start": 0.523666,
+   "duration": 0.223666,
+   "break_after": false
+  },
+  {
+   "text": "冷",
+   "start": 0.747375,
+   "duration": 0.14475,
+   "break_after": false
+  },
+  {
+   "text": "又",
+   "start": 0.90525,
+   "duration": 0.14475,
+   "break_after": false
+  },
+  {
+   "text": "湿",
+   "start": 1.05,
+   "duration": 0.131583,
+   "break_after": false
+  },
+  {
+   "text": "的",
+   "start": 1.181583,
+   "duration": 0.078958,
+   "break_after": false
+  },
+  {
+   "text": "夏天",
+   "start": 1.273666,
+   "duration": 0.565791,
+   "break_after": false
+  },
+  {
+   "text": "玛丽",
+   "start": 2.19475,
+   "duration": 0.513166,
+   "break_after": false
+  },
+  {
+   "text": "雪莱",
+   "start": 3.076333,
+   "duration": 0.35525,
+   "break_after": false
+  },
+  {
+   "text": "被",
+   "start": 3.457875,
+   "duration": 0.118416,
+   "break_after": false
+  },
+  {
+   "text": "雨困",
+   "start": 3.576333,
+   "duration": 0.289458,
+   "break_after": false
+  },
+  {
+   "text": "在",
+   "start": 3.878958,
+   "duration": 0.092125,
+   "break_after": false
+  },
+  {
+   "text": "屋",
+   "start": 3.984208,
+   "duration": 0.223666,
+   "break_after": false
+  },
+  {
+   "text": "里",
+   "start": 4.207875,
+   "duration": 0.197375,
+   "break_after": false
+  },
+  {
+   "text": "写出",
+   "start": 4.786833,
+   "duration": 0.447375,
+   "break_after": false
+  },
+  {
+   "text": "了",
+   "start": 5.234208,
+   "duration": 0.315791,
+   "break_after": false
+  },
+  {
+   "text": "弗兰肯斯坦",
+   "start": 5.602625,
+   "duration": 1.10525,
+   "break_after": false
+  },
+  {
+   "text": "一次",
+   "start": 7.315791,
+   "duration": 0.289458,
+   "break_after": false
+  },
+  {
+   "text": "喷发",
+   "start": 7.618416,
+   "duration": 0.565791,
+   "break_after": false
+  },
+  {
+   "text": "一",
+   "start": 8.460541,
+   "duration": 0.184208,
+   "break_after": false
+  },
+  {
+   "text": "季",
+   "start": 8.64475,
+   "duration": 0.131583,
+   "break_after": false
+  },
+  {
+   "text": "绝收",
+   "start": 8.789458,
+   "duration": 0.539458,
+   "break_after": false
+  },
+  {
+   "text": "一个",
+   "start": 9.578958,
+   "duration": 0.210541,
+   "break_after": false
+  },
+  {
+   "text": "不",
+   "start": 9.802625,
+   "duration": 0.184208,
+   "break_after": false
+  },
+  {
+   "text": "死",
+   "start": 9.986833,
+   "duration": 0.236833,
+   "break_after": false
+  },
+  {
+   "text": "的",
+   "start": 10.223666,
+   "duration": 0.092125,
+   "break_after": false
+  },
+  {
+   "text": "怪物",
+   "start": 10.328958,
+   "duration": 0.407875,
+   "break_after": false
+  }
+ ]
+}

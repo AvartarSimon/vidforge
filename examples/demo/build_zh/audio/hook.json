@@ -1,0 +1,151 @@
+{
+ "key": "edge:ede3a5dbf720a13d",
+ "provider": "edge",
+ "voice": "zh-CN-YunxiNeural",
+ "words": [
+  {
+   "text": "一八一五年",
+   "start": 0.102625,
+   "duration": 0.960541,
+   "break_after": false
+  },
+  {
+   "text": "地球",
+   "start": 1.378958,
+   "duration": 0.421041,
+   "break_after": false
+  },
+  {
+   "text": "另",
+   "start": 1.826333,
+   "duration": 0.131541,
+   "break_after": false
+  },
+  {
+   "text": "一端",
+   "start": 1.957875,
+   "duration": 0.25,
+   "break_after": false
+  },
+  {
+   "text": "的",
+   "start": 2.207875,
+   "duration": 0.065791,
+   "break_after": false
+  },
+  {
+   "text": "一",
+   "start": 2.3,
+   "duration": 0.092125,
+   "break_after": false
+  },
+  {
+   "text": "座",
+   "start": 2.392125,
+   "duration": 0.118416,
+   "break_after": false
+  },
+  {
+   "text": "火山",
+   "start": 2.523666,
+   "duration": 0.578958,
+   "break_after": false
+  },
+  {
+   "text": "让",
+   "start": 3.3,
+   "duration": 0.223666,
+   "break_after": false
+  },
+  {
+   "text": "整个",
+   "start": 3.536833,
+   "duration": 0.35525,
+   "break_after": false
+  },
+  {
+   "text": "欧洲",
+   "start": 3.90525,
+   "duration": 0.447375,
+   "break_after": false
+  },
+  {
+   "text": "失去",
+   "start": 4.378958,
+   "duration": 0.328916,
+   "break_after": false
+  },
+  {
+   "text": "了",
+   "start": 4.707875,
+   "duration": 0.078958,
+   "break_after": false
+  },
+  {
+   "text": "夏天",
+   "start": 4.8,
+   "duration": 0.526333,
+   "break_after": false
+  },
+  {
+   "text": "这",
+   "start": 5.934208,
+   "duration": 0.236833,
+   "break_after": false
+  },
+  {
+   "text": "就",
+   "start": 6.171041,
+   "duration": 0.118416,
+   "break_after": false
+  },
+  {
+   "text": "是",
+   "start": 6.289458,
+   "duration": 0.092125,
+   "break_after": false
+  },
+  {
+   "text": "没有",
+   "start": 6.407875,
+   "duration": 0.210541,
+   "break_after": false
+  },
+  {
+   "text": "夏天",
+   "start": 6.631583,
+   "duration": 0.421041,
+   "break_after": false
+  },
+  {
+   "text": "的",
+   "start": 7.052625,
+   "duration": 0.078958,
+   "break_after": false
+  },
+  {
+   "text": "一",
+   "start": 7.14475,
+   "duration": 0.157875,
+   "break_after": false
+  },
+  {
+   "text": "年",
+   "start": 7.302625,
+   "duration": 0.171041,
+   "break_after": false
+  },
+  {
+   "text": "的",
+   "start": 7.5,
+   "duration": 0.078958,
+   "break_after": false
+  },
+  {
+   "text": "故事",
+   "start": 7.592125,
+   "duration": 0.447375,
+   "break_after": false
+  }
+ ]
+}

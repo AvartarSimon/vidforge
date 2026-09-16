@@ -1,0 +1,38 @@
+[
+ {
+  "id": "hook",
+  "label": null,
+  "start": 0.0,
+  "end": 9.576
+ },
+ {
+  "id": "eruption",
+  "label": null,
+  "start": 9.576,
+  "end": 21.36
+ },
+ {
+  "id": "timeline",
+  "label": "\u4ece\u55b7\u53d1\u5230\u9965\u8352",
+  "start": 21.36,
+  "end": 34.724
+ },
+ {
+  "id": "europe",
+  "label": null,
+  "start": 34.724,
+  "end": 47.276
+ },
+ {
+  "id": "legacy",
+  "label": null,
+  "start": 47.276,
+  "end": 59.54
+ },
+ {
+  "id": "vei",
+  "label": "\u5b83\u6709\u591a\u5927",
+  "start": 59.54,
+  "end": 68.2
+ }
+]

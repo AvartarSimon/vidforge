@@ -7,3 +7,4 @@ examples/*/assets/
 .env
 vidforge/remotion/app/node_modules/
 vidforge/remotion/app/out/
+examples/*/i18n_*.json

@@ -1,0 +1,157 @@
+{
+ "key": "edge:8d1907ea77dfbd6f",
+ "provider": "edge",
+ "voice": "zh-CN-YunxiNeural",
+ "words": [
+  {
+   "text": "松巴",
+   "start": 0.102625,
+   "duration": 0.447375,
+   "break_after": false
+  },
+  {
+   "text": "哇岛",
+   "start": 0.563166,
+   "duration": 0.342083,
+   "break_after": false
+  },
+  {
+   "text": "上",
+   "start": 0.90525,
+   "duration": 0.171041,
+   "break_after": false
+  },
+  {
+   "text": "的",
+   "start": 1.076333,
+   "duration": 0.184208,
+   "break_after": false
+  },
+  {
+   "text": "坦博拉火山",
+   "start": 1.286833,
+   "duration": 0.907875,
+   "break_after": false
+  },
+  {
+   "text": "爆发",
+   "start": 2.207875,
+   "duration": 0.486833,
+   "break_after": false
+  },
+  {
+   "text": "威力",
+   "start": 3.115791,
+   "duration": 0.381583,
+   "break_after": false
+  },
+  {
+   "text": "是",
+   "start": 3.510541,
+   "duration": 0.263166,
+   "break_after": false
+  },
+  {
+   "text": "喀拉喀托",
+   "start": 3.8,
+   "duration": 0.60525,
+   "break_after": false
+  },
+  {
+   "text": "火山",
+   "start": 4.418416,
+   "duration": 0.35525,
+   "break_after": false
+  },
+  {
+   "text": "的",
+   "start": 4.773666,
+   "duration": 0.065791,
+   "break_after": false
+  },
+  {
+   "text": "十",
+   "start": 4.852625,
+   "duration": 0.25,
+   "break_after": false
+  },
+  {
+   "text": "倍",
+   "start": 5.102625,
+   "duration": 0.223666,
+   "break_after": false
+  },
+  {
+   "text": "它",
+   "start": 5.921041,
+   "duration": 0.157875,
+   "break_after": false
+  },
+  {
+   "text": "把",
+   "start": 6.078958,
+   "duration": 0.10525,
+   "break_after": false
+  },
+  {
+   "text": "大量",
+   "start": 6.210541,
+   "duration": 0.328958,
+   "break_after": false
+  },
+  {
+   "text": "火山灰",
+   "start": 6.552625,
+   "duration": 0.684208,
+   "break_after": false
+  },
+  {
+   "text": "抛",
+   "start": 7.35525,
+   "duration": 0.302625,
+   "break_after": false
+  },
+  {
+   "text": "入",
+   "start": 7.657875,
+   "duration": 0.118416,
+   "break_after": false
+  },
+  {
+   "text": "平流层",
+   "start": 7.789458,
+   "duration": 0.763166,
+   "break_after": false
+  },
+  {
+   "text": "连",
+   "start": 8.921041,
+   "duration": 0.223666,
+   "break_after": false
+  },
+  {
+   "text": "阳光",
+   "start": 9.14475,
+   "duration": 0.460541,
+   "break_after": false
+  },
+  {
+   "text": "都",
+   "start": 9.618416,
+   "duration": 0.092125,
+   "break_after": false
+  },
+  {
+   "text": "黯淡",
+   "start": 9.723666,
+   "duration": 0.35525,
+   "break_after": false
+  },
+  {
+   "text": "了",
+   "start": 10.078958,
+   "duration": 0.197375,
+   "break_after": false
+  }
+ ]
+}

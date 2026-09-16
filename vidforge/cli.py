@@ -33,7 +33,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
 def cmd_build(args: argparse.Namespace) -> int:
     from . import pipeline
     try:
-        p = proj.load(args.project)
+        p = proj.load(args.project, lang=args.lang)
     except proj.ProjectError as e:
         print(f"project error: {e}", file=sys.stderr)
         return 2
@@ -73,12 +73,29 @@ def cmd_assets(args: argparse.Namespace) -> int:
 def cmd_upload(args: argparse.Namespace) -> int:
     from .upload import youtube
     try:
-        p = proj.load(args.project)
+        p = proj.load(args.project, lang=args.lang)
     except proj.ProjectError as e:
         print(f"project error: {e}", file=sys.stderr)
         return 2
     env.load_dotenv(p.root)
     youtube.upload(p, privacy=args.privacy, publish_at=args.publish_at)
+    return 0
+
+
+def cmd_i18n(args: argparse.Namespace) -> int:
+    from . import i18n
+    if args.action == "export":
+        out = i18n.export(args.project, args.lang)
+        n = len(json.loads(out.read_text(encoding="utf-8"))["segments"])
+        print(f"wrote {out} ({n} segments to translate). Fill the empty '{args.lang}' strings, then:")
+        print(f"  vidforge i18n import {args.project} --lang {args.lang}")
+    else:
+        written, empty = i18n.import_(args.project, args.lang)
+        print(f"imported {written} fields into project.json")
+        if empty:
+            print(f"still untranslated: {', '.join(empty)}")
+        else:
+            print(f"  vidforge build {args.project} --lang {args.lang}")
     return 0
 
 
@@ -131,6 +148,7 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("build", help="render a project")
     s.add_argument("project", help="project.json or its directory")
+    s.add_argument("--lang", help="build a language variant (segments' text_<lang>, variants[<lang>]) into build_<lang>/")
     s.add_argument("--only-tts", action="store_true", help="synthesize narration only (proof-listen)")
     g = s.add_mutually_exclusive_group()
     g.add_argument("--burn", action="store_true", help="burn subtitles into the video")
@@ -148,9 +166,16 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("upload", help="upload build/final.mp4 + thumbnail + captions to YouTube")
     s.add_argument("project")
+    s.add_argument("--lang", help="upload the language variant built with --lang")
     s.add_argument("--privacy", choices=["private", "unlisted", "public"], help="override youtube.privacy")
     s.add_argument("--publish-at", help="schedule, ISO 8601 UTC e.g. 2026-10-01T09:00:00Z (video stays private until then)")
     s.set_defaults(fn=cmd_upload)
+
+    s = sub.add_parser("i18n", help="translation sheet: 'export' writes i18n_<lang>.json, 'import' merges it back")
+    s.add_argument("action", choices=["export", "import"])
+    s.add_argument("project")
+    s.add_argument("--lang", required=True)
+    s.set_defaults(fn=cmd_i18n)
 
     s = sub.add_parser("remotion", help="animated graphics: 'setup' installs Remotion once, 'studio' opens the editor")
     s.add_argument("action", choices=["setup", "studio"])

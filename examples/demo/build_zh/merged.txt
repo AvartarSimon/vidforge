@@ -1,0 +1,6 @@
+file 'C:/Simon/Projects/vidforge/examples/demo/build_zh/clips/hook.mp4'
+file 'C:/Simon/Projects/vidforge/examples/demo/build_zh/clips/eruption.mp4'
+file 'C:/Simon/Projects/vidforge/examples/demo/build_zh/clips/timeline.mp4'
+file 'C:/Simon/Projects/vidforge/examples/demo/build_zh/clips/europe.mp4'
+file 'C:/Simon/Projects/vidforge/examples/demo/build_zh/clips/legacy.mp4'
+file 'C:/Simon/Projects/vidforge/examples/demo/build_zh/clips/vei.mp4'
