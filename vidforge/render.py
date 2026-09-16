@@ -102,7 +102,7 @@ def plan_clips(seg: Segment, target: float) -> list[PlannedClip]:
     natural: list[float | None] = []
     for c in seg.clips:
         if c.remotion is not None:
-            natural.append(None)                       # rendered to exactly its share
+            natural.append(c.duration)                 # fixed length if given, else its share
         elif c.video is not None:
             if c.slice_length:
                 natural.append(c.slice_length)
@@ -176,14 +176,23 @@ def render_clip(project: Project, pc: PlannedClip, out: Path, encoder: str) -> N
     w, h, fps = project.width, project.height, project.fps
     out.parent.mkdir(parents=True, exist_ok=True)
     if c.video is not None:
+        vf = f"scale={w}:{h}:force_original_aspect_ratio=increase:flags=lanczos,crop={w}:{h},fps={fps},setsar=1"
+        codec = video_codec_args(project, encoder)
+        if pc.loop and (c.in_ or c.out is not None):
+            # -stream_loop restarts at the file start, not at -ss: cut the slice first, then loop that
+            slice_path = out.with_name(out.stem + "_slice.mp4")
+            args = ["-y", "-ss", f"{c.in_ or 0:.3f}", "-i", str(c.video), "-an", "-vf", vf]
+            if c.out is not None:
+                args += ["-t", f"{max(0.1, c.out - (c.in_ or 0)):.3f}"]
+            ffmpeg.run(args + [*codec, str(slice_path)])
+            ffmpeg.run(["-y", "-stream_loop", "-1", "-i", str(slice_path), "-an", "-t", f"{dur:.3f}", "-c:v", "copy", str(out)])
+            return
         args = ["-y"]
         if pc.loop:
             args += ["-stream_loop", "-1"]
         if c.in_:
             args += ["-ss", f"{c.in_:.3f}"]
-        args += ["-i", str(c.video), "-an",
-                 "-vf", f"scale={w}:{h}:force_original_aspect_ratio=increase:flags=lanczos,crop={w}:{h},fps={fps},setsar=1",
-                 "-t", f"{dur:.3f}", *video_codec_args(project, encoder), str(out)]
+        args += ["-i", str(c.video), "-an", "-vf", vf, "-t", f"{dur:.3f}", *codec, str(out)]
         ffmpeg.run(args)
         return
     ss = project.effective_supersample
@@ -195,7 +204,7 @@ def render_clip(project: Project, pc: PlannedClip, out: Path, encoder: str) -> N
         # portrait / square picture: blurred, darkened copy fills the frame, the whole picture sits on top
         vf = (f"[0:v]split=2[bg][fg];"
               f"[bg]scale={sw}:{sh}:force_original_aspect_ratio=increase:flags=bicubic,crop={sw}:{sh},"
-              f"boxblur=luma_radius=min(h\,w)/20:luma_power=2,eq=brightness=-0.15[bgb];"
+              f"boxblur=luma_radius={max(8, min(sw, sh) // 40)}:luma_power=2,eq=brightness=-0.15[bgb];"
               f"[fg]scale={sw}:{sh}:force_original_aspect_ratio=decrease:flags=lanczos[fgs];"
               f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,{zp}[v]")
         ffmpeg.run(["-y", "-i", str(c.image), "-filter_complex", vf, "-map", "[v]", "-t", f"{dur:.3f}", "-r", str(fps),
@@ -273,11 +282,27 @@ def render_segment(project: Project, seg: Segment, audio: Path, out: Path, *, en
         else:
             concat(parts, visual)
 
+    norm = "loudnorm=I=-16:TP=-1.5:LRA=11," if project.normalize_audio and not audio_is_silent(audio) else ""
     ffmpeg.run(["-y", "-i", str(visual), "-i", str(audio),
-                "-filter_complex", f"[1:a]apad=pad_dur={seg.pause_after}[a]",
+                "-filter_complex", f"[1:a]{norm}apad=pad_dur={seg.pause_after}[a]",
                 "-map", "0:v", "-map", "[a]", "-c:v", "copy", *AUDIO_ARGS,
                 "-t", f"{target:.3f}", "-movflags", "+faststart", str(out)])
-    return target
+    # the container's real length (AAC frames are 21 ms; over 40 segments the planned lengths
+    # would drift subtitles by up to a second) — the timeline must use this
+    return ffmpeg.duration(out)
+
+
+def audio_is_silent(path: Path, floor_db: float = -60.0) -> bool:
+    """loudnorm turns digital silence into NaN and the AAC encoder fails; detect it first."""
+    try:
+        r = subprocess.run([ffmpeg.find_binary("ffmpeg"), "-hide_banner", "-i", str(path), "-af", "volumedetect", "-f", "null", "-"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+        for line in r.stderr.splitlines():
+            if "mean_volume:" in line:
+                return float(line.split("mean_volume:")[1].split("dB")[0]) < floor_db
+    except Exception:  # noqa: BLE001
+        pass
+    return False
 
 
 def concat(clips: list[Path], out: Path) -> None:

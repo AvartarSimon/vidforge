@@ -51,7 +51,17 @@ def synthesize_cached(provider: TtsProvider, text: str, voice: str, out_path: Pa
             pass  # corrupt sidecar -> regenerate
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    words = provider.synthesize(text, voice, out_path)
+    words = None
+    for attempt in range(3):                      # edge-tts is an unofficial endpoint: transient failures happen
+        try:
+            words = provider.synthesize(text, voice, out_path)
+            break
+        except Exception as e:  # noqa: BLE001
+            if attempt == 2 or "API key" in str(e) or "quota" in str(e).lower():
+                raise
+            import time as _t
+            _t.sleep(2 * (attempt + 1))
+    assert words is not None
     meta_path.write_text(json.dumps({
         "key": key, "provider": provider.name, "voice": voice,
         "words": [asdict(w) for w in words],

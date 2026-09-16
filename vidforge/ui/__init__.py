@@ -225,6 +225,12 @@ def make_handler(state: State):
                     burn = {"1": True, "0": False}.get(q.get("burn", ""), None)
                     ok = state.start_build(q.get("lang") or None, burn)
                     return self._json({"started": ok}) if ok else self._error("a build is already running", HTTPStatus.CONFLICT)
+                if path == "/api/preview":
+                    p = state.load(q.get("lang"))
+                    out, dur = pipeline.preview_segment(p, body.get("id"))
+                    return self._json({"video": state.rel(out), "duration": dur, "stamp": time.time()})
+                if path == "/api/autofill":
+                    return self.autofill(q.get("lang"), body.get("source"))
                 if path == "/api/build/cancel":
                     pipeline.cancel()
                     return self._json({"cancelling": state.build["state"] == "running"})
@@ -327,7 +333,39 @@ def make_handler(state: State):
 
         def status_view(self) -> dict:
             b = state.build
-            return {**b, "elapsed": (b["finished"] or time.time()) - b["started"] if b["started"] else 0}
+            elapsed = (b["finished"] or time.time()) - b["started"] if b["started"] else 0
+            return {**b, "elapsed": elapsed, **self._progress(b["lines"], elapsed)}
+
+        @staticmethod
+        def _progress(lines: list[str], elapsed: float) -> dict:
+            """Rough completion from the log: TTS 0-15 %, segments 15-90 %, finishing 90-100 %."""
+            total = tts = clips = 0
+            phase = "tts"
+            for ln in lines:
+                if " segments · tts " in ln:
+                    try:
+                        total = int(ln.split("]")[1].split("segments")[0])
+                    except (IndexError, ValueError):
+                        pass
+                elif ln.startswith("[vidforge]   tts "):
+                    tts += 1
+                elif ln.startswith("[vidforge]   clip "):
+                    clips += 1; phase = "render"
+                elif "rendering " in ln:
+                    phase = "render"
+                elif ln.startswith("[vidforge] done"):
+                    phase = "done"
+            if not total:
+                return {"progress": 0, "eta": None}
+            if phase == "done":
+                pct = 100
+            elif phase == "render":
+                pct = 15 + 75 * clips / total + (10 if clips == total else 0) * 0.5
+            else:
+                pct = 15 * tts / total
+            eta = (elapsed / pct * (100 - pct)) if 5 < pct < 100 else None
+            return {"progress": round(min(pct, 99.5 if phase != "done" else 100), 1), "eta": round(eta) if eta else None,
+                     "segments_done": clips, "segments_total": total}
 
         def health(self) -> dict:
             env.load_dotenv(state.root)
@@ -349,6 +387,23 @@ def make_handler(state: State):
                                   or bool(os.environ.get("YOUTUBE_CLIENT_SECRET")),
                 "cpus": os.cpu_count(),
             }
+
+        def autofill(self, lang: str | None, source: str | None):
+            """Give every clip-less segment a search clip from its keywords (a first rough cut)."""
+            env.load_dotenv(state.root)
+            source = source or ("pexels" if os.environ.get("PEXELS_API_KEY") else "pixabay" if os.environ.get("PIXABAY_API_KEY") else "commons")
+            raw = state.read_raw()
+            base = raw.get("language", "en")
+            n = 0
+            for s in raw["segments"]:
+                if s.get("clips") or any(k in s for k in ("image", "video", "remotion")):
+                    continue
+                text = s.get("text" if not lang or lang == base else f"text_{lang}") or s.get("text") or ""
+                kws = keywords.suggest(text, 2) or [s["id"]]
+                s["clips"] = [{"image": f"{source}:{' '.join(kws[:2])}", "motion": "zoom_in"}]
+                n += 1
+            state.write_raw(raw)
+            return self._json({"filled": n, "source": source})
 
         def save_project(self, body: dict):
             data = body.get("raw")

@@ -157,6 +157,8 @@ class Project:
     motion_amount: float = 0.15      # zoom factor / pan distance as a fraction of the frame
     supersample: int | None = None   # zoompan supersampling; None = by quality (draft 1, final 2)
     transition: float = 0.0          # crossfade seconds between clips inside a segment (0 = hard cut)
+    auto_title_cards: bool = False   # prepend a 3 s TitleCard to every segment that has a label (needs Remotion)
+    normalize_audio: bool = True     # loudnorm the narration to -16 LUFS so every segment/provider sounds alike
     parallel: int = 0                # segments rendered at once; 0 = auto (cores / 2)
     out_dir: Path = Path("build")
     bgm: Bgm | None = None
@@ -164,6 +166,7 @@ class Project:
     thumbnail_text: str | None = None
     tts: TtsConfig = field(default_factory=TtsConfig)
     youtube: YouTubeConfig = field(default_factory=YouTubeConfig)
+    warnings: list[str] = field(default_factory=list)   # non-fatal advice (long segments, …)
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
     @property
@@ -359,6 +362,9 @@ def load(path: str | Path, lang: str | None = None) -> Project:
     if yt.privacy not in ("private", "unlisted", "public"):
         raise ProjectError(f"youtube.privacy '{yt.privacy}' not in (private, unlisted, public)")
 
+    warnings = [f"segment '{s.id}' is {len(s.text)} characters — ElevenLabs caps a request at 5000 and "
+                f"subtitles/pictures pace better under ~600; consider splitting" for s in segments if len(s.text) > 2500]
+
     return Project(
         title=str(_req(data, "title", "project")),
         segments=segments,
@@ -374,6 +380,8 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         motion_amount=float(data.get("motion_amount", 0.15)),
         supersample=int(data["supersample"]) if data.get("supersample") else None,
         transition=float(data.get("transition", 0.0)),
+        auto_title_cards=bool(data.get("auto_title_cards", False)),
+        normalize_audio=bool(data.get("normalize_audio", True)),
         parallel=int(data.get("parallel", 0)),
         out_dir=Path(data.get("out_dir", "build")),
         bgm=bgm,
@@ -381,6 +389,7 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         thumbnail_text=data.get("thumbnail_text"),
         tts=tts,
         youtube=yt,
+        warnings=warnings,
         raw=data,
     )
 

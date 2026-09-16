@@ -59,7 +59,7 @@ def _log(msg: str) -> None:
 
 
 def _safe(name: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_.-]+", "_", name)
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", name)[:60]
 
 
 def synthesize_segment(project: Project, seg_id: str) -> tuple[Path, float]:
@@ -72,6 +72,28 @@ def synthesize_segment(project: Project, seg_id: str) -> tuple[Path, float]:
     audio = bd / "audio" / f"{_safe(seg.id)}.mp3"
     synthesize_cached(tts, seg.text, seg.voice or project.voice, audio)
     return audio, ffmpeg.duration(audio)
+
+
+def preview_segment(project: Project, seg_id: str) -> tuple[Path, float]:
+    """Render ONE segment at draft quality into build/preview/ (the UI's per-segment check):
+    TTS (cached) -> assets -> remotion -> clips -> mux. Seconds, not the whole film."""
+    import dataclasses
+    seg = next(s for s in project.segments if s.id == seg_id)
+    draft = dataclasses.replace(project, quality="draft", segments=[seg])
+    bd = project.build_dir
+    audio, narration = synthesize_segment(draft, seg_id)
+    from . import assets
+    assets.resolve_all(draft, {seg_id: narration + seg.pause_after}, log=lambda *_: None)
+    if any(c.remotion for c in seg.clips):
+        from . import remotion
+        for pc in render.plan_clips(seg, narration + seg.pause_after):
+            if pc.clip.remotion is not None:
+                pc.clip.video = remotion.render(pc.clip.remotion.composition, pc.clip.remotion.props, duration=pc.seconds,
+                                                fps=project.fps, width=project.width, height=project.height,
+                                                out_dir=bd / "remotion", log=lambda *_: None)
+    out = bd / "preview" / f"{_safe(seg_id)}.mp4"
+    dur = render.render_segment(draft, seg, audio, out, cache_dir=bd / "preview")
+    return out, dur
 
 
 def _workers(project: Project) -> int:
@@ -105,6 +127,8 @@ def build(project: Project, *, only_tts: bool = False, burn: bool | None = None)
         tts = get_provider(project.tts.provider, rate=project.rate, config=project.tts.__dict__)
         encoder = render.pick_encoder(project)
         _log(f"{len(project.segments)} segments · tts {tts.name} · voice {project.voice} · {project.quality} · {encoder}")
+        for w in project.warnings:
+            _log(f"warning: {w}")
         words_by_seg = {}
         narration_len: dict[str, float] = {}
         for seg in project.segments:
@@ -117,6 +141,21 @@ def build(project: Project, *, only_tts: bool = False, burn: bool | None = None)
             _log(f"  tts  {seg.id:<12} {len(words):>4} words  {narration_len[seg.id]:6.2f}s")
         if only_tts:
             return bd
+
+        # 1a. Auto chapter cards: a 3 s TitleCard in front of every labelled segment
+        if project.auto_title_cards:
+            from .project import Clip, RemotionSpec
+            from .remotion import APP_DIR
+            if not (APP_DIR / "node_modules").exists():
+                _log("warning: auto_title_cards needs Remotion (vidforge remotion setup) — skipped")
+            else:
+                n = 0
+                for seg in project.segments:
+                    first = seg.clips[0] if seg.clips else None
+                    if seg.label and not (first and first.remotion and first.remotion.composition == "TitleCard"):
+                        n += 1
+                        seg.clips.insert(0, Clip(remotion=RemotionSpec("TitleCard", {"kicker": f"Chapter {n}", "title": seg.label}), duration=3.0))
+                _log(f"auto title cards: {n}")
 
         # 1b. Remote assets (pexels:… etc.) now that narration lengths are known
         from . import assets

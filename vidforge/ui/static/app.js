@@ -6,7 +6,7 @@ const fmt = (s) => s == null ? '–' : (s >= 60 ? `${Math.floor(s / 60)}:${Strin
 const fileUrl = (rel, bust) => rel ? `/files/${rel.split('/').map(encodeURIComponent).join('/')}${bust ? '?t=' + bust : ''}` : null;
 
 let P = null, raw = null, lang = new URLSearchParams(location.search).get('lang');
-let step = parseInt(new URLSearchParams(location.search).get('step') || localStorage.getItem('vf.step') || '1', 10);
+let step = parseInt(new URLSearchParams(location.search).get('step') || localStorage.getItem('vf.step') || '0', 10);
 let H = null; // health
 let selSeg = null, saveTimer = null, pollTimer = null, picker = { tab: 'search', source: 'pexels', kind: 'image', q: '', page: 1, cands: [], loading: false, err: null };
 
@@ -45,6 +45,7 @@ async function load() {
   $('#lang').innerHTML = P.langs.map(l => `<option ${l === lang ? 'selected' : ''}>${l}</option>`).join('');
   $('#issues').innerHTML = P.issues ? `<div class="banner err">⚠ ${esc(P.issues)}</div>` : '';
   if (!H) await refreshHealth();
+  if (!step) { const d = stepStatus(); step = (d.findIndex(x => !x) + 1) || 4; }   // first open: land on the first unfinished step
   render();
 }
 async function refreshHealth() {
@@ -132,12 +133,25 @@ function viewScript(v) {
     const paras = $('#script').value.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
     if (!paras.length) return;
     if (segs.length && !confirm(`将替换现有 ${segs.length} 段（画面配置会丢失）。继续？`)) return;
-    raw.segments = paras.map((p, i) => {
+    // long paragraphs are split on sentence ends into ~50-word segments (one picture per idea)
+    const pieces = [];
+    for (const p of paras) {
       let label = null, text = p;
       const m = p.match(/^#\s*(.+)\n([\s\S]*)$/); if (m) { label = m[1].trim(); text = m[2].trim(); }
-      const s = { id: `seg${i + 1}`, text: isBase() ? text : '(en)', clips: [] };
-      if (!isBase()) s[textKey()] = text;
-      if (label) s[labelKey()] = label;
+      const sentences = text.match(/[^.!?。！？]+[.!?。！？]+["”』」]?|[^.!?。！？]+$/g) || [text];
+      let buf = '', first = true;
+      const push = () => { if (buf.trim()) { pieces.push({ text: buf.trim(), label: first ? label : null }); first = false; buf = ''; } };
+      for (const sen of sentences) {
+        const words = (buf + sen).trim().split(/\s+/).length, cjk = (buf + sen).length;
+        if (buf && (words > 60 || cjk > 140)) push();
+        buf += sen;
+      }
+      push();
+    }
+    raw.segments = pieces.map((pc, i) => {
+      const s = { id: `seg${i + 1}`, text: isBase() ? pc.text : '(en)', clips: [] };
+      if (!isBase()) s[textKey()] = pc.text;
+      if (pc.label) s[labelKey()] = pc.label;
       return s;
     });
     markDirty(true);
@@ -271,6 +285,8 @@ function viewVisuals(v) {
           </div>`).join('')}
           <div class="clip" style="display:flex;align-items:center;justify-content:center;min-height:120px;border-style:dashed"><span class="muted">← 在下面添加片段</span></div>
         </div>
+        <div class="row"><button id="previewBtn">▶ 预览这一段（草稿质量）</button><button class="small" id="dupBtn" title="复制这一段到后面">复制一段</button><span class="muted" id="previewInfo"></span></div>
+        <div id="previewBox"></div>
         <div class="row"><label>片段不够长时 <select id="fit"><option value="stretch" ${seg.fit !== 'trim' ? 'selected' : ''}>延长/循环最后一个片段</option><option value="trim" ${seg.fit === 'trim' ? 'selected' : ''}>同上（保留字段）</option></select></label>
           <label>说完停顿 <input id="pause" type="number" step="0.1" min="0" style="width:64px" value="${seg.pause_after ?? 0.5}"> s</label></div>
       </div>
@@ -284,8 +300,23 @@ function viewVisuals(v) {
       </div>
     </div>
   </div>`;
+  const autoBtn = document.createElement('button'); autoBtn.className = 'small'; autoBtn.style.marginBottom = '8px'; autoBtn.textContent = '✨ 没画面的段一键自动配图';
+  autoBtn.title = '按每段旁白的关键词生成搜索片段（渲染时自动取第一张），之后可逐段替换';
+  autoBtn.onclick = async () => { if (!await save()) return; autoBtn.disabled = true; try { const j = await api(`/api/autofill?lang=${lang}`, {}); await load(); $('#issues').innerHTML = `<div class="banner info">已为 ${j.filled} 段生成 ${j.source} 搜索片段，渲染时自动取第一张；不满意的段点开重选。</div>`; } catch (e) { alert(e.message); } };
+  $('#storyboard').prepend(autoBtn);
   $('#storyboard').onclick = e => { const c = e.target.closest('.sb-card'); if (c) { selSeg = c.dataset.id; picker.cands = []; picker.q = ''; render(); } };
   $('#fit').onchange = e => { seg.fit = e.target.value; markDirty(); };
+  $('#previewBtn').onclick = async () => {
+    if (!seg.clips.length) return alert('先给这一段加画面');
+    if (!await save()) return;
+    const b = $('#previewBtn'); b.disabled = true; $('#previewInfo').textContent = '渲染中（配音 + 画面，通常 5–30 秒）…';
+    try { const j = await api(`/api/preview?lang=${lang}`, { id: seg.id });
+      $('#previewBox').innerHTML = `<video controls autoplay style="max-width:640px;margin:6px 0" src="${fileUrl(j.video)}?t=${j.stamp}"></video>`;
+      $('#previewInfo').textContent = `${fmt(j.duration)} · 草稿质量，成片会更清晰`; }
+    catch (e) { $('#previewInfo').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+    b.disabled = false;
+  };
+  $('#dupBtn').onclick = () => { const i = raw.segments.indexOf(seg); const copy = JSON.parse(JSON.stringify(seg)); copy.id = newId(); raw.segments.splice(i + 1, 0, copy); selSeg = copy.id; markDirty(true); };
   $('#pause').onchange = e => { seg.pause_after = parseFloat(e.target.value) || 0; markDirty(); };
   $('#clipstrip').onclick = async e => {
     const b = e.target.closest('button[data-act]'); if (!b) return;
@@ -449,12 +480,15 @@ function viewRender(v) {
       <div><label class="muted">字幕</label><select id="f_burn"><option value="false" ${!nestedGet('subtitles', 'burn') ? 'selected' : ''}>只出 .srt（上传时作字幕轨）</option><option value="true" ${nestedGet('subtitles', 'burn') ? 'selected' : ''}>烧进画面</option></select></div>
       <div><label class="muted">片段间转场（秒，0 = 硬切）</label><input id="f_trans" type="number" step="0.1" min="0" max="2" value="${raw.transition ?? 0}"></div>
       <div><label class="muted">背景音乐</label><input id="f_bgm" value="${esc(raw.bgm?.file || '')}" placeholder="assets/bgm.mp3（留空则无）"></div>
+      <div><label class="muted">章节标题卡</label><select id="f_cards"><option value="false" ${!raw.auto_title_cards ? 'selected' : ''}>不加</option><option value="true" ${raw.auto_title_cards ? 'selected' : ''}>有章节名的段前加 3 秒标题卡（需 Remotion）</option></select></div>
+      <div><label class="muted">旁白响度归一</label><select id="f_norm"><option value="true" ${raw.normalize_audio !== false ? 'selected' : ''}>开（-16 LUFS，推荐）</option><option value="false" ${raw.normalize_audio === false ? 'selected' : ''}>关</option></select></div>
     </div>
     <div class="row" style="margin-top:10px">
       <button class="primary" id="buildBtn">▶ 渲染</button>
       <button id="cancelBtn" hidden>停止</button>
       <span class="pill" id="buildState">空闲</span><span class="muted" id="elapsed"></span>
     </div>
+    <div class="progress" id="progress" hidden><div class="bar" id="bar"></div><span id="ptext"></span></div>
     <pre class="log" id="log" hidden></pre>
   </div>
   <div class="card" id="result" ${o.final ? '' : 'hidden'}>
@@ -466,6 +500,8 @@ function viewRender(v) {
   $('#f_quality').onchange = e => { raw.quality = e.target.value; markDirty(); };
   $('#f_burn').onchange = e => nestedSet('subtitles', 'burn', e.target.value === 'true');
   $('#f_trans').onchange = e => { raw.transition = parseFloat(e.target.value) || 0; markDirty(); };
+  $('#f_cards').onchange = e => { raw.auto_title_cards = e.target.value === 'true'; markDirty(); };
+  $('#f_norm').onchange = e => { raw.normalize_audio = e.target.value === 'true'; markDirty(); };
   $('#f_bgm').onchange = e => { const f = e.target.value.trim(); raw.bgm = f ? { ...(raw.bgm || {}), file: f, volume_db: raw.bgm?.volume_db ?? -18, fade_out: raw.bgm?.fade_out ?? 3 } : null; markDirty(); };
   $('#buildBtn').onclick = async () => {
     if (!await save()) return;
@@ -484,6 +520,11 @@ async function poll() {
   pill.className = 'pill ' + ({ running: 'run', done: 'ok', error: 'err', cancelled: 'warn' }[st.state] || '');
   $('#buildBtn').disabled = st.state === 'running'; $('#cancelBtn').hidden = st.state !== 'running';
   $('#elapsed').textContent = st.started ? `${Math.round(st.elapsed)} s` : '';
+  const pr = $('#progress'); if (pr) {
+    pr.hidden = !(st.state === 'running' || st.state === 'done');
+    $('#bar').style.width = `${st.progress || 0}%`;
+    $('#ptext').textContent = st.state === 'running' ? `${st.progress || 0}%${st.segments_total ? ` · 段 ${st.segments_done}/${st.segments_total}` : ''}${st.eta ? ` · 预计还需 ${fmt(st.eta)}` : ''}` : (st.state === 'done' ? '完成' : '');
+  }
   if (st.lines.length) { $('#log').hidden = false; $('#log').textContent = st.lines.join('\n'); $('#log').scrollTop = 1e9; }
   if (st.state === 'running') pollTimer = setTimeout(poll, 1000);
   else if (st.finished && Date.now() / 1000 - st.finished < 4 && !poll.reloaded) { poll.reloaded = true; await load(); setTimeout(() => poll.reloaded = false, 5000); }

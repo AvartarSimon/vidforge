@@ -70,6 +70,17 @@ class SegmentRender(unittest.TestCase):
             self.assertEqual(len(parts), 3)
             self.assertAlmostEqual(ffmpeg.duration(parts[0]), 2.0, delta=0.1)
 
+    def test_silent_narration_does_not_break_loudnorm(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            img, audio, out = root / "a.png", root / "n.mp3", root / "seg.mp4"
+            ffmpeg.run(["-y", "-f", "lavfi", "-i", "color=c=red:s=800x450", "-frames:v", "1", str(img)])
+            ffmpeg.run(["-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "2", "-c:a", "libmp3lame", str(audio)])
+            self.assertTrue(render.audio_is_silent(audio))
+            p = proj.Project(title="t", segments=[], root=root, width=320, height=180, fps=30, quality="draft")
+            dur = render.render_segment(p, Segment(id="q", text="x", pause_after=0, clips=[Clip(image=img)]), audio, out, encoder="libx264")
+            self.assertAlmostEqual(ffmpeg.duration(out), dur, delta=0.15)
+
     def test_crossfade_join_keeps_total_length(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

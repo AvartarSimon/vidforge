@@ -87,6 +87,10 @@ details summary { cursor:pointer; color:var(--muted); font-size:12px; margin:6px
 .need { font-size:13px; }
 .need b { font-weight:600; }
 
+.progress { position:relative; height:22px; background:var(--line); border-radius:6px; margin-top:10px; overflow:hidden; }
+.progress .bar { position:absolute; left:0; top:0; bottom:0; background:var(--ok); transition:width .6s; }
+.progress span { position:relative; display:block; text-align:center; font-size:12px; line-height:22px; color:var(--fg); }
+
 /* trim dialog */
 .modal { position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; z-index:50; }
 .modal .box { background:var(--card); border-radius:12px; padding:16px; width:min(860px, 94vw); }
