@@ -30,6 +30,35 @@
       "pause_after": 0.6
     },
     {
+      "id": "timeline",
+      "label": "From eruption to famine",
+      "text": "April 1815, the eruption. June 1816, snow in New England. July, the harvest fails across France. By 1817, bread riots.",
+      "remotion": {
+        "composition": "Timeline",
+        "props": {
+          "title": "From eruption to famine",
+          "events": [
+            {
+              "date": "Apr 1815",
+              "text": "Tambora erupts"
+            },
+            {
+              "date": "Jun 1816",
+              "text": "Snow in New England"
+            },
+            {
+              "date": "Jul 1816",
+              "text": "Harvest fails in France"
+            },
+            {
+              "date": "1817",
+              "text": "Bread riots"
+            }
+          ]
+        }
+      }
+    },
+    {
       "id": "europe",
       "text": "By the following June, snow was falling in New England and crops were failing across France and Germany. Bread riots followed. Nobody yet understood why.",
       "image": "assets/03_europe.jpg",
@@ -42,6 +71,37 @@
       "image": "assets/04_legacy.jpg",
       "motion": "pan_left",
       "pause_after": 0.6
+    },
+    {
+      "id": "vei",
+      "label": "How big was it",
+      "text": "On the Volcanic Explosivity Index, Tambora scores a seven. Krakatoa, the eruption everyone remembers, only a six.",
+      "remotion": {
+        "composition": "BarChart",
+        "props": {
+          "title": "Volcanic Explosivity Index",
+          "max": 8,
+          "items": [
+            {
+              "label": "Tambora 1815",
+              "value": 7
+            },
+            {
+              "label": "Krakatoa 1883",
+              "value": 6
+            },
+            {
+              "label": "Pinatubo 1991",
+              "value": 6
+            },
+            {
+              "label": "St. Helens 1980",
+              "value": 5
+            }
+          ],
+          "source": "Source: Global Volcanism Program"
+        }
+      }
     }
   ]
 }

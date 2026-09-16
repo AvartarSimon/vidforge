@@ -59,6 +59,15 @@ def build(project: Project, *, only_tts: bool = False, burn: bool | None = None)
     from . import assets
     assets.resolve_all(project, narration_len, log=_log)
 
+    # 1c. Animated graphics: render Remotion compositions to clips (cached), used as video backgrounds
+    for seg in project.segments:
+        if seg.remotion is not None:
+            from . import remotion
+            seg.video = remotion.render(
+                seg.remotion.composition, seg.remotion.props, duration=narration_len[seg.id],
+                fps=project.fps, width=project.width, height=project.height,
+                out_dir=bd / "remotion", log=_log)
+
     # 2. Render each segment; accumulate the timeline
     clips: list[Path] = []
     timeline: list[dict] = []
@@ -72,7 +81,8 @@ def build(project: Project, *, only_tts: bool = False, burn: bool | None = None)
         timeline.append({"id": seg.id, "label": seg.label, "start": round(cursor, 3), "end": round(cursor + dur, 3)})
         cursor += dur
         clips.append(clip)
-        _log(f"  clip {seg.id:<12} {dur:6.2f}s  ({'video' if seg.video else seg.motion})")
+        kind = seg.remotion.composition if seg.remotion else ("video" if seg.video else seg.motion)
+        _log(f"  clip {seg.id:<12} {dur:6.2f}s  ({kind})")
 
     (bd / "timeline.json").write_text(json.dumps(timeline, indent=1), encoding="utf-8")
     srt = bd / "final.srt"

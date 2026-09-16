@@ -35,10 +35,17 @@ class Segment:
     pause_after: float = 0.5         # seconds of silence appended after the narration
     voice: str | None = None         # override the project voice for this segment
     label: str | None = None         # chapter name (defaults to a prettified id)
+    remotion: RemotionSpec | None = None   # animated graphics instead of image/video
 
     @property
     def needs_asset(self) -> bool:
-        return self.image is None and self.video is None
+        return self.image is None and self.video is None and self.remotion is None
+
+
+@dataclass
+class RemotionSpec:
+    composition: str                 # TitleCard | Timeline | BarChart
+    props: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -135,29 +142,36 @@ def load(path: str | Path) -> Project:
         text = str(_req(s, "text", ctx)).strip()
         if not text:
             raise ProjectError(f"{ctx}: text is empty")
-        image = video = source = None
+        image = video = source = remotion = None
         source_kind = "image"
-        if "video" in s and "image" in s:
-            raise ProjectError(f"{ctx}: give either 'image' or 'video', not both")
-        key = "video" if "video" in s else "image"
-        spec = str(_req(s, key, ctx))
-        if spec.startswith(ASSET_PREFIXES):
-            source, source_kind = spec, key
+        visuals = [k for k in ("image", "video", "remotion") if k in s]
+        if len(visuals) != 1:
+            raise ProjectError(f"{ctx}: give exactly one of 'image', 'video', 'remotion' (got {visuals or 'none'})")
+        key = visuals[0]
+        if key == "remotion":
+            r = s["remotion"]
+            if not isinstance(r, dict) or "composition" not in r:
+                raise ProjectError(f"{ctx}: remotion needs {{'composition': …, 'props': {{…}}}}")
+            remotion = RemotionSpec(composition=str(r["composition"]), props=dict(r.get("props", {})))
         else:
-            local = resolve(spec)
-            if not local.exists():
-                raise ProjectError(f"{ctx}: {key} not found: {local}")
-            if key == "video":
-                video = local
+            spec = str(s[key])
+            if spec.startswith(ASSET_PREFIXES):
+                source, source_kind = spec, key
             else:
-                image = local
+                local = resolve(spec)
+                if not local.exists():
+                    raise ProjectError(f"{ctx}: {key} not found: {local}")
+                if key == "video":
+                    video = local
+                else:
+                    image = local
         motion = s.get("motion", "zoom_in")
         if motion not in MOTIONS:
             raise ProjectError(f"{ctx}: motion '{motion}' not in {MOTIONS}")
         segments.append(Segment(
             id=sid, text=text, image=image, video=video, source=source, source_kind=source_kind,
             motion=motion, pause_after=float(s.get("pause_after", 0.5)), voice=s.get("voice"),
-            label=s.get("label"),
+            label=s.get("label"), remotion=remotion,
         ))
     if not segments:
         raise ProjectError("project has no segments")

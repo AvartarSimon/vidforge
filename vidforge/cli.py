@@ -82,6 +82,15 @@ def cmd_upload(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_remotion(args: argparse.Namespace) -> int:
+    from . import remotion
+    if args.action == "setup":
+        remotion.setup()
+    elif args.action == "studio":
+        remotion.studio()
+    return 0
+
+
 def cmd_doctor(_: argparse.Namespace) -> int:
     print(f"vidforge {__version__} · python {sys.version.split()[0]}")
     ffmpeg.print_versions()
@@ -90,6 +99,11 @@ def cmd_doctor(_: argparse.Namespace) -> int:
         print("edge-tts: ok")
     except ImportError:
         print("edge-tts: MISSING (pip install edge-tts)")
+    import shutil as _sh
+    from .remotion import APP_DIR
+    node = _sh.which("node")
+    print(f"node: {node or 'NOT FOUND (needed only for remotion segments)'}"
+          + (" · remotion installed" if (APP_DIR / "node_modules").exists() else " · remotion not installed (vidforge remotion setup)"))
     dotenv = env.load_dotenv()
     print(f".env: {dotenv or 'none found'}")
     import os
@@ -137,6 +151,10 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--privacy", choices=["private", "unlisted", "public"], help="override youtube.privacy")
     s.add_argument("--publish-at", help="schedule, ISO 8601 UTC e.g. 2026-10-01T09:00:00Z (video stays private until then)")
     s.set_defaults(fn=cmd_upload)
+
+    s = sub.add_parser("remotion", help="animated graphics: 'setup' installs Remotion once, 'studio' opens the editor")
+    s.add_argument("action", choices=["setup", "studio"])
+    s.set_defaults(fn=cmd_remotion)
 
     s = sub.add_parser("doctor", help="check ffmpeg / dependencies")
     s.set_defaults(fn=cmd_doctor)

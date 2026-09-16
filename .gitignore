@@ -5,3 +5,5 @@ __pycache__/
 examples/*/build/
 examples/*/assets/
 .env
+vidforge/remotion/app/node_modules/
+vidforge/remotion/app/out/

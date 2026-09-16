@@ -146,6 +146,40 @@ class ProjectAssetSpecs(unittest.TestCase):
                 proj.load(root)
 
 
+class RemotionSpecs(unittest.TestCase):
+    def test_remotion_segment_parses_and_needs_no_asset(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "project.json").write_text(json.dumps({"title": "t", "segments": [
+                {"id": "tl", "text": "a", "remotion": {"composition": "Timeline", "props": {"events": []}}}]}),
+                encoding="utf-8")
+            p = proj.load(root)
+            self.assertEqual(p.segments[0].remotion.composition, "Timeline")
+            self.assertFalse(p.segments[0].needs_asset)
+            (root / "project.json").write_text(json.dumps({"title": "t", "segments": [
+                {"id": "x", "text": "a", "image": "a.jpg", "remotion": {"composition": "TitleCard"}}]}), encoding="utf-8")
+            with self.assertRaises(proj.ProjectError):
+                proj.load(root)
+
+    def test_render_uses_cache_key_from_props(self):
+        from vidforge import remotion
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(remotion, "_remotion_cli", return_value=["x"]),                 mock.patch("subprocess.run") as run:
+            def fake_run(cmd, **kw):
+                Path(cmd[4]).write_bytes(b"v")   # ["remotion", "render", entry, composition, out, ...]
+                return mock.Mock(returncode=0, stderr="", stdout="")
+            run.side_effect = fake_run
+            a = remotion.render("TitleCard", {"title": "A"}, duration=2, fps=30, width=320, height=180, out_dir=Path(td), log=lambda *_: None)
+            b = remotion.render("TitleCard", {"title": "A"}, duration=2, fps=30, width=320, height=180, out_dir=Path(td), log=lambda *_: None)
+            c = remotion.render("TitleCard", {"title": "B"}, duration=2, fps=30, width=320, height=180, out_dir=Path(td), log=lambda *_: None)
+            self.assertEqual(a, b)
+            self.assertNotEqual(a, c)
+            self.assertEqual(run.call_count, 2)
+            props = json.loads(a.with_suffix(".props.json").read_text(encoding="utf-8"))
+            self.assertEqual(props["durationInFrames"], 60)
+            with self.assertRaises(remotion.RemotionError):
+                remotion.render("Nope", {}, duration=1, fps=30, width=1, height=1, out_dir=Path(td))
+
+
 class VideoSegmentRender(unittest.TestCase):
     """Real ffmpeg: a 2 s test-pattern clip must be looped to cover a 5 s narration."""
 
