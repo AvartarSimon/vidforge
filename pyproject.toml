@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vidforge"
+version = "0.1.0"
+description = "Script-to-video assembly line: segmented script JSON -> TTS -> subtitles -> Ken Burns -> ffmpeg"
+requires-python = ">=3.10"
+dependencies = [
+    "edge-tts>=7.0",
+    "Pillow>=10.0",
+]
+
+[project.scripts]
+vidforge = "vidforge.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["vidforge*"]

@@ -1,0 +1,11 @@
+{
+  "title": "没有夏天的一年",
+  "language": "zh",
+  "voice": "zh-CN-YunxiNeural",
+  "rate": "-5%",
+  "subtitles": {"burn": true, "max_chars": 42, "font": "Microsoft YaHei", "font_size": 24},
+  "thumbnail_text": "没有夏天的\n一年",
+  "segments": [
+    {"id": "hook", "text": "一八一五年，地球另一端的一座火山，让整个欧洲失去了夏天。这就是“没有夏天的一年”的故事。", "image": "assets/01.jpg", "motion": "zoom_in", "pause_after": 0.6}
+  ]
+}

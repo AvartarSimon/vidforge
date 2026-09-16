@@ -1,0 +1,6 @@
+build/
+__pycache__/
+*.egg-info/
+.venv/
+examples/*/build/
+examples/*/assets/

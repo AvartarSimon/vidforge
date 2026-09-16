@@ -1,0 +1,47 @@
+{
+  "title": "The Year Without a Summer",
+  "language": "en",
+  "voice": "en-US-AndrewNeural",
+  "rate": "-3%",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "bgm": null,
+  "subtitles": {
+    "burn": true,
+    "max_chars": 42,
+    "font": "Arial",
+    "font_size": 22
+  },
+  "thumbnail_text": "THE YEAR\nWITHOUT A SUMMER",
+  "segments": [
+    {
+      "id": "hook",
+      "text": "In 1815, a volcano on the other side of the world cancelled summer in Europe. This is the story of the year without a summer.",
+      "image": "assets/01_hook.jpg",
+      "motion": "zoom_in",
+      "pause_after": 0.6
+    },
+    {
+      "id": "eruption",
+      "text": "Mount Tambora, on the island of Sumbawa, erupted with a force ten times greater than Krakatoa. It threw so much ash into the stratosphere that sunlight itself dimmed.",
+      "image": "assets/02_eruption.jpg",
+      "motion": "pan_right",
+      "pause_after": 0.6
+    },
+    {
+      "id": "europe",
+      "text": "By the following June, snow was falling in New England and crops were failing across France and Germany. Bread riots followed. Nobody yet understood why.",
+      "image": "assets/03_europe.jpg",
+      "motion": "zoom_out",
+      "pause_after": 0.6
+    },
+    {
+      "id": "legacy",
+      "text": "Out of that cold, wet summer came Frankenstein, written by Mary Shelley while trapped indoors by the rain. One eruption, one lost harvest, one monster that never died.",
+      "image": "assets/04_legacy.jpg",
+      "motion": "pan_left",
+      "pause_after": 0.6
+    }
+  ]
+}
