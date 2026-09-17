@@ -50,12 +50,11 @@ class ScriptParser(unittest.TestCase):
         segs = parse(text)
         self.assertEqual([s["label"] for s in segs if s["label"]], ["The Year Without a Summer", "The Volcano"])
         self.assertEqual(segs[0]["visual_hint"], "Mount Tambora volcano, 1815")
-        # a chapter's one Visual: line carries forward to its other paragraphs (a real script
-        # usually gives one Visual: per chapter, not one per paragraph — see test_forward_fill_*)
-        self.assertEqual(segs[1]["visual_hint"], "Mount Tambora volcano, 1815")
-        third = next(s for s in segs if s["text"].startswith("The story began"))
-        # ...but must NOT leak across a chapter boundary into the next one's own Visual:
-        self.assertEqual(third["visual_hint"], "Mount Tambora eruption, ash")
+        # one Visual:, two paragraphs -> merged into one segment (see test_merge_visual_scenes_*)
+        self.assertIn("It should be summer", segs[0]["text"])
+        second = next(s for s in segs if s["text"].startswith("The story began"))
+        # ...must NOT leak across a chapter boundary into the next one's own Visual:
+        self.assertEqual(second["visual_hint"], "Mount Tambora eruption, ash")
 
     def test_bold_title_is_recognised_as_a_heading(self):
         """A very common real-world case: the AI ignores 'put ## before chapter titles' and
@@ -79,21 +78,35 @@ class ScriptParser(unittest.TestCase):
         segs = parse("## Chapter\nVisual: first shot\n\nFirst paragraph.\n\nVisual: second shot\n\nSecond paragraph.")
         self.assertEqual([s["visual_hint"] for s in segs], ["first shot", "second shot"])
 
-    def test_forward_fill_one_visual_per_chapter_covers_all_its_paragraphs(self):
-        """The dominant real-world pattern (confirmed against actual GPT output for a 37-chapter
-        script): one Visual: line right after the chapter title, then 2-4 short paragraphs with
-        no Visual: of their own. Without forward-fill, 61% of the resulting segments had no image
-        hint at all — this is the concrete "拆分逻辑不太好使" the user hit, not a crash."""
+    def test_merge_visual_scenes_one_visual_per_chapter_becomes_one_segment(self):
+        """The dominant real-world pattern, confirmed twice against actual GPT output (a
+        37-chapter and a 48-chapter script): one Visual: line right after the chapter title,
+        then 2-4 short paragraphs with no Visual: of their own. Splitting on every blank line
+        fragmented the 48-chapter script into 117 segments — the concrete "应该是 48 段吗"
+        the user hit. A Visual: line is the deliberate "new picture" signal; a paragraph with
+        none of its own is prose continuing the same scene, not a separate picture, so it merges
+        into the segment its chapter's Visual: started instead of becoming its own."""
         text = ("Chapter 1: Intro\n\nVisual: a\n\nFirst.\n\nSecond.\n\nThird.\n\n"
                 "Chapter 2: Next\n\nVisual: b\n\nFourth.\n\nFifth.")
         segs = parse(text)
-        self.assertEqual([s["visual_hint"] for s in segs], ["a", "a", "a", "b", "b"])
-        self.assertEqual([s["label"] for s in segs], ["Intro", None, None, "Next", None])
+        self.assertEqual([s["visual_hint"] for s in segs], ["a", "b"])
+        self.assertEqual([s["label"] for s in segs], ["Intro", "Next"])
+        self.assertEqual(segs[0]["text"], "First. Second. Third.")
+        self.assertEqual(segs[1]["text"], "Fourth. Fifth.")
 
-    def test_forward_fill_stops_at_a_fresh_visual_line_within_the_same_chapter(self):
+    def test_merge_visual_scenes_splits_again_at_a_fresh_visual_line(self):
         text = "Chapter 1: Intro\n\nVisual: a\n\nFirst.\n\nVisual: b\n\nSecond.\n\nThird."
         segs = parse(text)
-        self.assertEqual([s["visual_hint"] for s in segs], ["a", "b", "b"])
+        self.assertEqual([s["visual_hint"] for s in segs], ["a", "b"])
+        self.assertEqual([s["text"] for s in segs], ["First.", "Second. Third."])
+
+    def test_merge_only_applies_under_a_heading_when_visual_lines_are_actually_used(self):
+        """No Visual: anywhere in the document -> fall back to one paragraph = one segment,
+        the only signal available (this is test_paragraphs_under_a_heading_stay_separate_segments'
+        exact scenario — merging would silently combine genuinely distinct ideas with no
+        opt-out, so it only kicks in once the script actually uses the Visual: convention)."""
+        segs = parse("## Chapter\nFirst idea, no visual line anywhere in this doc.\n\nSecond idea.")
+        self.assertEqual(len(segs), 2)
 
     def test_empty(self):
         self.assertEqual(parse("  \n "), [])

@@ -123,6 +123,7 @@ def parse(text: str) -> list[dict]:
     cur_para = Para()
     pending_visual: str | None = None      # a Visual:/画面: line waiting for the paragraph it describes
     structured = False
+    has_visual = False                     # did the document use Visual:/画面: lines at all?
 
     def flush_para() -> None:
         nonlocal cur_para
@@ -158,6 +159,7 @@ def parse(text: str) -> list[dict]:
             mv = _VISUAL.match(line)
             if mv:
                 structured = True
+                has_visual = True
                 v = mv.group("t").strip()
                 if cur_para.lines:                        # paragraph already started: attach directly
                     cur_para.visual = f"{cur_para.visual}; {v}" if cur_para.visual else v
@@ -178,16 +180,39 @@ def parse(text: str) -> list[dict]:
             if b.label:                                   # heading with no body: a chapter card
                 segments.append({"label": b.label, "text": b.label, "visual_hint": None})
             continue
-        # each paragraph is one idea = one segment; under a heading we tolerate longer paragraphs
+        # under a heading we tolerate longer combined paragraphs before splitting on length
         limits = (90, 220) if structured and b.label is not None else (60, 140)
         first_of_block = True
-        last_visual: str | None = None    # a chapter's Visual: line usually appears once, before
-        for para in b.paras:              # its first paragraph — carry it forward to the rest of
-            if para.visual:                # the chapter's paragraphs instead of leaving them with
-                last_visual = para.visual  # no image hint at all, until a fresher Visual: overrides it
-            body = " ".join(para.lines)
-            for i, piece in enumerate(_split_long(body, *limits)):
-                segments.append({"label": b.label if first_of_block else None, "text": piece,
-                                 "visual_hint": last_visual if i == 0 else None})
-                first_of_block = False
+        if b.label is not None and has_visual:
+            # A chapter's Visual: line is the deliberate "new picture" signal, not a blank line:
+            # the common real-world pattern is one Visual: right after the chapter title, then
+            # 2-4 short paragraphs with no Visual: of their own — those are prose continuing the
+            # same scene, not each a separate picture. Merge them into one segment per Visual:
+            # instead of one per paragraph, or a script with one Visual: per chapter fragments
+            # into several times as many segments as chapters (confirmed against real output:
+            # 48 chapters -> 117 segments).
+            runs: list[tuple[str | None, list[str]]] = []
+            for para in b.paras:
+                if para.visual or not runs:
+                    runs.append((para.visual, list(para.lines)))
+                else:
+                    runs[-1][1].extend(para.lines)
+            for visual, para_lines in runs:
+                body = " ".join(para_lines)
+                for i, piece in enumerate(_split_long(body, *limits)):
+                    segments.append({"label": b.label if first_of_block else None, "text": piece,
+                                     "visual_hint": visual if i == 0 else None})
+                    first_of_block = False
+        else:
+            # No Visual: lines anywhere in the document (or an unheaded block): fall back to one
+            # paragraph = one segment, the only signal available for where a segment should end.
+            last_visual: str | None = None
+            for para in b.paras:
+                if para.visual:
+                    last_visual = para.visual
+                body = " ".join(para.lines)
+                for i, piece in enumerate(_split_long(body, *limits)):
+                    segments.append({"label": b.label if first_of_block else None, "text": piece,
+                                     "visual_hint": last_visual if i == 0 else None})
+                    first_of_block = False
     return segments
