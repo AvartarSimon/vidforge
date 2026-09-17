@@ -199,9 +199,12 @@ def parse(text: str) -> list[dict]:
                     runs[-1][1].extend(para.lines)
             for visual, para_lines in runs:
                 body = " ".join(para_lines)
-                for i, piece in enumerate(_split_long(body, *limits)):
+                # a run that's too long still describes one scene once merged — every piece it
+                # gets split into keeps the same hint, unlike the per-paragraph fallback below
+                # (there, splitting only happens for one already-standalone overlong paragraph).
+                for piece in _split_long(body, *limits):
                     segments.append({"label": b.label if first_of_block else None, "text": piece,
-                                     "visual_hint": visual if i == 0 else None})
+                                     "visual_hint": visual})
                     first_of_block = False
         else:
             # No Visual: lines anywhere in the document (or an unheaded block): fall back to one

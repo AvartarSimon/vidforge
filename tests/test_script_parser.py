@@ -100,6 +100,15 @@ class ScriptParser(unittest.TestCase):
         self.assertEqual([s["visual_hint"] for s in segs], ["a", "b"])
         self.assertEqual([s["text"] for s in segs], ["First.", "Second. Third."])
 
+    def test_a_too_long_merged_scene_keeps_its_visual_hint_on_every_split_piece(self):
+        """A merged run that ends up over the length limit still describes one scene — every
+        piece it splits into should keep the hint, not just the first (unlike a single overlong
+        paragraph in the no-Visual: fallback, which was never one merged scene to begin with)."""
+        long_paras = "\n\n".join(f"Sentence number {i} is here." for i in range(30))
+        segs = parse(f"Chapter 1: Intro\n\nVisual: a\n\n{long_paras}")
+        self.assertGreater(len(segs), 1)
+        self.assertTrue(all(s["visual_hint"] == "a" for s in segs))
+
     def test_merge_only_applies_under_a_heading_when_visual_lines_are_actually_used(self):
         """No Visual: anywhere in the document -> fall back to one paragraph = one segment,
         the only signal available (this is test_paragraphs_under_a_heading_stay_separate_segments'
