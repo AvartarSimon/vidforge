@@ -55,6 +55,17 @@ class ScriptParser(unittest.TestCase):
         third = next(s for s in segs if s["text"].startswith("The story began"))
         self.assertEqual(third["visual_hint"], "Mount Tambora eruption, ash")
 
+    def test_bold_title_is_recognised_as_a_heading(self):
+        """A very common real-world case: the AI ignores 'put ## before chapter titles' and
+        bolds the title instead — a whole line wrapped in **...** with nothing else on it."""
+        segs = parse("**The Year Without a Summer**\n\nImagine waking up in June.\n\n"
+                      "**The Volcano**\n\nThe story began one year earlier.")
+        self.assertEqual([s["label"] for s in segs], ["The Year Without a Summer", "The Volcano"])
+
+    def test_bold_sentence_is_not_a_heading(self):
+        segs = parse("**This whole sentence is bolded for emphasis, not a chapter title at all.**\n\nMore text.")
+        self.assertIsNone(segs[0]["label"])
+
     def test_visual_line_itself_is_never_mistaken_for_a_bare_title(self):
         """A 'Visual:'/'画面:' line is short and has no ending punctuation too — it must not
         become a heading just because the line after it also happens to be a marker line."""

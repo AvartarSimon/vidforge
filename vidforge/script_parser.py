@@ -30,6 +30,14 @@ _HEADING = [
     re.compile(r"^\s*(?:Part|Chapter|Section|Segment|Scene|Act)\s*\d+\s*[:：.\-–]?\s*(?P<t>.*)$", re.I),
     re.compile(r"^\s*(?:[一二三四五六七八九十]+、)\s*(?P<t>.+)$"),
     re.compile(r"^\s*【(?P<t>[^】]{1,40})】\s*$"),
+]
+# Ambiguous patterns: the marker itself (digits, **bold**) can also occur inside an ordinary
+# sentence, so these additionally require the captured text to look like a title, not a sentence
+# (short, no terminal punctuation) — unlike the markers above, which are unambiguous on their own.
+_HEADING_AMBIGUOUS = [
+    # a whole line wrapped in **bold** (optionally ***/__): many AIs bold chapter titles instead
+    # of using "##" despite being asked to.
+    re.compile(r"^\s*(?:\*\*\*|\*\*|__)(?P<t>(?!\s*$).+?)(?:\*\*\*|\*\*|__)\s*:?\s*$"),
     re.compile(r"^\s*(?:\d{1,2})[.)、．]\s+(?P<t>.{1,60})$"),                        # "1. Title" (short line only)
 ]
 _NARR = re.compile(r"^\s*(?:旁白|解说|配音|台词|Narration|Narrator|VO|Voice[- ]?over)\s*[:：]\s*(?P<t>.*)$", re.I)
@@ -58,9 +66,13 @@ def _heading(line: str) -> str | None:
     for rx in _HEADING:
         m = rx.match(line)
         if m:
+            return (m.group("t") or "").strip().strip("*_ ") or "…"
+    for rx in _HEADING_AMBIGUOUS:
+        m = rx.match(line)
+        if m:
             t = (m.group("t") or "").strip().strip("*_ ")
-            # "1. Title" must look like a title, not a sentence
-            if rx is _HEADING[-1] and (len(t.split()) > 10 or t.endswith((".", "。", "!", "！", "?", "？"))):
+            # must look like a title, not a full sentence someone just happened to bold/number
+            if len(t.split()) > 10 or t.endswith((".", "。", "!", "！", "?", "？")):
                 return None
             return t or "…"
     return None
