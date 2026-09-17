@@ -7,6 +7,7 @@ next one would exceed `max_chars`, or the gap to the next word exceeds `max_gap`
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
@@ -127,6 +128,53 @@ def build_cues(words: list[Word], *, offset: float, max_chars: int, max_gap: flo
         if a.end > b.start:
             a.end = b.start
     return cues
+
+
+_SENT_SPLIT = re.compile(r"(?<=[.!?。！？；;])\s*")
+
+
+def bilingual(cues: list[Cue], alt_text: str) -> list[Cue]:
+    """Second-language line under each cue. Sentences are paired 1:1 when both texts have the
+    same number of sentences; otherwise the alt text is spread over the cues in proportion to
+    their duration, cutting at the nearest punctuation or space."""
+    if not cues or not alt_text.strip():
+        return cues
+    en_groups: list[list[Cue]] = [[]]
+    for c in cues:
+        en_groups[-1].append(c)
+        if c.text.rstrip()[-1:] in ".!?。！？":
+            en_groups.append([])
+    en_groups = [g for g in en_groups if g]
+    alt_sents = [s for s in _SENT_SPLIT.split(alt_text.strip()) if s.strip()]
+    out: list[Cue] = []
+    if len(alt_sents) == len(en_groups):
+        for group, sent in zip(en_groups, alt_sents):
+            out += _spread(group, sent)
+    else:
+        out = _spread(cues, alt_text.strip())
+    return out
+
+
+def _spread(group: list[Cue], text: str) -> list[Cue]:
+    """Attach `text` (one sentence) as line 2 of its cues. The sentence is cut into clauses at
+    punctuation; each cue shows the clause whose time share covers the cue's midpoint, so a
+    clause that spans several cues is repeated rather than sliced mid-word."""
+    clauses = [c for c in re.split(r"(?<=[，,、；;：:])", text) if c.strip()]
+    if len(clauses) <= 1 or len(group) == 1:
+        return [Cue(c.start, c.end, c.text + "\n" + text.strip()) for c in group]
+    total_chars = sum(len(c) for c in clauses)
+    bounds, acc = [], 0.0
+    for cl in clauses:                       # cumulative character share of each clause
+        acc += len(cl) / total_chars
+        bounds.append(acc)
+    t0, t1 = group[0].start, group[-1].end
+    span = max(0.2, t1 - t0)
+    out = []
+    for c in group:
+        mid = ((c.start + c.end) / 2 - t0) / span
+        idx = next((i for i, b in enumerate(bounds) if mid <= b), len(clauses) - 1)
+        out.append(Cue(c.start, c.end, c.text + "\n" + clauses[idx].strip()))
+    return out
 
 
 def _ts(t: float) -> str:

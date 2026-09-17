@@ -202,6 +202,25 @@
       "title": "没有夏天的一年",
       "thumbnail_text": "没有夏天的\n一年",
       "voice": "zh-CN-YunxiNeural"
+    },
+    "en-zh": {
+      "text_from": "en",
+      "title": "The Year Without a Summer（双语学习版）",
+      "outro_vocab": 6,
+      "subtitles": {
+        "burn": true,
+        "bilingual": true,
+        "bilingual_lang": "zh",
+        "style": "box",
+        "font": "Microsoft YaHei",
+        "font_size": 22
+      },
+      "youtube": {
+        "description": "英文原声 + 中英双语字幕 + 本集词汇。",
+        "tags": [
+          "英语学习"
+        ]
+      }
     }
   },
   "youtube": {

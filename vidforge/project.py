@@ -28,7 +28,7 @@ from typing import Any
 
 MOTIONS = ("zoom_in", "zoom_out", "pan_left", "pan_right", "none")
 FITS = ("stretch", "trim")
-ASSET_PREFIXES = ("pexels:", "pixabay:", "commons:", "wikimedia:", "google:", "google_all:", "baidu:")
+ASSET_PREFIXES = ("pexels:", "pixabay:", "commons:", "wikimedia:", "google:", "google_all:", "baidu:", "openverse:", "archive:")
 QUALITIES = ("draft", "final")
 
 
@@ -114,6 +114,7 @@ class Segment:
     pause_after: float = 0.5         # seconds of silence appended after the narration
     voice: str | None = None         # override the project voice for this segment
     label: str | None = None         # chapter name (defaults to a prettified id)
+    alt_text: str | None = None      # the other language's narration (bilingual subtitles)
 
     # -- conveniences for code that only needs "the" visual (thumbnail, UI card) --------
     @property
@@ -204,6 +205,8 @@ class SubtitleStyle:
     font_size: int = 22
     margin_v: int = 48
     style: str = "outline"           # outline | box (semi-transparent background, YouTube-style)
+    bilingual: bool = False          # second line in `bilingual_lang` (learner edition)
+    bilingual_lang: str = "zh"
 
 
 @dataclass
@@ -224,6 +227,7 @@ class Project:
     transition: float = 0.0          # crossfade seconds between clips inside a segment (0 = hard cut)
     auto_title_cards: bool = False   # prepend a 3 s TitleCard to every segment that has a label (needs Remotion)
     presenter: PresenterConfig = field(default_factory=PresenterConfig)
+    outro_vocab: int = 0             # learner edition: append a vocabulary card with N words (0 = off)
     normalize_audio: bool = True     # loudnorm the narration to -16 LUFS so every segment/provider sounds alike
     parallel: int = 0                # segments rendered at once; 0 = auto (cores / 2)
     out_dir: Path = Path("build")
@@ -348,8 +352,14 @@ def load(path: str | Path, lang: str | None = None) -> Project:
     if lang and lang != base_lang:
         data = _apply_variant(data, lang)
     lang = lang or base_lang
-    text_key = "text" if lang == base_lang else f"text_{lang}"
-    label_key = "label" if lang == base_lang else f"label_{lang}"
+    narr_lang = data.get("text_from") or lang            # variant may narrate in another language (en-zh)
+    text_key = "text" if narr_lang == base_lang else f"text_{narr_lang}"
+    label_key = "label" if narr_lang == base_lang else f"label_{narr_lang}"
+    if narr_lang != lang:
+        data["language"] = narr_lang
+    sub_cfg = data.get("subtitles") or {}
+    alt_lang = sub_cfg.get("bilingual_lang", "zh") if sub_cfg.get("bilingual") else None
+    alt_key = None if not alt_lang else ("text" if alt_lang == base_lang else f"text_{alt_lang}")
     missing: list[str] = []
 
     def resolve(p: str) -> Path:
@@ -425,6 +435,7 @@ def load(path: str | Path, lang: str | None = None) -> Project:
             id=sid, text=text, clips=clips, fit=fit,
             pause_after=float(s.get("pause_after", 0.5)), voice=s.get("voice"),
             label=s.get(label_key) or s.get("label"), overlays=overlays,
+            alt_text=(str(s.get(alt_key) or "").strip() or None) if alt_key else None,
             presenter=(bool(s["presenter"]) if "presenter" in s else None),
         ))
     if not segments:
@@ -488,6 +499,7 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         supersample=int(data["supersample"]) if data.get("supersample") else None,
         transition=float(data.get("transition", 0.0)),
         auto_title_cards=bool(data.get("auto_title_cards", False)),
+        outro_vocab=int(data.get("outro_vocab", 0) or 0),
         presenter=pres,
         normalize_audio=bool(data.get("normalize_audio", True)),
         parallel=int(data.get("parallel", 0)),
@@ -517,7 +529,10 @@ TEMPLATE: dict[str, Any] = {
     "variants": {
         "zh": {"voice": "zh-CN-YunxiNeural", "rate": "-5%", "title": "我的第一条视频", "thumbnail_text": "我的第一条\n视频",
                "subtitles": {"font": "Microsoft YaHei", "font_size": 24},
-               "youtube": {"description": "中文简介", "tags": ["历史"]}}
+               "youtube": {"description": "中文简介", "tags": ["历史"]}},
+        "en-zh": {"text_from": "en", "title": "My first video（双语学习版）",
+                  "subtitles": {"burn": True, "bilingual": True, "bilingual_lang": "zh", "style": "box", "font": "Microsoft YaHei", "font_size": 22},
+                  "outro_vocab": 8, "youtube": {"description": "英文原声 + 中英双语字幕 + 本集词汇", "tags": ["英语学习"]}}
     },
     "segments": [
         {"id": "intro", "text": "Write the narration for the first segment here.",

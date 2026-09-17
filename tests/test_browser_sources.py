@@ -45,6 +45,18 @@ class Baidu(unittest.TestCase):
         self.assertEqual(cands[0].title, "盘古 'quoted'")
 
 
+class ArchiveLicence(unittest.TestCase):
+    def test_licence_label(self):
+        from vidforge.assets.archive import licence_label
+        self.assertEqual(licence_label("http://creativecommons.org/publicdomain/mark/1.0/"), "Public Domain Mark")
+        self.assertEqual(licence_label("https://creativecommons.org/licenses/by-sa/4.0/"), "CC BY-SA 4.0")
+        self.assertEqual(licence_label("https://creativecommons.org/publicdomain/zero/1.0/"), "CC0")
+        self.assertIsNone(licence_label("https://creativecommons.org/licenses/by-nc/4.0/"))
+        self.assertIsNone(licence_label(None))
+        self.assertEqual(get_provider("openverse").name, "openverse")
+        self.assertEqual(get_provider("archive").name, "archive")
+
+
 class ChatSites(unittest.TestCase):
     def test_sites_have_required_keys(self):
         for k, v in SITES.items():

@@ -3,6 +3,7 @@ import { BarChart, BarChartProps } from "./compositions/BarChart";
 import { Timeline, TimelineProps } from "./compositions/Timeline";
 import { TitleCard, TitleCardProps } from "./compositions/TitleCard";
 import { Host, HostProps } from "./compositions/Host";
+import { Vocab, VocabProps } from "./compositions/Vocab";
 import { Base } from "./theme";
 
 // vidforge passes durationInFrames/fps/width/height in the props file: the composition
@@ -28,6 +29,16 @@ export const Root: React.FC = () => (
       width={480}
       height={360}
       defaultProps={{ ...base, width: 480, height: 360, envelope: demoEnvelope, name: "Simon", style: { hairStyle: "side", glasses: true } }}
+    />
+    <Composition<any, VocabProps>
+      id="Vocab"
+      component={Vocab}
+      calculateMetadata={fromProps}
+      {...base}
+      defaultProps={{ ...base, title: "Vocabulary", items: [
+        { word: "eruption", ipa: "/ɪˈrʌpʃn/", meaning: "喷发", example: "The eruption cancelled summer in Europe." },
+        { word: "harvest", ipa: "/ˈhɑːvɪst/", meaning: "收成", example: "The harvests of two continents failed." },
+        { word: "stratosphere", ipa: "/ˈstrætəsfɪə/", meaning: "平流层", example: "Ash rose into the stratosphere." } ] }}
     />
     <Composition<any, TitleCardProps>
       id="TitleCard"

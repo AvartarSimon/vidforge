@@ -23,7 +23,7 @@ import subprocess
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent / "app"
-COMPOSITIONS = ("TitleCard", "Timeline", "BarChart", "Host")
+COMPOSITIONS = ("TitleCard", "Timeline", "BarChart", "Host", "Vocab")
 
 
 class RemotionError(RuntimeError):
@@ -61,13 +61,21 @@ def studio() -> None:
     subprocess.run(_remotion_cli() + ["studio", "src/index.ts"], cwd=APP_DIR)
 
 
+def _source_stamp() -> str:
+    """Changes whenever a composition's source changes, so edited components are not served from cache."""
+    h = hashlib.sha1()
+    for f in sorted((APP_DIR / "src").rglob("*.ts*")):
+        h.update(f.name.encode()); h.update(str(int(f.stat().st_mtime)).encode())
+    return h.hexdigest()[:8]
+
+
 def render(composition: str, props: dict, *, duration: float, fps: int, width: int, height: int,
            out_dir: Path, log=print) -> Path:
     if composition not in COMPOSITIONS:
         raise RemotionError(f"unknown composition '{composition}'; available: {', '.join(COMPOSITIONS)}")
     full = dict(props)
     full.update({"durationInFrames": max(1, round(duration * fps)), "fps": fps, "width": width, "height": height})
-    key = hashlib.sha1(json.dumps([composition, full], sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:12]
+    key = hashlib.sha1(json.dumps([composition, full, _source_stamp()], sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:12]
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"{composition}-{key}.mp4"
     if out.exists() and out.stat().st_size > 0:

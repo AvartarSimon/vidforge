@@ -94,7 +94,7 @@ async function refreshHealth() {
     if (!h.keys.PEXELS_API_KEY && picker.source === 'pexels' && !picker.cands.length) picker.source = h.keys.PIXABAY_API_KEY ? 'pixabay' : 'commons';
     const dot = (ok, label, title) => `<span title="${esc(title || '')}"><span class="dot ${ok ? 'ok' : 'err'}"></span>${label}</span>`;
     $('#health').innerHTML = dot(h.ffmpeg.ok, `ffmpeg · ${h.encoder}`, h.ffmpeg.path) + dot(h.keys.PEXELS_API_KEY, 'Pexels', 'PEXELS_API_KEY') +
-      dot(h.keys.PIXABAY_API_KEY, 'Pixabay', 'PIXABAY_API_KEY') + dot(true, 'Commons', '无需 key') +
+      dot(h.keys.PIXABAY_API_KEY, 'Pixabay', 'PIXABAY_API_KEY') + dot(true, 'Commons · Openverse · Archive', '无需 key') +
       dot(h.node && h.remotion, '动画', h.node ? (h.remotion ? 'Remotion 已安装' : '需 vidforge remotion setup') : '需要 Node.js') +
       dot(h.youtube_secret, 'YouTube', 'client_secret.json') + dot(!!h.llm, h.llm ? `本地模型 ${h.llm.model}` : '本地模型', h.llm ? 'Ollama 已就绪' : '装 Ollama + ollama pull qwen2.5:3b 可离线用');
   } catch { }
@@ -634,7 +634,7 @@ function renderPicker(seg, r) {
   if (!picker.q) picker.q = seg.visual_hint || kws[0] || '';   // a pasted script's 画面: line wins
   box.innerHTML = `
     <div class="row">
-      <select id="src"><option value="pexels" ${picker.source === 'pexels' ? 'selected' : ''}>Pexels</option><option value="pixabay" ${picker.source === 'pixabay' ? 'selected' : ''}>Pixabay</option><option value="commons" ${picker.source === 'commons' ? 'selected' : ''}>Wikimedia Commons（公有领域/CC）</option>
+      <select id="src"><option value="pexels" ${picker.source === 'pexels' ? 'selected' : ''}>Pexels</option><option value="pixabay" ${picker.source === 'pixabay' ? 'selected' : ''}>Pixabay</option><option value="commons" ${picker.source === 'commons' ? 'selected' : ''}>Wikimedia Commons（公有领域/CC）</option><option value="openverse" ${picker.source === 'openverse' ? 'selected' : ''}>Openverse（CC 聚合：Flickr/博物馆）</option><option value="archive" ${picker.source === 'archive' ? 'selected' : ''}>Internet Archive（公有领域老电影/照片）</option>
         <option value="google" ${picker.source === 'google' ? 'selected' : ''}>Google 图片 · 仅 CC 许可（用我的浏览器）</option><option value="google_all" ${picker.source === 'google_all' ? 'selected' : ''}>Google 图片 · 全部 ⚠ 版权未知</option><option value="baidu" ${picker.source === 'baidu' ? 'selected' : ''}>百度图片 ⚠ 版权未知</option></select>
       <select id="kind"><option value="image" ${picker.kind === 'image' ? 'selected' : ''}>图片</option><option value="video" ${picker.kind === 'video' ? 'selected' : ''}>视频</option></select>
       <input id="q" class="grow" value="${esc(picker.q)}" placeholder="英文关键词效果最好">
@@ -653,7 +653,7 @@ function renderPicker(seg, r) {
       try { const t = await api('/api/llm', { task: 'translate', text: picker.q }); if (t.text) { picker.q = t.text; } } catch {}
     }
     try {
-      if (['commons', 'google', 'google_all', 'baidu'].includes(picker.source) && picker.kind === 'video') throw new Error('这个来源只提供图片；视频请用 Pexels / Pixabay');
+      if (['commons', 'google', 'google_all', 'baidu', 'openverse'].includes(picker.source) && picker.kind === 'video') throw new Error('这个来源只提供图片；视频请用 Pexels / Pixabay / Internet Archive');
       const j = await api(`/api/search?source=${picker.source}&kind=${picker.kind}&q=${encodeURIComponent(picker.q)}&page=${page}`);
       picker.cands = page > 1 ? picker.cands.concat(j.candidates) : j.candidates;
       if (!picker.cands.length) picker.err = '没有结果，换个关键词（英文）试试。';
@@ -848,6 +848,14 @@ function viewRender(v) {
       <div><label class="muted">章节标题卡</label><select id="f_cards"><option value="false" ${!raw.auto_title_cards ? 'selected' : ''}>不加</option><option value="true" ${raw.auto_title_cards ? 'selected' : ''}>有章节名的段前加 3 秒标题卡（需 Remotion）</option></select></div>
       <div><label class="muted">旁白响度归一</label><select id="f_norm"><option value="true" ${raw.normalize_audio !== false ? 'selected' : ''}>开（-16 LUFS，推荐）</option><option value="false" ${raw.normalize_audio === false ? 'selected' : ''}>关</option></select></div>
     </div>
+    <details ${nestedGet('subtitles', 'bilingual') || raw.outro_vocab ? 'open' : ''}><summary>学习版（双语字幕 + 片尾词汇卡，发国内英语学习区）</summary>
+      <div class="grid2" style="margin-top:6px">
+        <div><label class="muted">双语字幕</label><select id="l_bi"><option value="false" ${!nestedGet('subtitles', 'bilingual') ? 'selected' : ''}>关</option><option value="true" ${nestedGet('subtitles', 'bilingual') ? 'selected' : ''}>开：字幕第二行显示 ${esc(nestedGet('subtitles', 'bilingual_lang') || 'zh')} 版旁白（需该语言的文本，见语言切换）</option></select></div>
+        <div><label class="muted">片尾词汇卡（词数，0 = 不加）</label><input id="l_vocab" type="number" min="0" max="12" value="${(isBase() ? raw.outro_vocab : (variant().outro_vocab ?? raw.outro_vocab)) || 0}"></div>
+      </div>
+      <div class="row">${raw.variants && raw.variants['en-zh'] ? '<span class="muted">已有 en-zh 学习版变体：左下角语言切到 en-zh 再渲染，输出到 build_en-zh/。</span>' : '<button class="small" id="l_make">＋ 一键创建 en-zh 学习版变体</button><span class="muted">英文原声 + 中英双行字幕（烧录）+ 8 词词汇卡；主频道保持纯英文版</span>'}</div>
+      <p class="hint">词汇卡内容由本地模型（Ollama）从脚本提取：单词 / 音标 / 中文释义 / 原句；没装则只列出单词。</p>
+    </details>
     <details ${raw.presenter && raw.presenter.provider !== 'none' && raw.presenter.where !== 'none' ? 'open' : ''}><summary>数字主持人（画中画里"你"的形象）</summary>
       <div class="grid2" style="margin-top:6px">
         <div><label class="muted">类型</label><select id="p_prov">${[['host', '风格化插画主持人（本地生成，免费，无需披露）'], ['heygen', 'HeyGen 逼真数字分身（需 key + 你的 avatar；自动勾选合成内容披露）'], ['none', '不用']].map(([v, l]) => `<option value="${v}" ${(raw.presenter?.provider || 'host') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
@@ -901,6 +909,15 @@ function viewRender(v) {
   };
   $('#cancelBtn').onclick = () => api('/api/build/cancel', {});
   $('#a_enc').onchange = e => { raw.encoder = e.target.value; markDirty(); };
+  $('#l_bi').onchange = e => nestedSet('subtitles', 'bilingual', e.target.value === 'true');
+  $('#l_vocab').onchange = e => { const n = parseInt(e.target.value, 10) || 0; if (isBase()) raw.outro_vocab = n; else variant().outro_vocab = n; markDirty(); };
+  if ($('#l_make')) $('#l_make').onclick = () => {
+    raw.variants = raw.variants || {};
+    raw.variants['en-zh'] = { text_from: 'en', title: (raw.title || '') + '（双语学习版）', outro_vocab: 8,
+      subtitles: { burn: true, bilingual: true, bilingual_lang: 'zh', style: 'box', font: 'Microsoft YaHei', font_size: 22 },
+      youtube: { description: '英文原声 + 中英双语字幕 + 本集词汇。', tags: ['英语学习', 'English'] } };
+    markDirty(true); $('#issues').innerHTML = '<div class="banner info">已创建 en-zh 变体。左下角语言切到 <b>en-zh</b>，检查每段有中文文本（第 1 步会列出缺的），然后渲染。</div>';
+  };
   const pres = () => { raw.presenter = raw.presenter || {}; raw.presenter.style = raw.presenter.style || {}; return raw.presenter; };
   $('#p_prov').onchange = e => { pres().provider = e.target.value; markDirty(); };
   $('#p_where').onchange = e => { pres().where = e.target.value; markDirty(); };

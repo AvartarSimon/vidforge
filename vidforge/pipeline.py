@@ -143,6 +143,25 @@ class _Ctx:
         self.durations: dict[str, float] = {}       # real muxed length per segment
 
 
+def _stage_vocab(project: Project) -> None:
+    """Learner edition: append a 'vocab' segment — a Vocab card read aloud (word list)."""
+    if project.outro_vocab <= 0 or any(s.id == "vocab" for s in project.segments):
+        return
+    from . import vocab
+    from .project import Clip, RemotionSpec
+    script = " ".join(s.text for s in project.segments)
+    items = vocab.extract(script, project.outro_vocab, project.build_dir)
+    if not items:
+        return
+    words = ", ".join(i["word"] for i in items)
+    zh = project.subtitles.bilingual_lang.startswith("zh")
+    seg = Segment(id="vocab", label="Vocabulary" if not zh else "本集词汇", text=f"Words from this episode: {words}.",
+                  pause_after=1.5, clips=[Clip(remotion=RemotionSpec("Vocab", {"title": "本集词汇 · Vocabulary" if zh else "Vocabulary", "items": items}))])
+    seg.alt_text = "本集词汇：" + "，".join(f"{i['word']}（{i.get('meaning') or ''}）" if i.get("meaning") else i["word"] for i in items) if zh else None
+    project.segments.append(seg)
+    _log(f"vocab card: {len(items)} words")
+
+
 def _stage_tts(ctx: _Ctx) -> None:
     """Serial (network-bound), cached by text/voice."""
     p = ctx.project
@@ -310,7 +329,10 @@ def _stage_assemble(ctx: _Ctx) -> tuple[Path, list[dict], float]:
     _set_progress("assemble", 0, 3)
     cues, timeline, cursor = [], [], 0.0
     for seg in p.segments:
-        cues += subtitles.build_cues(ctx.words[seg.id], offset=cursor, max_chars=p.subtitles.max_chars)
+        seg_cues = subtitles.build_cues(ctx.words[seg.id], offset=cursor, max_chars=p.subtitles.max_chars)
+        if p.subtitles.bilingual and seg.alt_text:
+            seg_cues = subtitles.bilingual(seg_cues, seg.alt_text)
+        cues += seg_cues
         timeline.append({"id": seg.id, "label": seg.label, "start": round(cursor, 3), "end": round(cursor + ctx.durations[seg.id], 3)})
         cursor += ctx.durations[seg.id]
     (bd / "timeline.json").write_text(json.dumps(timeline, indent=1), encoding="utf-8")
@@ -360,6 +382,7 @@ def build(project: Project, *, only_tts: bool = False, burn: bool | None = None)
             print(line, flush=True)
     set_log(tee)
     try:
+        _stage_vocab(project)
         ctx = _Ctx(project)
         _stage_tts(ctx)
         if only_tts:

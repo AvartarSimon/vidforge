@@ -188,6 +188,12 @@ def get_provider(name: str):
     if name == "commons":
         from .wikimedia import CommonsProvider
         return CommonsProvider()
+    if name == "openverse":
+        from .openverse import OpenverseProvider
+        return OpenverseProvider()
+    if name == "archive":
+        from .archive import ArchiveProvider
+        return ArchiveProvider()
     if name in ("google", "google_all"):
         from .google_images import GoogleImagesProvider
         return GoogleImagesProvider(cc_only=(name == "google"))
