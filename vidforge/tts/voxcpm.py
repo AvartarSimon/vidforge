@@ -6,8 +6,10 @@ no per-character cost). https://github.com/OpenBMB/VoxCPM
 Not installed with vidforge — it pulls in PyTorch and a multi-GB model, which most vidforge users
 don't want. Set it up once, on the machine that will actually render:
     pip install voxcpm soundfile
-Needs roughly an 8GB NVIDIA GPU for good speed, or plain CPU (slower than real-time, which is
-fine — vidforge renders narration offline in batch, nothing here needs to be live).
+Needs roughly an 8GB NVIDIA GPU for good speed. ⚠ CPU-only is NOT just "slower than real-time" —
+measured on a CPU with no discrete GPU: a 12.96s output took 505s to generate (~39x realtime).
+A full video's narration (dozens of segments) would be hours on CPU alone; this provider is only
+practical with an actual GPU. Apple Silicon (PyTorch MPS) untested.
 
 Unlike ElevenLabs there's no server-side voice_id: "keeping" a voice just saves its description
 and the random seed used for the preview you liked (`~/.vidforge/voices/voxcpm/<name>.json`) —
@@ -15,10 +17,13 @@ the seed *is* what makes every segment of a project reproduce the same-sounding 
 a fresh random voice each time. Use it as `"voice": "<saved name>"`, or skip saving entirely and
 put `"voice": "(a description)"` straight in project.json.
 
-⚠ Written from OpenBMB/VoxCPM's public README — model.generate(text=..., cfg_value=,
-inference_timesteps=, seed=) -> a numpy wav array, model.tts_model.sample_rate for the rate —
-not exercised against the real model here (no GPU/install on this machine). If the installed
-package's exact API differs, this is the one place to adjust it.
+Verified end-to-end against a real install (voxcpm==2.0.3, CPU, 2026-09-17): model downloads from
+Hugging Face, loads, warms up, and generates real audio — output checked with ffprobe (valid
+48kHz mono WAV, matched the reported duration). One correction from the public README's example,
+which shows `model.generate(text=..., seed=42)`: the installed `_generate()` takes no `seed`
+kwarg at all (raises TypeError; checked its actual signature) — reproducibility instead comes
+from seeding torch's global RNG via `_seed_torch()` before calling generate(), which is what
+`design()`/`synthesize()` do.
 """
 
 from __future__ import annotations
@@ -53,6 +58,15 @@ def _load_model():
     return VoxCPM.from_pretrained("openbmb/VoxCPM2", load_denoiser=False)
 
 
+def _seed_torch(seed: int) -> None:
+    """generate() takes no seed argument (checked against the installed voxcpm==2.0.3, which
+    differs from the README's `model.generate(..., seed=42)` example) — reproducibility comes
+    from seeding torch's global RNG before the call instead. torch.manual_seed accepts any
+    Python int directly (verified — no range restriction to work around)."""
+    import torch
+    torch.manual_seed(seed)
+
+
 def _profile_path(name: str) -> Path:
     return VOICES_DIR / f"{re.sub(r'[^\w\-]+', '_', name.strip()) or 'voice'}.json"
 
@@ -78,7 +92,8 @@ def design(description: str, text: str | None = None, out_dir: Path | None = Non
     result = []
     for i in range(n):
         seed = int(hashlib.sha1(f"{description}:{stamp}:{i}".encode()).hexdigest()[:8], 16)
-        wav = model.generate(text=f"({description}){sample}", cfg_value=2.0, inference_timesteps=10, seed=seed)
+        _seed_torch(seed)
+        wav = model.generate(text=f"({description}){sample}", cfg_value=2.0, inference_timesteps=10)
         f = out_dir / f"voxcpm_{stamp}_{i + 1}.wav"
         sf.write(str(f), wav, model.tts_model.sample_rate)
         result.append({"generated_voice_id": f"voxcpm:{seed}", "audio": f, "duration": ffmpeg.duration(f), "seed": seed})
@@ -139,10 +154,9 @@ class VoxCPMProvider:
         import soundfile as sf
         description, seed = self._resolve(voice)
         model = self._model_lazy()
-        kwargs = {"cfg_value": 2.0, "inference_timesteps": 10}
         if seed is not None:
-            kwargs["seed"] = seed
-        wav = model.generate(text=f"({description}){text}", **kwargs)
+            _seed_torch(seed)
+        wav = model.generate(text=f"({description}){text}", cfg_value=2.0, inference_timesteps=10)
         out_path = Path(out_path)
         wav_path = out_path.with_suffix(".wav")
         sf.write(str(wav_path), wav, model.tts_model.sample_rate)

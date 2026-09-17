@@ -516,7 +516,7 @@ function viewVoice(v) {
   $('#browseVoice').onclick = () => openVoiceBrowser($('#f_provider').value, v => { $('#f_voice').value = v; topSet('voice', v); });
   const VD_HINT = {
     elevenlabs: `⚠ 需要 .env 里配置 <code>ELEVENLABS_API_KEY</code>——没配的话点「生成」会在下面显示这一条报错，不是卡住或"找不到"。Voice Design 本身免费版账号（每月约 1 万 credits）应该就能试；付费档位区别主要在音质（更高码率/采样率）和每月额度，具体以 <a href="https://elevenlabs.io/pricing" target="_blank">elevenlabs.io/pricing</a> 当前页面为准。`,
-    voxcpm: `⚠ 免费开源（Apache-2.0，可商用），但要你自己先在实际渲染的那台机器上装好：<code>pip install voxcpm soundfile</code>（8GB 显卡较快，纯 CPU 也能跑，慢一些不影响离线配音）。没装的话点「生成」会报"VoxCPM2 isn't installed"。生成比 ElevenLabs 慢（本地推理），3 个候选每个都是完整生成，不是快速预览。`,
+    voxcpm: `⚠ 免费开源（Apache-2.0，可商用），但要你自己先在实际渲染的那台机器上装好：<code>pip install voxcpm soundfile</code>。没装的话点「生成」会报"VoxCPM2 isn't installed"。<b>没有独立显卡的话非常慢</b>——实测纯 CPU 生成约 13 秒试听要 8.5 分钟（约 39 倍实时）；有 NVIDIA 显卡快得多。纯 CPU 默认只生成 1 个候选（不是 ElevenLabs 那样的 3 个），否则要等很久。`,
   };
   $('#designVoice').onclick = () => {
     const m = $('#modal');
@@ -529,10 +529,10 @@ function viewVoice(v) {
         <p class="hint" id="vd_hint">${VD_HINT[initial]}</p>
         <textarea id="vd_desc" rows="3" placeholder="例：四十岁左右的男声，低沉、温暖、有磁性，语速从容，像纪录片解说，带一点英式口音">${esc(localStorage.getItem('vf.vd_desc') || '')}</textarea>
         <textarea id="vd_text" rows="2" placeholder="试听文本（可空，默认用一段解说样例；≥100 字符）"></textarea>
-        <div class="row"><button class="primary" id="vd_go">生成 3 个候选</button><span class="muted" id="vd_status"></span></div>
+        <div class="row"><button class="primary" id="vd_go">${initial === 'voxcpm' ? '生成 1 个候选' : '生成 3 个候选'}</button><span class="muted" id="vd_status"></span></div>
         <div id="vd_list"></div></div></div>`;
       $('#close').onclick = () => { m.innerHTML = ''; };
-      $('#vd_provider').onchange = () => { localStorage.setItem('vf.vd_provider', provider()); $('#vd_hint').innerHTML = VD_HINT[provider()]; };
+      $('#vd_provider').onchange = () => { localStorage.setItem('vf.vd_provider', provider()); $('#vd_hint').innerHTML = VD_HINT[provider()]; $('#vd_go').textContent = provider() === 'voxcpm' ? '生成 1 个候选' : '生成 3 个候选'; };
       $('#vd_go').onclick = async () => {
         const desc = $('#vd_desc').value.trim(); if (!desc) return; localStorage.setItem('vf.vd_desc', desc);
         const p = provider();

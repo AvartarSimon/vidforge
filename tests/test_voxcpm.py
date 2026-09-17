@@ -1,11 +1,15 @@
 """vidforge/tts/voxcpm.py — the free/local, open-source Voice Design alternative to ElevenLabs.
 
 VoxCPM2 itself isn't installed here (it pulls in PyTorch + a multi-GB model — nobody wants that
-as a vidforge test dependency), so `_load_model()` and `soundfile` are stubbed: a fake model
-whose `generate()` returns silence and a fake `soundfile.write()` that writes a real WAV via the
-stdlib `wave` module, so the ffmpeg mux step in synthesize() runs against real, valid audio and
-is genuinely exercised. Everything downstream of that boundary (seed/description resolution,
-saved-voice profiles, cache keys, word timing) is real code, not mocked.
+as a vidforge test dependency), so `_load_model()`, `soundfile`, and `torch` are stubbed: a fake
+model whose `generate()` returns silence, a fake `soundfile.write()` that writes a real WAV via
+the stdlib `wave` module (so the ffmpeg mux step in synthesize() runs against real, valid audio),
+and a fake `torch.manual_seed()` that just records what it was called with. The fake model's
+`generate()` signature intentionally matches the *real* installed voxcpm==2.0.3 API verified by
+hand (text, cfg_value, inference_timesteps — no `seed` kwarg, unlike the public README's example)
+so a regression back to passing seed= would fail loudly here, the same way it failed for real.
+Everything downstream of that boundary (seed/description resolution, saved-voice profiles, cache
+keys, word timing) is real code, not mocked.
 """
 
 from __future__ import annotations
@@ -44,8 +48,8 @@ class _FakeModel:
         self.tts_model = self._TtsModel()
         self.calls: list[dict] = []
 
-    def generate(self, text, cfg_value=None, inference_timesteps=None, seed=None):
-        self.calls.append({"text": text, "cfg_value": cfg_value, "inference_timesteps": inference_timesteps, "seed": seed})
+    def generate(self, text, cfg_value=None, inference_timesteps=None):   # no seed kwarg — matches the real API
+        self.calls.append({"text": text, "cfg_value": cfg_value, "inference_timesteps": inference_timesteps})
         return [0.0] * (self.tts_model.sample_rate // 2)   # 0.5s of silence
 
 
@@ -53,6 +57,12 @@ def _fake_soundfile_write(path, wav, samplerate):
     with wave.open(str(path), "wb") as f:
         f.setnchannels(1); f.setsampwidth(2); f.setframerate(samplerate)
         f.writeframes(struct.pack(f"<{len(wav)}h", *([0] * len(wav))))
+
+
+def _fake_torch_module(seed_calls: list[int]) -> "types.ModuleType":
+    mod = types.ModuleType("torch")
+    mod.manual_seed = lambda s: seed_calls.append(s)
+    return mod
 
 
 class Tokenize(unittest.TestCase):
@@ -119,9 +129,10 @@ class Synthesize(unittest.TestCase):
         for p in self.patches:
             p.start()
         self.model = _FakeModel()
+        self.seed_calls: list[int] = []
         self.fake_sf = types.ModuleType("soundfile")
         self.fake_sf.write = _fake_soundfile_write
-        self.sys_patch = mock.patch.dict(sys.modules, {"soundfile": self.fake_sf})
+        self.sys_patch = mock.patch.dict(sys.modules, {"soundfile": self.fake_sf, "torch": _fake_torch_module(self.seed_calls)})
         self.sys_patch.start()
 
     def tearDown(self):
@@ -141,8 +152,8 @@ class Synthesize(unittest.TestCase):
         self.assertEqual([w.text for w in words], ["In", "1815", "a", "volcano", "erupted"])
         # word spans must tile the *real* rendered duration, not a pre-estimate
         self.assertAlmostEqual(words[-1].end, ffmpeg.duration(out), delta=0.2)
+        self.assertEqual(self.seed_calls, [99])          # reproducibility via torch.manual_seed, not a seed= kwarg
         call = self.model.calls[0]
-        self.assertEqual(call["seed"], 99)
         self.assertTrue(call["text"].startswith("(warm deep male voice)"))
 
     def test_design_returns_n_independent_previews_with_distinct_seeds(self):
@@ -152,6 +163,7 @@ class Synthesize(unittest.TestCase):
         self.assertEqual(len(previews), 2)
         seeds = {p["seed"] for p in previews}
         self.assertEqual(len(seeds), 2, "each preview should use a different seed")
+        self.assertEqual(set(self.seed_calls), seeds)     # each preview's seed was actually applied via torch.manual_seed
         for p in previews:
             self.assertTrue(Path(p["audio"]).exists())
             self.assertTrue(p["generated_voice_id"].startswith("voxcpm:"))

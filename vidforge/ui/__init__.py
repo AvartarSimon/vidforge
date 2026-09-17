@@ -491,11 +491,15 @@ def make_handler(state: State):
                     return self._json({"text": text, "lines": lines})
                 if path == "/api/voice/design":
                     from ..tts import voice_design, voxcpm
-                    mod = voxcpm if body.get("provider") == "voxcpm" else voice_design
+                    is_voxcpm = body.get("provider") == "voxcpm"
+                    mod = voxcpm if is_voxcpm else voice_design
                     env.load_dotenv(state.root)
                     out_dir = state.build_dir(q.get("lang")) / "ui" / "voice_design"
                     try:
-                        previews = mod.design(body.get("desc", ""), body.get("text"), out_dir)
+                        # voxcpm has no fast "preview" mode — every candidate is a full, slow local
+                        # generation (minutes on CPU), so default to 1 instead of ElevenLabs' 3.
+                        kwargs = {"n": int(body["n"])} if is_voxcpm and body.get("n") else ({"n": 1} if is_voxcpm else {})
+                        previews = mod.design(body.get("desc", ""), body.get("text"), out_dir, **kwargs)
                     except RuntimeError as e:
                         return self._error(str(e))
                     return self._json({"previews": [{"id": p["generated_voice_id"], "audio": state.rel(p["audio"])} for p in previews]})
