@@ -4,6 +4,32 @@ const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = (s) => s == null ? '–' : (s >= 60 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : `${s.toFixed(1)} s`);
 const fileUrl = (rel, bust) => rel ? `/files/${rel.split('/').map(encodeURIComponent).join('/')}${bust ? '?t=' + bust : ''}` : null;
+// The reusable "how to write a script for vidforge" spec — paste-ready for any AI chat, so
+// scripts written elsewhere still split into segments correctly when pasted back into step 1.
+const SCRIPT_FORMAT_SPEC = {
+  zh: `给我写视频解说脚本时请遵守这个格式（这样能直接粘贴进 vidforge 自动拆成段）：
+1. 每段讲一个意思，2–4 句，口语化、短句、标点齐全——标点决定字幕断行和停顿，不要用省略号或破折号代替句号。
+2. 段与段之间空一行分隔（不要用列表符号）。
+3. 每段前可以加一个 Markdown 二级标题作章节名："## 章节名"（可选，不加也能按空行自动分段）。
+4. 每段正文前可以单独一行写"画面：xxx"，给出这段适合的画面/素材描述（2–4 个具体名词，中英均可），vidforge 会据此自动配图，这一行可选。
+5. 数字、年份按口语读法写清楚；不确定的史实标注 [待核实]。
+6. 只输出脚本正文本身，不要前言、解释或总结这段格式要求。`,
+  en: `When writing a narration script for me, follow this format (so it pastes straight into vidforge and splits into segments correctly):
+1. One idea per segment, 2-4 sentences, spoken style, short sentences, full punctuation — punctuation drives subtitle breaks and pauses.
+2. Separate segments with a blank line (no bullet/numbered list markers).
+3. Optionally put a Markdown level-2 heading before each segment as its chapter name: "## Chapter title" (optional — a blank line alone is enough to split).
+4. Optionally put one line "Visual: ..." before a segment's narration with 2-4 concrete search keywords for stock footage; vidforge uses it to auto-pick images.
+5. Spell out numbers and years the way they should be read aloud; mark uncertain facts [verify].
+6. Output only the script itself — no preamble, no explanation of this format.`,
+};
+// hover-only tip: a small "i" badge instead of a paragraph, so explanatory text stops eating UI space.
+const info = (html) => `<span class="info-tip" tabindex="0"><span class="info-pop">${html}</span></span>`;
+// small clipboard button anywhere; text goes through esc() so it round-trips via the data attribute untouched.
+const copyBtn = (text, title = '复制') => `<button type="button" class="copy-btn" title="${esc(title)}" data-copy="${esc(text)}">📋</button>`;
+document.addEventListener('click', e => {
+  const b = e.target.closest('.copy-btn[data-copy]'); if (!b) return;
+  navigator.clipboard.writeText(b.dataset.copy).then(() => { const t = b.textContent; b.textContent = '✓'; setTimeout(() => b.textContent = t, 1200); });
+});
 
 let P = null, raw = null, lang = new URLSearchParams(location.search).get('lang');
 let step = parseInt(new URLSearchParams(location.search).get('step') || localStorage.getItem('vf.step') || '0', 10);
@@ -53,22 +79,75 @@ async function load() {
 }
 
 /* ---------------- home: project picker ---------------- */
-function renderHome(h) {
+let CATS = null;
+async function renderHome(h) {
   $('#pcTitle').textContent = '未打开项目'; $('#pcPath').textContent = h.workspace;
   $$('#steps button').forEach(b => b.classList.remove('active', 'done'));
   $('.footer-nav').hidden = true; $('#crumbs').innerHTML = '<b>项目</b>';
+  if (!CATS) CATS = (await api('/api/categories').catch(() => ({ categories: [] }))).categories;
   $('#view').innerHTML = `<div class="home">
-    <div class="card"><h3 style="margin:0 0 6px">新建视频项目</h3>
+    <div class="card"><h3 style="margin:0 0 6px">新建视频项目${info(`项目保存在 <code>${esc(h.workspace)}</code>（设 VIDFORGE_WORKSPACE 可换）。每个项目一个文件夹：project.json + assets/ + build/，随时可以整个拷走或放进 git。`)}</h3>
       <div class="row"><input id="np_name" class="grow" placeholder="项目文件夹名，例：year-without-a-summer"><input id="np_title" class="grow" placeholder="视频标题（可后改）">
-        <select id="np_lang"><option value="en">英文频道</option><option value="zh">中文频道</option></select><button class="primary" id="np_go">创建并打开</button></div>
-      <p class="hint">项目保存在 <code>${esc(h.workspace)}</code>（设 VIDFORGE_WORKSPACE 可换）。每个项目一个文件夹：project.json + assets/ + build/，随时可以整个拷走或放进 git。</p></div>
+        <select id="np_lang"><option value="en">英文频道</option><option value="zh">中文频道</option></select></div>
+      <div class="row"><label class="muted">分类${info('每个分类保存一套设置和参考资料：讲什么、参考账号、资料源、常用标签、发布平台、心得，FND 这类还可以写禁用关键词/平台把关规则。选一个分类会带入它的默认声音/字幕设置，写脚本时也会把参考资料一起给 AI。')}</label>
+        <select id="np_cat"><option value="">不用分类</option>${CATS.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>
+        <button class="small" id="np_cat_manage">管理分类…</button><button class="primary" id="np_go">创建并打开</button></div></div>
     <div class="card"><h3 style="margin:0 0 10px">最近的项目</h3>
       <div class="proj-grid">${(h.projects || []).map(pr => `<div class="proj" data-path="${esc(pr.path)}"><b>${esc(pr.title)}</b><span class="muted">${esc(pr.path)}</span><div class="row" style="margin:6px 0 0"><span class="pill ${pr.final ? 'ok' : ''}">${pr.final ? '已有成片' : '进行中'}</span><span class="muted">${new Date(pr.opened * 1000).toLocaleString()}</span></div></div>`).join('') || '<span class="muted">还没有项目。</span>'}</div>
       <div class="row" style="margin-top:10px"><input id="op_path" class="grow" placeholder="或输入任意项目文件夹路径…"><button id="op_go">打开</button></div></div></div>`;
-  $('#np_go').onclick = async () => { try { await api('/api/new', { name: $('#np_name').value, title: $('#np_title').value, language: $('#np_lang').value }); step = 1; $('.footer-nav').hidden = false; await load(); } catch (e) { alert(e.message); } };
+  $('#np_go').onclick = async () => { try { await api('/api/new', { name: $('#np_name').value, title: $('#np_title').value, language: $('#np_lang').value, category: $('#np_cat').value || null }); step = 1; $('.footer-nav').hidden = false; await load(); } catch (e) { alert(e.message); } };
+  $('#np_cat_manage').onclick = () => openCategoryManager(() => { CATS = null; renderHome(h); });
   const open = async path => { try { await api('/api/open', { path }); step = 0; $('.footer-nav').hidden = false; await load(); } catch (e) { alert(e.message); } };
   $$('.proj').forEach(el => el.onclick = () => open(el.dataset.path));
   $('#op_go').onclick = () => open($('#op_path').value.trim());
+}
+
+/* categories are freeform per vertical (platforms/sources/banned words/insights vary too much for a
+   fixed form) — edited as JSON, same pattern as the Remotion props editor (openProps). */
+function openCategoryManager(onChange) {
+  const m = $('#modal');
+  const render = () => {
+    m.innerHTML = `<div class="modal"><div class="box" style="max-height:90vh;overflow:auto;width:640px">
+      <div class="row" style="justify-content:space-between"><b>分类管理</b><button class="ghost" id="close">✕</button></div>
+      <p class="hint">一个分类 = 一套写脚本/发布的设置和参考资料，跨项目复用。存成普通 JSON 文件（<code>~/.vidforge/categories/</code>），不是数据库——所以可以直接拷文件备份，或用下面的导出/导入在两台机器间同步、合并。</p>
+      <div class="row"><button class="primary small" id="cat_new">＋ 新建分类</button><button class="small" id="cat_export">导出全部…</button><label class="small" style="border:1px solid var(--line);border-radius:var(--radius-sm);padding:4px 10px;cursor:pointer">导入…<input type="file" id="cat_import" hidden accept="application/json"></label></div>
+      <div class="seglist" style="margin-top:8px">${(CATS || []).map(c => `<div class="seg-row" data-id="${esc(c.id)}" style="grid-template-columns:1fr 90px 90px"><span><b>${esc(c.name)}</b><br><span class="muted" style="font-size:11px">${esc(c.id)} · 更新于 ${esc(c.updated || '')}</span></span><button class="small" data-edit="${esc(c.id)}">编辑</button><button class="small" data-del="${esc(c.id)}">删除</button></div>`).join('') || '<p class="muted">还没有分类。</p>'}</div>
+      </div></div>`;
+    $('#close').onclick = () => { m.innerHTML = ''; onChange?.(); };
+    $('#cat_new').onclick = () => openCategoryEditor(null, render);
+    m.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openCategoryEditor(CATS.find(c => c.id === b.dataset.edit), render));
+    m.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (!confirm(`删除分类「${b.closest('.seg-row').querySelector('b').textContent}」？（不影响已经用它建过的项目）`)) return; const j = await api('/api/categories/delete', { id: b.dataset.del }); CATS = j.categories; render(); });
+    $('#cat_export').onclick = async () => { const j = await api('/api/categories/export'); await navigator.clipboard.writeText(JSON.stringify(j, null, 2)); alert('已复制到剪贴板（JSON），粘贴到一个 .json 文件保存即可；导入时选择这个文件。'); };
+    $('#cat_import').onchange = async e => {
+      const f = e.target.files[0]; if (!f) return;
+      let data; try { data = JSON.parse(await f.text()); } catch { return alert('不是有效的 JSON 文件'); }
+      const merge = confirm('合并到现有分类？（确定 = 合并/按 id 覆盖同名分类，取消 = 替换全部现有分类）');
+      try { const j = await api('/api/categories/import', { data, merge }); CATS = j.categories; alert(`导入了 ${j.imported} 个分类。`); render(); } catch (err) { alert(err.message); }
+    };
+  };
+  render();
+}
+
+function openCategoryEditor(existing, back) {
+  const m = $('#modal');
+  const skeleton = { name: '', topic_notes: '我要讲什么……', platforms: ['YouTube'], good_accounts: [{ name: '', url: '' }],
+    sources: [{ name: '', url: '' }], tags: [], insights: '', banned_keywords: [], platform_restrictions: '',
+    defaults: { voice: '', tts_provider: 'edge', language: 'zh', subtitles_bilingual: false } };
+  const rec = existing || skeleton;
+  m.innerHTML = `<div class="modal"><div class="box" style="width:640px">
+    <div class="row" style="justify-content:space-between"><b>${existing ? '编辑分类' : '新建分类'}</b><button class="ghost" id="close">✕</button></div>
+    <label class="muted">名字</label><input id="cat_name" value="${esc(rec.name || '')}" placeholder="例：中国古代历史人文 / FND">
+    <label class="muted" style="margin-top:6px;display:block">其余设置（JSON——平台、参考账号、资料源、标签、心得、FND 类的禁用关键词/平台把关规则、默认声音等，字段自己按需增减）</label>
+    <textarea id="cat_json" rows="16" spellcheck="false" style="font-family:ui-monospace,Consolas,monospace;font-size:12px;width:100%">${(({ name, id, updated, ...rest }) => esc(JSON.stringify(rest, null, 2)))(rec)}</textarea>
+    <div id="cat_err" class="err"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:8px"><button id="cancel">取消</button><button class="primary" id="ok">保存</button></div></div></div>`;
+  $('#close').onclick = $('#cancel').onclick = () => back();
+  $('#ok').onclick = async () => {
+    let rest; try { rest = JSON.parse($('#cat_json').value); } catch (e) { $('#cat_err').textContent = 'JSON 有误：' + e.message; return; }
+    const name = $('#cat_name').value.trim(); if (!name) { $('#cat_err').textContent = '需要一个名字'; return; }
+    try { const j = await api('/api/categories', { ...rest, id: existing?.id, name }); CATS = (await api('/api/categories')).categories; back(); }
+    catch (e) { $('#cat_err').textContent = e.message; }
+  };
 }
 $('#projectCard').onclick = async () => { P = { home: true, ...(await api('/api/projects')) }; renderHome(P); };
 
@@ -192,17 +271,18 @@ function renderChecks() {
 /* ---------------- 1 script ---------------- */
 function viewScript(v) {
   const segs = raw.segments || [];
+  if (raw.category && !CATS) { api('/api/categories').then(j => { CATS = j.categories; if (step === 1) render(); }).catch(() => { CATS = []; }); }
   v.innerHTML = `
   <div class="card">
     <div class="grid2">
-      <div><label class="muted">视频标题</label><input id="f_title" value="${esc(topGet('title') || '')}"></div>
+      <div><label class="muted">视频标题${(() => { const c = (CATS || []).find(x => x.id === raw.category); return c ? `<span class="pill" style="margin-left:6px">${esc(c.name)}</span>${info([c.topic_notes && '要讲什么：' + c.topic_notes, c.insights && '心得：' + c.insights, c.platforms?.length && '发布平台：' + c.platforms.join('、')].filter(Boolean).join('<br>') || '（这个分类还没填详细设定）')}` : ''; })()}</label><input id="f_title" value="${esc(topGet('title') || '')}"></div>
       <div><label class="muted">封面文字（\\n 换行）</label><input id="f_thumb" value="${esc((topGet('thumbnail_text') || '').replace(/\n/g, '\\n'))}"></div>
     </div>
   </div>
   <div class="card">
     <div class="row" style="justify-content:space-between"><b>段落（${segs.length}）</b>
       <span><button class="small" id="addSeg">＋ 添加一段</button> <button class="small" id="togglePaste">${segs.length ? '从整篇脚本重新拆段…' : ''}</button></span></div>
-    <p class="hint">一段 = 一个画面（或几个片段）+ 讲这段时说的话。旁白<b>按口语写、短句、标点齐全</b>——标点决定字幕断行和停顿。${isBase() ? '' : `<span class="warn">当前编辑的是 <b>${lang}</b> 版旁白；空着的段会用红框提示。</span>`}</p>
+    <p class="hint">一段 = 一个画面（或几个片段）+ 讲这段时说的话。旁白<b>按口语写、短句、标点齐全</b>——标点决定字幕断行和停顿。${copyBtn(SCRIPT_FORMAT_SPEC[(isBase() ? P.base_lang : lang).startsWith('zh') ? 'zh' : 'en'], '复制详细格式要求，粘贴到任意 AI 对话里让它照这个格式写脚本')}${isBase() ? '' : `<span class="warn">当前编辑的是 <b>${lang}</b> 版旁白；空着的段会用红框提示。</span>`}</p>
     <details id="topicPanel"><summary>🔎 选题助手：看 YouTube 上同类视频的数据，让 AI 判断值不值得做、用什么视角</summary>
       <div class="row" style="margin-top:6px"><input id="t_q" class="grow" placeholder="候选主题，例：year without a summer 1816" value="${esc(topGet('title') || '')}"><input id="t_pos" class="grow" placeholder="频道定位（可选），例：英文历史解说，15 分钟长视频"><button id="t_search">看同类视频</button></div>
       <div id="t_table"></div>
@@ -210,7 +290,7 @@ function viewScript(v) {
       <div id="t_result"></div>
     </details>
     <div id="paste" ${segs.length ? 'hidden' : ''}>
-      <details id="genPanel" ${segs.length ? '' : 'open'}><summary>✨ 用我的浏览器里的 AI 生成脚本（ChatGPT / Claude / Gemini / DeepSeek / Grok / 千问 / Kimi / 文心）</summary>
+      <details id="genPanel" ${segs.length ? '' : 'open'}><summary>✨ 用我的浏览器里的 AI 生成脚本（ChatGPT / Claude / Gemini / DeepSeek / Grok / 千问 / Kimi / 文心）${info('会打开一个专用的 Edge 窗口（第一次点「登录各站点」登录一次即可，8 个站点在 8 个标签页里，记得逐个登录完再关窗口）。生成期间不要在那个窗口里操作；遇到验证码就手动点一下。回答会自动填入下面的文本框，再点「拆成段落」。')}</summary>
         <div class="grid2" style="margin-top:6px">
           <div><label class="muted">主题 / 标题</label><input id="g_topic" value="${esc(topGet('title') || '')}"></div>
           <div><label class="muted">目标时长（分钟）</label><input id="g_minutes" type="number" min="1" max="60" value="10"></div>
@@ -223,9 +303,9 @@ function viewScript(v) {
           <button class="primary" id="g_go">在我的浏览器里生成</button>
           <button id="g_copy">只复制提示词（我自己去贴）</button>
           <button class="small" id="g_login">登录各站点…</button>
+          <button class="small" id="g_login_one" title="只打开当前选中的网站登录，比较不容易漏掉">只登录当前网站</button>
           <span class="muted" id="g_status"></span>
         </div>
-        <p class="hint">会打开一个专用的 Edge 窗口（第一次点「登录各站点」登录一次即可）。生成期间不要在那个窗口里操作；遇到验证码就手动点一下。回答会自动填入下面的文本框，再点「拆成段落」。</p>
       </details>
       <textarea id="script" rows="10" placeholder="把整篇脚本贴在这里，一段一空行；每段 2–4 句最合适。&#10;&#10;第一行如果以 # 开头会成为该段的章节名。"></textarea>
       <div class="row"><button class="primary" id="splitBtn">拆成段落</button><span class="muted" id="splitInfo"></span></div>
@@ -289,11 +369,21 @@ function viewScript(v) {
     $('#t_ai').disabled = false;
   };
   api('/api/chat/sites').then(j => { $('#g_site').innerHTML = j.sites.map(s => `<option value="${s.id}" ${s.id === (localStorage.getItem('vf.site') || 'deepseek') ? 'selected' : ''}>${esc(s.label)}</option>`).join(''); }).catch(() => {});
+  const categoryNote = () => {
+    const c = (CATS || []).find(x => x.id === raw.category); if (!c) return '';
+    const bits = [];
+    if (c.topic_notes) bits.push(`定位/要讲什么：${c.topic_notes}`);
+    if (c.sources?.length) bits.push(`可参考的资料源：${c.sources.map(s => s.name + (s.url ? `(${s.url})` : '')).join('；')}`);
+    if (c.insights) bits.push(`过往心得：${c.insights}`);
+    if (c.banned_keywords?.length) bits.push(`⚠ 禁止出现以下关键词，如涉及请换种说法：${c.banned_keywords.join('、')}`);
+    if (c.platform_restrictions) bits.push(`⚠ 平台限制/把关要求：${c.platform_restrictions}`);
+    return bits.length ? `\n\n分类「${c.name}」的设定（请遵守）：\n- ` + bits.join('\n- ') : '';
+  };
   const buildPrompt = () => {
     const zh = (isBase() ? P.base_lang : lang).startsWith('zh');
     const topic = $('#g_topic').value.trim(), mins = +$('#g_minutes').value || 10, aud = $('#g_audience').value.trim(), pts = $('#g_points').value.trim();
     const words = Math.round(mins * (zh ? 240 : 150));
-    return zh
+    return (zh
       ? `请为一条约 ${mins} 分钟的讲解类视频写完整旁白脚本。主题：${topic}。${aud ? '受众/语气：' + aud + '。' : ''}${pts ? '\n必须覆盖的要点/参考：\n' + pts + '\n' : ''}
 要求：
 1. 总字数约 ${words} 字，口语化、短句、标点齐全（标点决定字幕断行和停顿）。
@@ -309,10 +399,11 @@ Requirements:
 3. Split into 8-15 segments, one idea each, 2-4 sentences; put a Markdown level-2 heading before each (format: ## Chapter title).
 4. Under each heading first write one line "Visual: <2-4 English search keywords for stock footage>", then the narration.
 5. Spell out numbers the way they should be read aloud; mark uncertain facts with [verify].
-6. End with a short recap and a teaser for the next episode. Output only the script, no preamble.`;
+6. End with a short recap and a teaser for the next episode. Output only the script, no preamble.`) + categoryNote();
   };
   $('#g_copy').onclick = async () => { await navigator.clipboard.writeText(buildPrompt()); $('#g_status').textContent = '提示词已复制，贴到任意 AI，再把回答贴回下面的框。'; };
-  $('#g_login').onclick = async () => { await api('/api/chat', { login: true }); $('#g_status').textContent = '已打开浏览器窗口：逐个登录，完成后关闭窗口。'; };
+  $('#g_login').onclick = () => startBrowserLogin(null, $('#g_status'));
+  $('#g_login_one').onclick = () => startBrowserLogin([$('#g_site').value], $('#g_status'));
   $('#g_go').onclick = async () => {
     const site = $('#g_site').value; localStorage.setItem('vf.site', site);
     $('#g_go').disabled = true; $('#g_status').textContent = `正在 ${$('#g_site').selectedOptions[0].textContent} 里提问并等待回答（通常 30–120 秒）…`;
@@ -380,9 +471,8 @@ function viewVoice(v) {
         <option value="silent" ${provider === 'silent' ? 'selected' : ''}>静音占位（只看画面，不联网）</option></select></div>
       <div><label class="muted">声音</label><div class="row" style="margin:0"><input id="f_voice" class="grow" value="${esc(topGet('voice') || '')}" placeholder="点「浏览」按口音/性别挑"><button id="browseVoice">浏览…</button><button id="designVoice" title="用文字描述设计一个专属声音（ElevenLabs Voice Design，不克隆任何真人）">✨ 设计品牌声音…</button></div></div>
       <div><label class="muted">语速 <span id="rateVal">${esc(topGet('rate') || '+0%')}</span></label><input type="range" id="f_rate" min="-30" max="30" step="1" value="${parseInt(topGet('rate') || '0', 10) || 0}"></div>
-      <div><label class="muted">试听</label><div class="row"><button id="ttsFirst">▶ 用第一段试听这个声音</button><button class="primary" id="ttsAll">全部配音</button></div></div>
+      <div><label class="muted">试听${info('改了声音或语速后，所有段的配音都要重做（缓存按声音+文字区分，不会重复扣费同一段）。')}</label><div class="row"><button id="ttsFirst">▶ 用第一段试听这个声音</button><button class="primary" id="ttsAll">全部配音</button></div></div>
     </div>
-    <p class="hint">改了声音或语速后，所有段的配音都要重做（缓存按声音+文字区分，不会重复扣费同一段）。</p>
     <div id="ttsProgress" class="muted"></div>
   </div>
   <div class="card" id="voiceList2">
@@ -401,8 +491,8 @@ function viewVoice(v) {
   $('#designVoice').onclick = () => {
     const m = $('#modal');
     m.innerHTML = `<div class="modal"><div class="box">
-      <div class="row" style="justify-content:space-between"><b>设计品牌声音</b><button class="ghost" id="close">✕</button></div>
-      <p class="hint">用文字描述想要的声音，ElevenLabs 会合成 3 个候选（不克隆任何真人，可商用）。需要 .env 里的 ELEVENLABS_API_KEY（Creator 及以上套餐）。</p>
+      <div class="row" style="justify-content:space-between"><b>设计品牌声音${info('用文字描述想要的声音，ElevenLabs 会合成 3 个候选（不克隆任何真人，可商用）。')}</b><button class="ghost" id="close">✕</button></div>
+      <p class="hint">⚠ 需要 .env 里配置 <code>ELEVENLABS_API_KEY</code>（Creator 及以上套餐）——没配的话点「生成」会在下面显示这一条报错，不是卡住或“找不到”。</p>
       <textarea id="vd_desc" rows="3" placeholder="例：四十岁左右的男声，低沉、温暖、有磁性，语速从容，像纪录片解说，带一点英式口音">${esc(localStorage.getItem('vf.vd_desc') || '')}</textarea>
       <textarea id="vd_text" rows="2" placeholder="试听文本（可空，默认用一段解说样例；≥100 字符）"></textarea>
       <div class="row"><button class="primary" id="vd_go">生成 3 个候选</button><span class="muted" id="vd_status"></span></div>
@@ -625,9 +715,8 @@ function renderPicker(seg, r) {
     return;
   }
   if (picker.tab === 'anim') {
-    box.innerHTML = `<p class="hint">动画段在渲染时用 Remotion 生成，时长自动等于它在本段的份额。</p>
-      <div class="row">${['TitleCard', 'Timeline', 'BarChart'].map(c => `<button data-comp="${c}">＋ ${c}</button>`).join('')}</div>
-      <p class="hint">TitleCard：章节标题卡 · Timeline：时间轴逐条出现 · BarChart：动画柱状对比。加入后点片段上的「编辑」改文字。</p>`;
+    box.innerHTML = `<div class="row" style="margin:0 0 6px"><span class="muted">动画段：时长自动等于它在本段的份额</span>${info('动画段在渲染时用 Remotion 生成。TitleCard：章节标题卡 · Timeline：时间轴逐条出现 · BarChart：动画柱状对比。加入后点片段上的「编辑」改文字。')}</div>
+      <div class="row">${['TitleCard', 'Timeline', 'BarChart'].map(c => `<button data-comp="${c}">＋ ${c}</button>`).join('')}</div>`;
     box.onclick = e => { const b = e.target.closest('button[data-comp]'); if (!b) return;
       const defaults = { TitleCard: { title: seg[labelKey()] || seg.label || seg.id, subtitle: '' }, Timeline: { title: '', events: [{ date: '1815', text: '…' }, { date: '1816', text: '…' }] }, BarChart: { title: '', items: [{ label: 'A', value: 3 }, { label: 'B', value: 5 }] } };
       seg.clips.push({ remotion: { composition: b.dataset.comp, props: defaults[b.dataset.comp] } }); markDirty(true); };
@@ -643,7 +732,7 @@ async function renderMeTab(seg, box) {
   if (!ME) { box.innerHTML = '<span class="muted">读取素材库…</span>'; try { ME = await api('/api/me'); } catch (e) { box.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; return; } }
   const items = ME.items.filter(i => (!meFilter.tag || (i.tags || []).includes(meFilter.tag)) && (meFilter.talking === 'any' || String(!!i.talking) === meFilter.talking));
   box.innerHTML = `
-    <p class="hint">素材库：<code>${esc(ME.folder)}</code>（所有项目共用）。文件名就是标签，例 <code>backyard_glasses_talking_01.mp4</code>；含 talking/说话 的是说话镜头。加入时选<b>标签</b>而不是具体文件，渲染时自动挑用得最少的匹配镜头，每期画面都不一样。</p>
+    <p class="hint">素材库：<code>${esc(ME.folder)}</code>（所有项目共用）${info('文件名就是标签，例 backyard_glasses_talking_01.mp4；含 talking/说话 的是说话镜头。加入时选标签而不是具体文件，渲染时自动挑用得最少的匹配镜头，每期画面都不一样。')}</p>
     <div class="row">
       <select id="me_tag"><option value="">全部标签</option>${ME.tags.map(t => `<option ${meFilter.tag === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
       <select id="me_talk"><option value="any" ${meFilter.talking === 'any' ? 'selected' : ''}>沉默+说话</option><option value="false" ${meFilter.talking === 'false' ? 'selected' : ''}>沉默镜头（推荐，零风险）</option><option value="true" ${meFilter.talking === 'true' ? 'selected' : ''}>说话镜头（需口型同步）</option></select>
@@ -799,14 +888,13 @@ function openOverlayDialog(seg, existing) {
   m.innerHTML = `<div class="modal"><div class="box">
     <div class="row" style="justify-content:space-between"><b>画中画</b><button class="ghost" id="close">✕</button></div>
     <div class="grid2">
-      <div><label class="muted">素材</label><select id="ov_src">${cand.map(p => `<option value="${esc(p)}" ${(o.image || o.video) === p ? 'selected' : ''}>${esc(p.split('/').pop())}</option>`).join('')}<option value="__upload">上传新文件…</option></select><input type="file" id="ov_file" hidden accept="image/*,video/*"></div>
+      <div><label class="muted">素材${info('视频素材一律静音；比窗口短会循环。')}</label><select id="ov_src">${cand.map(p => `<option value="${esc(p)}" ${(o.image || o.video) === p ? 'selected' : ''}>${esc(p.split('/').pop())}</option>`).join('')}<option value="__upload">上传新文件…</option></select><input type="file" id="ov_file" hidden accept="image/*,video/*"></div>
       <div><label class="muted">位置</label><select id="ov_pos">${['top-left', 'top', 'top-right', 'left', 'center', 'right', 'bottom-left', 'bottom', 'bottom-right'].map(p => `<option ${o.position === p ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
-      <div><label class="muted">出现于（秒，从本段开始；旁白约 ${fmt(need)}）</label><input id="ov_at" type="number" step="0.5" min="0" value="${o.at || 0}"></div>
+      <div><label class="muted">出现于（秒，从本段开始；旁白约 ${fmt(need)}）${info('提示：说到某个名词时出现，看第 2 步该段的字幕时间即可。')}</label><input id="ov_at" type="number" step="0.5" min="0" value="${o.at || 0}"></div>
       <div><label class="muted">持续（秒，空 = 到段末）</label><input id="ov_dur" type="number" step="0.5" min="0.5" value="${o.duration ?? ''}"></div>
       <div><label class="muted">宽度（画面的 %）</label><input id="ov_size" type="range" min="10" max="60" value="${Math.round((o.size || 0.3) * 100)}"><span id="ov_sizev">${Math.round((o.size || 0.3) * 100)}%</span></div>
       <div><label class="muted">进场</label><select id="ov_anim">${[['slide', '滑入'], ['fade', '淡入'], ['none', '直接出现']].map(([v, l]) => `<option value="${v}" ${(o.animate || 'slide') === v ? 'selected' : ''}>${l}</option>`).join('')}</select> <label><input type="checkbox" id="ov_border" ${o.border !== false ? 'checked' : ''}> 白边</label></div>
     </div>
-    <p class="hint">视频素材一律静音；比窗口短会循环。提示：说到某个名词时出现，看第 2 步该段的字幕时间即可。</p>
     <div class="row" style="justify-content:flex-end"><button class="primary" id="ov_ok">${existing ? '保存' : '加入'}</button></div></div></div>`;
   $('#close').onclick = () => { m.innerHTML = ''; };
   $('#ov_size').oninput = e => $('#ov_sizev').textContent = e.target.value + '%';
@@ -832,15 +920,47 @@ async function openSegmentHistory(id) {
   const j = await api(`/api/segment/history?id=${encodeURIComponent(id)}`);
   const m = $('#modal');
   m.innerHTML = `<div class="modal"><div class="box" style="max-height:88vh;overflow:auto">
-    <div class="row" style="justify-content:space-between"><b>「${esc(id)}」的版本（${j.versions.length}）</b><button class="ghost" id="close">✕</button></div>
-    <p class="hint">每次保存时这一段有变化就会留一份；回到某一版只改这一段，其他段不动。曾渲染过的版本成片有缓存，重渲几乎不花时间。</p>
+    <div class="row" style="justify-content:space-between"><b>「${esc(id)}」的版本（${j.versions.length}）${info('每次保存时这一段有变化就会留一份；回到某一版只改这一段，其他段不动。曾渲染过的版本成片有缓存，重渲几乎不花时间。')}</b><button class="ghost" id="close">✕</button></div>
     ${j.versions.map((v, i) => `<div class="seg-row" style="grid-template-columns:130px 1fr 60px 80px;align-items:center"><span class="muted">${i === 0 ? '当前 · ' : ''}${v.time.replace(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2}).*/, '$2-$3 $4:$5:$6')}</span><span>${v.label ? `<b>${esc(v.label)}</b> · ` : ''}${esc(v.preview)}…</span><span class="muted">${v.clips} 画面</span><span>${i === 0 ? '' : `<button class="small primary" data-restore="${esc(v.name)}">回到此版</button>`}</span></div>`).join('') || '<span class="muted">还没有历史。</span>'}
   </div></div>`;
   $('#close').onclick = () => { m.innerHTML = ''; };
   m.onclick = async e => { const b = e.target.closest('button[data-restore]'); if (!b) return; b.disabled = true; await api('/api/segment/restore', { id, name: b.dataset.restore }); m.innerHTML = ''; await load(); };
 }
 
+/* ---------------- browser-bridge login (shared by the script-generation panel and the AI drawer) ----------------
+   Both features drive the user's own logged-in browser through a dedicated Edge profile (not the
+   user's everyday browser session) — the first time, nothing works until that profile is actually
+   logged into each site, and the old failure mode was a confusing "input box not found" days later
+   with no way to tell login had never finished. This polls the real per-site status instead. */
+async function startBrowserLogin(sites, statusEl) {
+  statusEl.textContent = sites ? '已打开浏览器窗口，登录这个网站后关闭窗口…' : '已打开浏览器窗口：8 个标签页逐个登录，全部登录后关闭窗口…';
+  try { await api('/api/chat', { login: true, sites }); } catch (e) { statusEl.innerHTML = `<span class="err">${esc(e.message)}</span>`; return; }
+  for (let i = 0; i < 150; i++) {                 // up to 5 minutes; stops early once the window closes
+    await new Promise(r => setTimeout(r, 2000));
+    let j; try { j = await api('/api/chat/login/status'); } catch { continue; }
+    if (!j.running) {
+      const entries = Object.entries(j.status || {});
+      statusEl.innerHTML = entries.length
+        ? '窗口已关闭：' + entries.map(([k, ok]) => `<span class="${ok ? 'ok' : 'err'}">${ok ? '✓' : '✗'} ${esc(k)}</span>`).join(' ')
+        : '窗口已关闭。';
+      return;
+    }
+  }
+  statusEl.textContent = '登录窗口还开着（5 分钟已到，继续登录不影响，关闭窗口后刷新页面看结果）。';
+}
+
 /* ---------------- AI drawer ---------------- */
+async function refreshAiLoginHint() {
+  const site = $('#ai_site').value;
+  const hint = $('#ai_login_hint');
+  if (site === '__local') { hint.textContent = ''; $('#ai_login').hidden = true; return; }
+  $('#ai_login').hidden = false;
+  try {
+    const j = await api('/api/chat/login/status');
+    if (site in (j.status || {})) hint.innerHTML = j.status[site] ? '<span class="ok">✓ 已登录</span>' : '<span class="err">✗ 还没登录成功，点右边「登录这个网站」</span>';
+    else hint.textContent = '还不确定登录状态——第一次用请点右边「登录这个网站」。';
+  } catch { hint.textContent = ''; }
+}
 $('#aiToggle').onclick = async () => {
   const d = $('#drawer'); d.hidden = !d.hidden;
   if (!d.hidden && !$('#ai_site').children.length) {
@@ -849,8 +969,13 @@ $('#aiToggle').onclick = async () => {
     if (H?.llm) opts.unshift(`<option value="__local">本地模型 ${esc(H.llm.model)}（离线，快）</option>`);
     $('#ai_site').innerHTML = opts.join('');
     $('#ai_site').value = localStorage.getItem('vf.ai_site') || (H?.llm ? '__local' : 'deepseek');
+    $('#ai_site').onchange = refreshAiLoginHint;
+    refreshAiLoginHint();
+  } else if (!d.hidden) {
+    refreshAiLoginHint();
   }
 };
+$('#ai_login').onclick = () => startBrowserLogin([$('#ai_site').value], $('#ai_login_hint')).then(refreshAiLoginHint);
 $('#drawerClose').onclick = () => { $('#drawer').hidden = true; };
 $('#ai_ctx').onclick = () => { const s = raw?.segments?.find(x => x.id === selSeg) || raw?.segments?.[0]; if (s) $('#ai_q').value += `\n\n当前段旁白：${s[textKey()] || s.text}`; };
 $('#ai_send').onclick = async () => {
@@ -870,8 +995,7 @@ $('#ai_clear').onclick = () => { $('#ai_answer').textContent = ''; $('#ai_q').va
 function openProps(c) {
   const m = $('#modal');
   m.innerHTML = `<div class="modal"><div class="box">
-    <div class="row" style="justify-content:space-between"><b>${esc(c.remotion.composition)} 的内容</b><button class="ghost" id="close">✕</button></div>
-    <p class="hint">JSON。文字可以写成 {"en": "...", "zh": "..."} 供多语言使用。</p>
+    <div class="row" style="justify-content:space-between"><b>${esc(c.remotion.composition)} 的内容${info('JSON。文字可以写成 {"en": "...", "zh": "..."} 供多语言使用。')}</b><button class="ghost" id="close">✕</button></div>
     <textarea id="props" rows="14" spellcheck="false" style="font-family:ui-monospace,Consolas,monospace;font-size:12px">${esc(JSON.stringify(c.remotion.props || {}, null, 2))}</textarea>
     <div class="row" style="justify-content:space-between"><span class="err" id="perr"></span><button class="primary" id="ok">保存</button></div></div></div>`;
   $('#close').onclick = () => { m.innerHTML = ''; };
@@ -895,14 +1019,13 @@ function viewRender(v) {
     <details ${nestedGet('subtitles', 'bilingual') || raw.outro_vocab ? 'open' : ''}><summary>学习版（双语字幕 + 片尾词汇卡，发国内英语学习区）</summary>
       <div class="grid2" style="margin-top:6px">
         <div><label class="muted">双语字幕</label><select id="l_bi"><option value="false" ${!nestedGet('subtitles', 'bilingual') ? 'selected' : ''}>关</option><option value="true" ${nestedGet('subtitles', 'bilingual') ? 'selected' : ''}>开：字幕第二行显示 ${esc(nestedGet('subtitles', 'bilingual_lang') || 'zh')} 版旁白（需该语言的文本，见语言切换）</option></select></div>
-        <div><label class="muted">片尾词汇卡（词数，0 = 不加）</label><input id="l_vocab" type="number" min="0" max="12" value="${(isBase() ? raw.outro_vocab : (variant().outro_vocab ?? raw.outro_vocab)) || 0}"></div>
+        <div><label class="muted">片尾词汇卡（词数，0 = 不加）${info('内容由本地模型（Ollama）从脚本提取：单词 / 音标 / 中文释义 / 原句；没装则只列出单词。')}</label><input id="l_vocab" type="number" min="0" max="12" value="${(isBase() ? raw.outro_vocab : (variant().outro_vocab ?? raw.outro_vocab)) || 0}"></div>
       </div>
       <div class="row">${raw.variants && raw.variants['en-zh'] ? '<span class="muted">已有 en-zh 学习版变体：左下角语言切到 en-zh 再渲染，输出到 build_en-zh/。</span>' : '<button class="small" id="l_make">＋ 一键创建 en-zh 学习版变体</button><span class="muted">英文原声 + 中英双行字幕（烧录）+ 8 词词汇卡；主频道保持纯英文版</span>'}</div>
-      <p class="hint">词汇卡内容由本地模型（Ollama）从脚本提取：单词 / 音标 / 中文释义 / 原句；没装则只列出单词。</p>
     </details>
     <details ${raw.presenter && raw.presenter.provider !== 'none' && raw.presenter.where !== 'none' ? 'open' : ''}><summary>数字主持人（画中画里"你"的形象）</summary>
       <div class="grid2" style="margin-top:6px">
-        <div><label class="muted">类型</label><select id="p_prov">${[['host', '风格化插画主持人（本地生成，免费，无需披露）'], ['heygen', 'HeyGen 逼真数字分身（需 key + 你的 avatar；自动勾选合成内容披露）'], ['none', '不用']].map(([v, l]) => `<option value="${v}" ${(raw.presenter?.provider || 'host') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div><label class="muted">类型${info('插画主持人的口型由配音音量驱动，眨眼与微动作自动生成；换成基于你照片的分层插画在路线图里。逼真分身属于"合成人物"，YouTube 会显示"合成内容"标签——这不影响获利，不披露才有风险。')}</label><select id="p_prov">${[['host', '风格化插画主持人（本地生成，免费，无需披露）'], ['heygen', 'HeyGen 逼真数字分身（需 key + 你的 avatar；自动勾选合成内容披露）'], ['none', '不用']].map(([v, l]) => `<option value="${v}" ${(raw.presenter?.provider || 'host') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
         <div><label class="muted">出现在</label><select id="p_where">${[['none', '不自动加（在第 3 步按段添加）'], ['first_last', '开场段 + 收尾段'], ['all', '每一段']].map(([v, l]) => `<option value="${v}" ${(raw.presenter?.where || 'none') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
         <div><label class="muted">位置</label><select id="p_pos">${['bottom-right', 'bottom-left', 'top-right', 'top-left', 'right', 'left'].map(p => `<option ${(raw.presenter?.position || 'bottom-right') === p ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
         <div><label class="muted">大小（画面宽的 %）</label><input id="p_size" type="number" min="15" max="50" value="${Math.round((raw.presenter?.size || 0.28) * 100)}"></div>
@@ -912,18 +1035,16 @@ function viewRender(v) {
         <div><label class="muted">配饰</label><label><input type="checkbox" id="p_glasses" ${raw.presenter?.style?.glasses ? 'checked' : ''}> 眼镜</label> <label><input type="checkbox" id="p_beard" ${raw.presenter?.style?.beard ? 'checked' : ''}> 胡须</label></div>
         <div><label class="muted">HeyGen avatar id（仅逼真分身）</label><input id="p_heygen" value="${esc(raw.presenter?.heygen_avatar_id || '')}"></div>
       </div>
-      <p class="hint">插画主持人的口型由配音音量驱动，眨眼与微动作自动生成；换成基于你照片的分层插画在路线图里。逼真分身属于"合成人物"，YouTube 会显示"合成内容"标签——这不影响获利，不披露才有风险。</p>
     </details>
     <details><summary>高级参数（编码器 / 并行 / 超采样 / 运镜幅度 / 分辨率）</summary>
       <div class="grid2" style="margin-top:6px">
-        <div><label class="muted">视频编码器</label><select id="a_enc"><option value="auto" ${(raw.encoder || 'auto') === 'auto' ? 'selected' : ''}>auto（有显卡硬编就用）</option>${(H?.encoders || ['libx264']).map(e => `<option ${raw.encoder === e ? 'selected' : ''}>${e}</option>`).join('')}</select></div>
+        <div><label class="muted">视频编码器${info('渲染日志里第一行会显示实际选用的编码器。qsv = Intel 显卡，nvenc = NVIDIA，amf = AMD，videotoolbox = Mac。')}</label><select id="a_enc"><option value="auto" ${(raw.encoder || 'auto') === 'auto' ? 'selected' : ''}>auto（有显卡硬编就用）</option>${(H?.encoders || ['libx264']).map(e => `<option ${raw.encoder === e ? 'selected' : ''}>${e}</option>`).join('')}</select></div>
         <div><label class="muted">并行渲染段数（0 = 核数/2）</label><input id="a_par" type="number" min="0" max="32" value="${raw.parallel ?? 0}"></div>
         <div><label class="muted">运镜超采样（空 = 按质量：草稿 1 / 成片 2；3 更细腻慢 2 倍）</label><input id="a_ss" type="number" min="1" max="3" value="${raw.supersample ?? ''}" placeholder="按质量"></div>
         <div><label class="muted">运镜幅度（0.08 克制 · 0.15 默认 · 0.25 明显）</label><input id="a_motion" type="number" step="0.01" min="0" max="0.5" value="${raw.motion_amount ?? 0.15}"></div>
         <div><label class="muted">画幅</label><select id="a_size">${[['1920x1080', '1080p 横屏（YouTube）'], ['3840x2160', '4K 横屏（渲染 ×4）'], ['1080x1920', '竖屏 1080×1920（Shorts / 抖音）'], ['1280x720', '720p（快速）']].map(([v, l]) => `<option value="${v}" ${`${raw.width || 1920}x${raw.height || 1080}` === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
         <div><label class="muted">帧率</label><select id="a_fps">${[24, 25, 30, 60].map(f => `<option ${(raw.fps || 30) == f ? 'selected' : ''}>${f}</option>`).join('')}</select></div>
       </div>
-      <p class="hint">这些都写进 project.json；渲染日志里第一行会显示实际选用的编码器。qsv = Intel 显卡，nvenc = NVIDIA，amf = AMD，videotoolbox = Mac。</p>
     </details>
     <div class="row" style="margin-top:10px">
       <button class="primary" id="buildBtn">▶ 渲染</button>
@@ -1047,11 +1168,10 @@ function viewPublish(v) {
     <textarea id="y_desc" rows="6">${esc(nestedGet('youtube', 'description') || '')}</textarea>
     <details><summary>将自动追加的内容</summary><pre class="chapters">${esc(chaptersText(o.timeline))}\n\n${esc(o.credits || '')}</pre></details>
     <div class="row" style="margin-top:8px">
-      <button class="primary" id="uploadBtn" ${o.final ? '' : 'disabled'}>⬆ 上传到 YouTube（${nestedGet('youtube', 'privacy') || 'private'}）</button>
+      <button class="primary" id="uploadBtn" ${o.final ? '' : 'disabled'}>⬆ 上传到 YouTube（${nestedGet('youtube', 'privacy') || 'private'}）</button>${info('未通过 Google 审核的应用上传的视频会被锁为私有——先私有上传，在 YouTube Studio 里检查后再公开/定时。每天约 5 条配额。首次需要 ~/.vidforge/client_secret.json（见 QUICKSTART 第 6 步）。头条/西瓜没有上传接口：用第 4 步的 final.mp4 + thumbnail.jpg 手动发；中文版在右上角切换语言后重新渲染。')}
       ${yt?.url ? `<span class="ok">已上传：<a href="${esc(yt.url)}" target="_blank">${esc(yt.url)}</a>（再点会更新元数据）</span>` : ''}
       <span class="muted">${o.final ? '' : '先完成第 4 步渲染'}</span>
     </div>
-    <p class="hint">未通过 Google 审核的应用上传的视频会被锁为私有——先私有上传，在 YouTube Studio 里检查后再公开/定时。每天约 5 条配额。首次需要 <code>~/.vidforge/client_secret.json</code>（见 QUICKSTART 第 6 步）。头条/西瓜没有上传接口：用第 4 步的 final.mp4 + thumbnail.jpg 手动发；中文版在右上角切换语言后重新渲染。</p>
     <pre class="log" id="ulog" hidden></pre>
   </div>`;
   $('#y_title').oninput = e => nestedSet('youtube', 'title', e.target.value || null);

@@ -231,6 +231,7 @@ class Project:
     presenter: PresenterConfig = field(default_factory=PresenterConfig)
     outro_vocab: int = 0             # learner edition: append a vocabulary card with N words (0 = off)
     lipsync: str = "none"            # none | synclabs | musetalk — for `me` takes with talking=true
+    category: str | None = None      # id of the vidforge/categories.py preset this project was created from (reference only)
     normalize_audio: bool = True     # loudnorm the narration to -16 LUFS so every segment/provider sounds alike
     parallel: int = 0                # segments rendered at once; 0 = auto (cores / 2)
     out_dir: Path = Path("build")
@@ -510,6 +511,7 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         auto_title_cards=bool(data.get("auto_title_cards", False)),
         outro_vocab=int(data.get("outro_vocab", 0) or 0),
         lipsync=str(data.get("lipsync", "none")),
+        category=data.get("category"),
         presenter=pres,
         normalize_audio=bool(data.get("normalize_audio", True)),
         parallel=int(data.get("parallel", 0)),

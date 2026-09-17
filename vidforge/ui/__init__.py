@@ -301,6 +301,12 @@ def make_handler(state: State):
                     return self._json(self.project_view(q.get("lang")))
                 if path == "/api/projects":
                     return self._json({"projects": recent_projects(), "workspace": str(workspace_dir())})
+                if path == "/api/categories":
+                    from .. import categories as cat_mod
+                    return self._json({"categories": cat_mod.list_categories()})
+                if path == "/api/categories/export":
+                    from .. import categories as cat_mod
+                    return self._json(cat_mod.export_all())
                 if path == "/api/history":
                     return self._json({"history": state.history()})
                 if path == "/api/segment/history":
@@ -347,6 +353,9 @@ def make_handler(state: State):
                     from ..browser import PROFILE_DIR
                     return self._json({"sites": [{"id": k, "label": v["label"], "url": v["url"]} for k, v in SITES.items()],
                                        "profile": str(PROFILE_DIR), "logged_in_profile": PROFILE_DIR.exists()})
+                if path == "/api/chat/login/status":
+                    from .. import browser
+                    return self._json({"status": browser.LAST_LOGIN_STATUS, "running": browser._lock.locked()})
                 if path == "/api/keywords":
                     p = state.load(q.get("lang"))
                     seg = next((s for s in p.segments if s.id == q.get("id")), None)
@@ -385,9 +394,38 @@ def make_handler(state: State):
                     tpl["title"] = body.get("title") or name
                     tpl["language"] = body.get("language", "en")
                     tpl["segments"] = []
+                    if body.get("category"):
+                        from .. import categories as cat_mod
+                        cat = cat_mod.load(body["category"])
+                        if cat:
+                            tpl["category"] = cat["id"]
+                            for k, v in (cat.get("defaults") or {}).items():
+                                if k in ("voice", "rate", "language", "lipsync", "outro_vocab"):
+                                    tpl[k] = v
+                                elif k == "tts_provider":
+                                    tpl.setdefault("tts", {})["provider"] = v
+                                elif k == "subtitles_bilingual":
+                                    tpl.setdefault("subtitles", {})["bilingual"] = v
                     (root / "project.json").write_text(json.dumps(tpl, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
                     state.open(root)
                     return self._json({"opened": str(state.project_path)})
+                if path == "/api/categories":
+                    from .. import categories as cat_mod
+                    try:
+                        return self._json({"category": cat_mod.save(body)})
+                    except cat_mod.CategoryError as e:
+                        return self._error(str(e))
+                if path == "/api/categories/delete":
+                    from .. import categories as cat_mod
+                    cat_mod.delete(body.get("id", ""))
+                    return self._json({"categories": cat_mod.list_categories()})
+                if path == "/api/categories/import":
+                    from .. import categories as cat_mod
+                    try:
+                        saved = cat_mod.import_bundle(body.get("data") or {}, merge=body.get("merge", True))
+                    except cat_mod.CategoryError as e:
+                        return self._error(str(e))
+                    return self._json({"imported": len(saved), "categories": cat_mod.list_categories()})
                 if path == "/api/segment/restore":
                     sid, name = body.get("id", ""), Path(body.get("name", "")).name
                     f = state.root / ".history" / "segments" / pipeline._safe(sid) / name
@@ -443,7 +481,7 @@ def make_handler(state: State):
                 if path == "/api/chat":
                     from ..browser import BrowserError, chat, login_session
                     if body.get("login"):
-                        threading.Thread(target=login_session, daemon=True).start()
+                        threading.Thread(target=login_session, args=(body.get("sites"),), daemon=True).start()
                         return self._json({"started": True})
                     lines: list[str] = []
                     try:

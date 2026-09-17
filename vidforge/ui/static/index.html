@@ -58,7 +58,8 @@
 
   <aside class="drawer" id="drawer" hidden>
     <div class="drawer-head"><b>✦ AI 助手</b><button class="ghost small" id="drawerClose">✕</button></div>
-    <div class="row"><select id="ai_site" class="grow"></select></div>
+    <div class="row"><select id="ai_site" class="grow"></select><button class="small" id="ai_login" title="没登录这个网站？点这里单独登录">登录这个网站</button></div>
+    <div class="muted" id="ai_login_hint" style="font-size:12px"></div>
     <textarea id="ai_q" rows="4" placeholder="向 AI 提问……回答会显示在下面。例如：给这一段写三个更有画面感的开场句。"></textarea>
     <div class="row"><button class="primary small" id="ai_send">发送</button><button class="small" id="ai_ctx" title="把当前段的旁白附在问题后面">附上当前段</button><span class="muted" id="ai_status"></span></div>
     <div class="ai_answer" id="ai_answer"></div>

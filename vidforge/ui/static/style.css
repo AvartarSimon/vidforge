@@ -93,6 +93,21 @@ audio { height: 30px; }
 .grid2 input, .grid2 select { width: 100%; }
 .chapters { font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: pre; }
 .hint { font-size: 12px; color: var(--muted); margin: 4px 0 10px; }
+/* compact hover-info: a small "i" badge instead of a paragraph eating vertical space; the tip
+   itself only appears on hover/focus (keyboard/touch accessible via tabindex). Named .info-tip,
+   not .info — that class already means something else here (the blue "banner.info" callout). */
+.info-tip { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px;
+        border-radius: 50%; background: var(--muted); color: var(--card); font-size: 10px; font-style: normal;
+        font-weight: 700; line-height: 1; cursor: help; vertical-align: middle; margin-left: 4px; flex: none; }
+.info-tip::before { content: "i"; }
+.info-tip .info-pop { display: none; position: absolute; z-index: 80; top: 20px; left: 0; width: max-content; max-width: 280px;
+                  background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: var(--radius-sm);
+                  padding: 8px 10px; font-size: 12px; line-height: 1.5; font-weight: 400; box-shadow: 0 4px 16px rgba(0,0,0,.18); cursor: auto; }
+.info-tip:hover .info-pop, .info-tip:focus .info-pop, .info-tip:focus-within .info-pop { display: block; }
+.copy-btn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0;
+            border-radius: var(--radius-sm); background: transparent; border: 1px solid var(--line); cursor: pointer;
+            font-size: 12px; vertical-align: middle; margin-left: 4px; }
+.copy-btn:hover { background: var(--hover, var(--line)); }
 details summary { cursor: pointer; color: var(--muted); font-size: 12px; margin: 6px 0; user-select: none; }
 details[open] summary { color: var(--fg); }
 

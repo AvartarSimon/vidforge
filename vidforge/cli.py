@@ -102,7 +102,12 @@ def cmd_i18n(args: argparse.Namespace) -> int:
 def cmd_browser(args: argparse.Namespace) -> int:
     from . import browser
     if args.action == "login":
-        browser.login_session(args.sites or None)
+        status = browser.login_session(args.sites or None)
+        print()
+        for name, ok in status.items():
+            print(f"  {'已登录' if ok else '未登录 ⚠'}  {name}")
+        if not all(status.values()):
+            print("\n未登录的站点再运行一次 `vidforge browser login <站点>` 单独登录。")
     return 0
 
 
@@ -152,6 +157,37 @@ def cmd_me(args: argparse.Namespace) -> int:
     talking = {"true": True, "false": False}.get((args.talking or "").lower())
     lib.set_tags(args.name, tags, talking)
     print(f"已更新 {args.name}：标签 {tags or '(清空)'}" + (f"，talking={talking}" if talking is not None else ""))
+    return 0
+
+
+def cmd_category(args: argparse.Namespace) -> int:
+    """Named per-topic-vertical presets (platforms, reference sources, banned keywords, defaults)
+    — see vidforge/categories.py for why these are plain JSON files, not a database."""
+    from . import categories as cat_mod
+    if args.action == "list":
+        cats = cat_mod.list_categories()
+        if not cats:
+            print(f"还没有分类。{cat_mod.DIR} 是空的。"); return 0
+        for c in cats:
+            print(f"  {c['id']:<24} {c['name']}")
+        return 0
+    if args.action == "show":
+        c = cat_mod.load(args.arg or "")
+        if not c:
+            raise SystemExit(f"没有这个分类：{args.arg}")
+        print(json.dumps(c, indent=2, ensure_ascii=False)); return 0
+    if args.action == "path":
+        print(cat_mod.DIR / f"{args.arg}.json" if args.arg else cat_mod.DIR); return 0
+    if args.action == "delete":
+        cat_mod.delete(args.arg or ""); print("已删除"); return 0
+    if args.action == "export":
+        out = Path(args.arg or "vidforge-categories.json")
+        out.write_text(json.dumps(cat_mod.export_all(), indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"已导出到 {out}"); return 0
+    if args.action == "import":
+        data = json.loads(Path(args.arg).read_text(encoding="utf-8"))
+        saved = cat_mod.import_bundle(data, merge=not args.replace)
+        print(f"{'替换为' if args.replace else '合并了'} {len(saved)} 个分类"); return 0
     return 0
 
 
@@ -316,6 +352,12 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--tags", help="tag: comma-separated tags, e.g. backyard,glasses")
     s.add_argument("--talking", choices=["true", "false"], help="tag: mark as a speaking take or silent B-roll")
     s.set_defaults(fn=cmd_me)
+
+    s = sub.add_parser("category", help="topic-vertical presets (platforms/sources/banned keywords/defaults): plain JSON files, not a database")
+    s.add_argument("action", choices=["list", "show", "path", "delete", "export", "import"])
+    s.add_argument("arg", nargs="?", help="show/path/delete: category id · export/import: file path")
+    s.add_argument("--replace", action="store_true", help="import: replace all categories instead of merging")
+    s.set_defaults(fn=cmd_category)
 
     s = sub.add_parser("start", help="open vidforge: last project, or the project picker")
     s.add_argument("project", nargs="?")
