@@ -93,6 +93,8 @@ details summary { cursor:pointer; color:var(--muted); font-size:12px; margin:6px
 
 .lg-err { color:#ff8a80; } .lg-warn { color:#ffd54f; } .lg-ok { color:#a5d6a7; } .lg-dim { color:#9aa3ad; }
 
+table.yt { width:100%; border-collapse:collapse; font-size:12px; } table.yt th, table.yt td { text-align:left; padding:3px 6px; border-bottom:1px solid var(--line); white-space:nowrap; } table.yt td:last-child { white-space:normal; }
+
 /* trim dialog */
 .modal { position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; z-index:50; }
 .modal .box { background:var(--card); border-radius:12px; padding:16px; width:min(860px, 94vw); }

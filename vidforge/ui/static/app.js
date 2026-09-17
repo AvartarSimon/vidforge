@@ -94,6 +94,54 @@ function render() {
   $('#tour').innerHTML = localStorage.getItem('vf.tour') ? '' : `<div class="banner info">第一次用？流程就是顶上五步：<b>写脚本 → 配音试听 → 每段挑画面 → 渲染 → 发布</b>。每一步只做一件事，右下角「下一步」。所有改动自动保存到 project.json。 <button class="small" onclick="localStorage.setItem('vf.tour','1');render()">知道了</button></div>`;
   const v = $('#view');
   ({ 1: viewScript, 2: viewVoice, 3: viewVisuals, 4: viewRender, 5: viewPublish })[step](v);
+  renderChecks();
+}
+
+/* ---------------- best-practice checks (docs/best-practices.md; thresholds in best_practices.json) ---------------- */
+let BP = null;
+fetch('/static/best_practices.json').then(r => r.json()).then(j => { BP = j; renderChecks(); }).catch(() => {});
+const wordsOf = t => (t || '').trim() ? (t.match(/[\u4e00-\u9fff]/g) || []).length > (t.length * 0.3) ? { n: (t.match(/[\u4e00-\u9fff]/g) || []).length, cjk: true } : { n: t.trim().split(/\s+/).length, cjk: false } : { n: 0, cjk: false };
+const secondsOf = t => { const w = wordsOf(t); return w.cjk ? w.n / (BP?.cjk_per_second || 3.8) : w.n / (BP?.words_per_second || 2.6); };
+function checks() {
+  if (!BP || !raw) return [];
+  const out = [], segs = raw.segments || [], res = P.resolved || {};
+  const tk = textKey();
+  if (step === 1 && segs.length) {
+    const hook = segs[0][tk] || ''; const w = wordsOf(hook);
+    if ((w.cjk && w.n > BP.hook_max_cjk) || (!w.cjk && w.n > BP.hook_max_words)) out.push(`B1 钩子太长：第一段 ${w.n} ${w.cjk ? '字' : '词'}（≤ ${w.cjk ? BP.hook_max_cjk + ' 字' : BP.hook_max_words + ' 词'} ≈ 30 秒）——观众 30 秒内要知道为什么看下去`);
+    if (!/[0-9０-９一二三四五六七八九十百千万亿]|\?|？/.test(hook)) out.push('B1 钩子里没有数字、问题或反差——试试用一个具体数字或问题开场');
+    const long = segs.filter(s => secondsOf(s[tk]) > BP.segment_max_seconds).map(s => s.id);
+    if (long.length) out.push(`B3 这些段超过 ${BP.segment_max_seconds} 秒，建议拆开：${long.join(', ')}`);
+    const total = segs.reduce((a, s) => a + secondsOf(s[tk]) + 0.5, 0) / 60;
+    if (total < BP.total_minutes_range[0]) out.push(`B6 预计总长 ${total.toFixed(1)} 分钟，历史/科普长视频 ${BP.total_minutes_range[0]}–${BP.total_minutes_range[1]} 分钟更稳（Shorts 另做）`);
+    if (total > BP.total_minutes_range[1]) out.push(`B6 预计总长 ${total.toFixed(1)} 分钟，超过 ${BP.total_minutes_range[1]} 分钟考虑拆成两集`);
+    const chapters = segs.filter(s => s[labelKey()] || s.label).length;
+    if (segs.length >= BP.chapter_every_segments && chapters < Math.floor(segs.length / BP.chapter_every_segments)) out.push(`B5 章节名太少（${chapters}）：每 ${BP.chapter_every_segments} 段左右给一个章节名，YouTube 章节和标题卡都用它`);
+    const tt = topGet('thumbnail_text') || ''; const tw = wordsOf(tt.replace(/\n/g, ' '));
+    if (tt && ((tw.cjk && tw.n > BP.thumbnail_max_cjk) || (!tw.cjk && tw.n > BP.thumbnail_max_words))) out.push(`C3 封面文字太多（${tw.n}）：≤ ${tw.cjk ? BP.thumbnail_max_cjk + ' 字' : BP.thumbnail_max_words + ' 词'}，且与标题互补不重复`);
+  }
+  if (step === 3 && segs.length) {
+    const slow = segs.filter(s => { const cl = segClips(s); const sec = (res[s.id]?.need) || secondsOf(s[tk]); return cl.length === 1 && cl[0].image && sec > BP.visual_change_seconds * 2.5; }).map(s => s.id);
+    if (slow.length) out.push(`B4 这些段 30 秒以上只有一张图，画面应每 ${BP.visual_change_seconds} 秒左右变化一次：${slow.join(', ')}——加片段或换成视频`);
+    const custom = segs.reduce((a, s) => a + segClips(s).filter(c => c.remotion).length, 0);
+    if (custom < BP.min_custom_visuals && !raw.auto_title_cards) out.push(`A2 自制画面只有 ${custom} 个（建议 ≥ ${BP.min_custom_visuals}：时间轴/图表/标题卡），或在第 4 步开「章节标题卡」——这是审核可见的原创增值`);
+  }
+  if (step === 5) {
+    const title = nestedGet('youtube', 'title') || topGet('title') || '';
+    if (title.length > BP.title_max_chars) out.push(`C1 标题 ${title.length} 字符，移动端 ${BP.title_max_chars} 后截断`);
+    const cb = BP.clickbait_words.filter(w => title.toLowerCase().includes(w.toLowerCase()));
+    if (cb.length) out.push(`C1 标题含易被限流的词：${cb.join('、')}`);
+    const tags = nestedGet('youtube', 'tags') || [];
+    if (tags.length < BP.tags_range[0]) out.push(`C5 标签 ${tags.length} 个，建议 ${BP.tags_range[0]}–${BP.tags_range[1]} 个（2 个宽词 + 长尾）`);
+    if (!(nestedGet('youtube', 'description') || '').trim()) out.push('C4 简介为空：前两行要含核心关键词，再列来源（A5）');
+    out.push('A6 披露：YouTube 仅在有"看似真实的合成人物/事件"时勾选合成内容；发国内平台请在简介注明"内容含 AI 生成"（2025-09-01 法规）');
+  }
+  return out;
+}
+function renderChecks() {
+  const host = $('#checks') || (() => { const d = document.createElement('div'); d.id = 'checks'; $('#issues').after(d); return d; })();
+  const items = checks();
+  host.innerHTML = items.length ? `<details class="banner info" open><summary>规范检查（${items.length}）· 依据 docs/best-practices.md</summary><ul style="margin:6px 0 0 18px">${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></details>` : '';
 }
 
 /* ---------------- 1 script ---------------- */
@@ -110,6 +158,12 @@ function viewScript(v) {
     <div class="row" style="justify-content:space-between"><b>段落（${segs.length}）</b>
       <span><button class="small" id="addSeg">＋ 添加一段</button> <button class="small" id="togglePaste">${segs.length ? '从整篇脚本重新拆段…' : ''}</button></span></div>
     <p class="hint">一段 = 一个画面（或几个片段）+ 讲这段时说的话。旁白<b>按口语写、短句、标点齐全</b>——标点决定字幕断行和停顿。${isBase() ? '' : `<span class="warn">当前编辑的是 <b>${lang}</b> 版旁白；空着的段会用红框提示。</span>`}</p>
+    <details id="topicPanel"><summary>🔎 选题助手：看 YouTube 上同类视频的数据，让 AI 判断值不值得做、用什么视角</summary>
+      <div class="row" style="margin-top:6px"><input id="t_q" class="grow" placeholder="候选主题，例：year without a summer 1816" value="${esc(topGet('title') || '')}"><input id="t_pos" class="grow" placeholder="频道定位（可选），例：英文历史解说，15 分钟长视频"><button id="t_search">看同类视频</button></div>
+      <div id="t_table"></div>
+      <div class="row" id="t_actions" hidden><select id="t_site"></select><button class="primary" id="t_ai">让 AI 评估（我的浏览器）</button><button id="t_copy">只复制提示词</button><span class="muted" id="t_status"></span></div>
+      <div id="t_result"></div>
+    </details>
     <div id="paste" ${segs.length ? 'hidden' : ''}>
       <details id="genPanel" ${segs.length ? '' : 'open'}><summary>✨ 用我的浏览器里的 AI 生成脚本（ChatGPT / Claude / Gemini / DeepSeek / Grok / 千问 / Kimi / 文心）</summary>
         <div class="grid2" style="margin-top:6px">
@@ -146,6 +200,49 @@ function viewScript(v) {
   $('#f_thumb').oninput = e => topSet('thumbnail_text', e.target.value.replace(/\\n/g, '\n'));
   $('#addSeg').onclick = () => { raw.segments.push({ id: newId(), text: isBase() ? '' : '(en)', [textKey()]: '', clips: [] }); markDirty(true); };
   $('#togglePaste').onclick = () => { $('#paste').hidden = !$('#paste').hidden; };
+  // ---- topic research
+  let tVideos = [];
+  $('#t_search').onclick = async () => {
+    const qv = $('#t_q').value.trim(); if (!qv) return;
+    $('#t_table').innerHTML = '<span class="muted">正在读取 YouTube…</span>';
+    try {
+      const j = await api(`/api/research/youtube?q=${encodeURIComponent(qv)}&n=20`); tVideos = j.videos;
+      const s = j.summary;
+      $('#t_table').innerHTML = `<p class="hint">${j.source === 'api' ? '数据来自 YouTube Data API' : '数据来自 YouTube 搜索页（无 key，近似值；设 YOUTUBE_API_KEY 可得精确统计）'} · ${s.count} 条 · 中位播放 ${(s.median_views || 0).toLocaleString()} · 近 12 个月新发 ${s.recent_12m} 条（中位 ${(s.recent_median_views || 0).toLocaleString()}） · ≥8 分钟占 ${Math.round((s.long_form_share || 0) * 100)}% · 中位时长 ${s.median_duration_min} 分</p>
+        <div style="max-height:260px;overflow:auto"><table class="yt"><tr><th>播放</th><th>每天</th><th>年龄</th><th>时长</th><th>频道</th><th>标题</th></tr>
+        ${j.videos.sort((a, b) => b.views - a.views).map(v => `<tr><td>${v.views.toLocaleString()}</td><td>${v.views_per_day ?? '–'}</td><td>${v.age_days != null ? Math.round(v.age_days / 30) + ' 月' : '–'}</td><td>${v.duration_s ? fmt(v.duration_s) : '–'}</td><td>${esc(v.channel)}</td><td><a href="${esc(v.url)}" target="_blank">${esc(v.title)}</a></td></tr>`).join('')}</table></div>`;
+      $('#t_actions').hidden = false;
+      if (!$('#t_site').children.length) { const st = await api('/api/chat/sites'); $('#t_site').innerHTML = st.sites.map(x => `<option value="${x.id}" ${x.id === (localStorage.getItem('vf.site') || 'deepseek') ? 'selected' : ''}>${esc(x.label)}</option>`).join(''); }
+    } catch (e) { $('#t_table').innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+  };
+  const tBody = () => ({ q: $('#t_q').value.trim(), positioning: $('#t_pos').value.trim(), site: $('#t_site').value });
+  $('#t_copy').onclick = async () => { const j = await api(`/api/research/analyze?lang=${lang}`, { ...tBody(), prompt_only: true }); await navigator.clipboard.writeText(j.prompt); $('#t_status').textContent = '提示词已复制（含同类视频数据），贴到任意 AI。'; };
+  $('#t_ai').onclick = async () => {
+    localStorage.setItem('vf.site', $('#t_site').value);
+    $('#t_ai').disabled = true; $('#t_status').textContent = '正在浏览器里提问，通常 30–90 秒…';
+    try {
+      const j = await api(`/api/research/analyze?lang=${lang}`, tBody()); const r = j.result;
+      const li = (arr, f = x => esc(typeof x === 'string' ? x : JSON.stringify(x))) => (arr || []).map(x => `<li>${f(x)}</li>`).join('');
+      $('#t_result').innerHTML = r.raw ? `<pre class="log">${esc(r.why)}</pre>` : `
+        <div class="card" style="margin-top:8px">
+          <div class="row"><span class="pill ${r.verdict === 'do' ? 'ok' : r.verdict === 'skip' ? 'err' : 'warn'}">${{ do: '值得做', do_with_angle: '换视角做', skip: '跳过' }[r.verdict] || esc(r.verdict)}</span><span class="muted">饱和度：${esc(r.saturation || '')}</span></div>
+          <p>${esc(r.why || '')}</p>
+          <b>差异化视角</b><ul>${li(r.angles, a => `<b>${esc(a.title || a)}</b>${a.why ? ' — ' + esc(a.why) : ''} <button class="small" data-angle="${esc(a.title || a)}">用这个视角</button>`)}</ul>
+          <div class="grid2"><div><b>标题候选</b><ul>${li(r.titles, t => `${esc(t)} <button class="small" data-title="${esc(t)}">用</button>`)}</ul></div>
+          <div><b>开场钩子</b><ul>${li(r.hooks)}</ul></div>
+          <div><b>头部视频的优点</b><ul>${li(r.strengths_of_top)}</ul></div><div><b>没人讲的空白</b><ul>${li(r.gaps)}</ul></div>
+          <div><b>封面大字</b><ul>${li(r.thumbnail_text, t => `${esc(t)} <button class="small" data-thumb="${esc(t)}">用</button>`)}</ul></div><div><b>风险</b><ul>${li(r.risks)}</ul></div></div>
+        </div>`;
+      $('#t_status').textContent = '';
+      $('#t_result').onclick = e => {
+        const b = e.target.closest('button'); if (!b) return;
+        if (b.dataset.angle) { $('#g_topic').value = $('#t_q').value; $('#g_points').value = `视角：${b.dataset.angle}\n` + ($('#g_points').value || ''); $('#genPanel').open = true; $('#g_topic').scrollIntoView({ behavior: 'smooth' }); }
+        if (b.dataset.title) topSet('title', b.dataset.title), $('#f_title').value = b.dataset.title;
+        if (b.dataset.thumb) topSet('thumbnail_text', b.dataset.thumb), $('#f_thumb').value = b.dataset.thumb;
+      };
+    } catch (e) { $('#t_status').innerHTML = `<span class="err">${esc(e.message)}</span>${e.data?.prompt ? ' <button class="small" id="t_copy2">复制提示词自己去贴</button>' : ''}`; if ($('#t_copy2')) $('#t_copy2').onclick = () => navigator.clipboard.writeText(e.data.prompt); }
+    $('#t_ai').disabled = false;
+  };
   api('/api/chat/sites').then(j => { $('#g_site').innerHTML = j.sites.map(s => `<option value="${s.id}" ${s.id === (localStorage.getItem('vf.site') || 'deepseek') ? 'selected' : ''}>${esc(s.label)}</option>`).join(''); }).catch(() => {});
   const buildPrompt = () => {
     const zh = (isBase() ? P.base_lang : lang).startsWith('zh');

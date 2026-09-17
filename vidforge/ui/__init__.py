@@ -190,6 +190,15 @@ def make_handler(state: State):
                     return self._json(self.voices(q.get("provider", "edge"), q.get("lang")))
                 if path == "/api/search":
                     return self.search(q)
+                if path == "/api/research/youtube":
+                    from ..research import youtube as yt
+                    env.load_dotenv(state.root)
+                    try:
+                        vids = yt.search(state.root, (q.get("q") or "").strip(), int(q.get("n", 20)))
+                    except Exception as e:  # noqa: BLE001
+                        return self._error(str(e))
+                    return self._json({"videos": [{**asdict(v), "url": v.url, "views_per_day": v.views_per_day} for v in vids],
+                                       "summary": yt.summarize(vids), "source": vids[0].source if vids else None})
                 if path == "/api/chat/sites":
                     from ..browser.chat import SITES
                     from ..browser import PROFILE_DIR
@@ -219,6 +228,21 @@ def make_handler(state: State):
                     return self.save_project(body)
                 if path == "/api/tts":
                     return self.tts(body.get("id"), q.get("lang"))
+                if path == "/api/research/analyze":
+                    from ..research import analyze, youtube as yt
+                    env.load_dotenv(state.root)
+                    topic = (body.get("q") or "").strip()
+                    vids = yt.search(state.root, topic, 20)
+                    prompt = analyze.build_prompt(topic, vids, body.get("positioning", ""), lang=q.get("lang") or "zh")
+                    if body.get("prompt_only"):
+                        return self._json({"prompt": prompt})
+                    from ..browser import BrowserError, chat
+                    lines: list[str] = []
+                    try:
+                        text = chat.ask(body.get("site", "deepseek"), prompt, timeout=240, log=lines.append)
+                    except BrowserError as e:
+                        return self._error(str(e), lines=lines, prompt=prompt)
+                    return self._json({"result": analyze.parse_answer(text), "raw": text, "lines": lines})
                 if path == "/api/chat":
                     from ..browser import BrowserError, chat, login_session
                     if body.get("login"):

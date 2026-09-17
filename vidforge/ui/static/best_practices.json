@@ -1,0 +1,19 @@
+{
+  "_doc": "docs/best-practices.md — thresholds the wizard checks; edit here, the pages read this file",
+  "hook_max_words": 75,
+  "hook_max_cjk": 120,
+  "segment_max_seconds": 60,
+  "segment_target_seconds": [20, 45],
+  "visual_change_seconds": 12,
+  "chapter_every_segments": 5,
+  "chapter_max_words": 6,
+  "total_minutes_range": [8, 25],
+  "title_max_chars": 60,
+  "thumbnail_max_words": 4,
+  "thumbnail_max_cjk": 6,
+  "tags_range": [5, 12],
+  "words_per_second": 2.6,
+  "cjk_per_second": 3.8,
+  "min_custom_visuals": 3,
+  "clickbait_words": ["SHOCKING", "You Won't Believe", "INSANE", "震惊", "细思极恐", "99%的人不知道"]
+}
