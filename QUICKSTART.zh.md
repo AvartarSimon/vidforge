@@ -144,6 +144,17 @@ ELEVENLABS_API_KEY=...    # https://elevenlabs.io  付费
 ```
 YouTube：Google Cloud 控制台 → 启用 YouTube Data API v3 → OAuth 客户端（桌面应用）→ 下载 JSON 存为 `C:\Users\<你>\.vidforge\client_secret.json`；`pip install -e ".[youtube]"`。
 
+### 设计声音：免费开源方案（VoxCPM2）
+
+不想为 ElevenLabs 付费也能"用文字描述一个声音"：[VoxCPM2](https://github.com/OpenBMB/VoxCPM)（Apache-2.0，可商用，支持中文+9种方言+共30种语言）。在**实际要渲染的那台机器**上装一次：
+```
+pip install -e ".[voxcpm]"
+```
+（等价于 `pip install voxcpm soundfile`。）
+8GB 显存的 GPU 较快，纯 CPU 也能跑（比实时慢，但配音是离线批量生成，不影响使用）。装好后，第 2 步「✨ 设计品牌声音…」里选 VoxCPM2 引擎，跟 ElevenLabs 一样填描述、生成候选、保存——保存的是文字描述 + 随机种子（不是云端 id），所以同一个声音全项目一致。项目里手动写的话：`"tts": {"provider": "voxcpm"}, "voice": "你保存的名字"`，或者直接 `"voice": "(一段声音描述)"` 不用先保存。
+
+⚠ 这个 provider 是照着 VoxCPM2 公开文档写的，我这台机器没装它跑过，实际用起来 API 细节如果对不上，`vidforge/tts/voxcpm.py` 是要改的地方。另外调研到的 Breeze TTS 2（同样开源、评测分数更高）**不建议用**：模型权重是"仅限研究/非商用"协议，做变现频道用不了；而且最低要 12GB 显存的 NVIDIA + Linux，Mac 上跑不了。
+
 ---
 
 ## 4. 命令行（向导做的事命令行都能做）

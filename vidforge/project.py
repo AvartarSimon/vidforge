@@ -142,7 +142,7 @@ class Segment:
 
 @dataclass
 class TtsConfig:
-    provider: str = "edge"           # edge | elevenlabs | silent (layout previews, no network)
+    provider: str = "edge"           # edge | elevenlabs | voxcpm | silent (layout previews, no network)
     model: str = "eleven_multilingual_v2"
     stability: float = 0.5
     similarity_boost: float = 0.75
@@ -474,8 +474,8 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         raise ProjectError(f"quality '{quality}' not in {QUALITIES}")
 
     tts = TtsConfig(**{k: v for k, v in data.get("tts", {}).items() if k in TtsConfig.__dataclass_fields__})
-    if tts.provider not in ("edge", "elevenlabs", "silent"):
-        raise ProjectError(f"tts.provider '{tts.provider}' not in ('edge', 'elevenlabs', 'silent')")
+    if tts.provider not in ("edge", "elevenlabs", "voxcpm", "silent"):
+        raise ProjectError(f"tts.provider '{tts.provider}' not in ('edge', 'elevenlabs', 'voxcpm', 'silent')")
 
     pres = PresenterConfig(**{k: v for k, v in (data.get("presenter") or {}).items() if k in PresenterConfig.__dataclass_fields__})
     if pres.provider not in ("host", "heygen", "none") or pres.where not in ("none", "first_last", "all"):

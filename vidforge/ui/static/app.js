@@ -493,8 +493,9 @@ function viewVoice(v) {
       <div><label class="muted">配音服务</label><select id="f_provider">
         <option value="edge" ${provider === 'edge' ? 'selected' : ''}>edge（免费，微软神经语音）</option>
         <option value="elevenlabs" ${provider === 'elevenlabs' ? 'selected' : ''}>ElevenLabs（付费，需 key）</option>
+        <option value="voxcpm" ${provider === 'voxcpm' ? 'selected' : ''}>VoxCPM2（免费开源，本地跑，需自己装）</option>
         <option value="silent" ${provider === 'silent' ? 'selected' : ''}>静音占位（只看画面，不联网）</option></select></div>
-      <div><label class="muted">声音</label><div class="row" style="margin:0"><input id="f_voice" class="grow" value="${esc(topGet('voice') || '')}" placeholder="点「浏览」按口音/性别挑"><button id="browseVoice">浏览…</button><button id="designVoice" title="用文字描述设计一个专属声音（ElevenLabs Voice Design，不克隆任何真人）">✨ 设计品牌声音…</button></div></div>
+      <div><label class="muted">声音</label><div class="row" style="margin:0"><input id="f_voice" class="grow" value="${esc(topGet('voice') || '')}" placeholder="点「浏览」按口音/性别挑，或按描述设计一个"><button id="browseVoice">浏览…</button><button id="designVoice" title="用文字描述设计一个专属声音（不克隆任何真人）">✨ 设计品牌声音…</button></div></div>
       <div><label class="muted">语速 <span id="rateVal">${esc(topGet('rate') || '+0%')}</span></label><input type="range" id="f_rate" min="-30" max="30" step="1" value="${parseInt(topGet('rate') || '0', 10) || 0}"></div>
       <div><label class="muted">试听${info('改了声音或语速后，所有段的配音都要重做（缓存按声音+文字区分，不会重复扣费同一段）。')}</label><div class="row"><button id="ttsFirst">▶ 用第一段试听这个声音</button><button class="primary" id="ttsAll">全部配音</button></div></div>
     </div>
@@ -513,32 +514,47 @@ function viewVoice(v) {
   $('#f_provider').onchange = e => nestedSet('tts', 'provider', e.target.value);
   $('#f_voice').oninput = e => topSet('voice', e.target.value);
   $('#browseVoice').onclick = () => openVoiceBrowser($('#f_provider').value, v => { $('#f_voice').value = v; topSet('voice', v); });
+  const VD_HINT = {
+    elevenlabs: `⚠ 需要 .env 里配置 <code>ELEVENLABS_API_KEY</code>——没配的话点「生成」会在下面显示这一条报错，不是卡住或"找不到"。Voice Design 本身免费版账号（每月约 1 万 credits）应该就能试；付费档位区别主要在音质（更高码率/采样率）和每月额度，具体以 <a href="https://elevenlabs.io/pricing" target="_blank">elevenlabs.io/pricing</a> 当前页面为准。`,
+    voxcpm: `⚠ 免费开源（Apache-2.0，可商用），但要你自己先在实际渲染的那台机器上装好：<code>pip install voxcpm soundfile</code>（8GB 显卡较快，纯 CPU 也能跑，慢一些不影响离线配音）。没装的话点「生成」会报"VoxCPM2 isn't installed"。生成比 ElevenLabs 慢（本地推理），3 个候选每个都是完整生成，不是快速预览。`,
+  };
   $('#designVoice').onclick = () => {
     const m = $('#modal');
-    m.innerHTML = `<div class="modal"><div class="box">
-      <div class="row" style="justify-content:space-between"><b>设计品牌声音${info('用文字描述想要的声音，ElevenLabs 会合成 3 个候选（不克隆任何真人，可商用）。')}</b><button class="ghost" id="close">✕</button></div>
-      <p class="hint">⚠ 需要 .env 里配置 <code>ELEVENLABS_API_KEY</code>——没配的话点「生成」会在下面显示这一条报错，不是卡住或"找不到"。Voice Design 本身免费版账号（每月约 1 万 credits）应该就能试；付费档位区别主要在音质（更高码率/采样率）和每月额度，具体以 <a href="https://elevenlabs.io/pricing" target="_blank">elevenlabs.io/pricing</a> 当前页面为准。</p>
-      <textarea id="vd_desc" rows="3" placeholder="例：四十岁左右的男声，低沉、温暖、有磁性，语速从容，像纪录片解说，带一点英式口音">${esc(localStorage.getItem('vf.vd_desc') || '')}</textarea>
-      <textarea id="vd_text" rows="2" placeholder="试听文本（可空，默认用一段解说样例；≥100 字符）"></textarea>
-      <div class="row"><button class="primary" id="vd_go">生成 3 个候选</button><span class="muted" id="vd_status"></span></div>
-      <div id="vd_list"></div></div></div>`;
-    $('#close').onclick = () => { m.innerHTML = ''; };
-    $('#vd_go').onclick = async () => {
-      const desc = $('#vd_desc').value.trim(); if (!desc) return; localStorage.setItem('vf.vd_desc', desc);
-      $('#vd_go').disabled = true; $('#vd_status').textContent = '合成中（约 20–40 秒）…';
-      try {
-        const j = await api(`/api/voice/design?lang=${lang}`, { desc, text: $('#vd_text').value });
-        $('#vd_list').innerHTML = j.previews.map((p, i) => `<div class="row"><b>候选 ${i + 1}</b><audio controls src="${fileUrl(p.audio)}"></audio><input class="grow" value="品牌旁白 ${i + 1}" data-name><button class="small primary" data-keep="${esc(p.id)}">保存并选用</button></div>`).join('');
-        $('#vd_status').textContent = '';
-        $('#vd_list').onclick = async e => {
-          const b = e.target.closest('button[data-keep]'); if (!b) return; b.disabled = true;
-          const name = b.closest('.row').querySelector('input[data-name]').value;
-          try { const k = await api('/api/voice/keep', { id: b.dataset.keep, name, desc }); $('#f_voice').value = k.voice_id; topSet('voice', k.voice_id); nestedSet('tts', 'provider', 'elevenlabs'); $('#f_provider').value = 'elevenlabs'; m.innerHTML = ''; $('#issues').innerHTML = `<div class="banner info">已保存声音 ${esc(name)}（${esc(k.voice_id)}）并设为项目声音；配音服务已切到 ElevenLabs。</div>`; }
-          catch (err) { alert(err.message); b.disabled = false; }
-        };
-      } catch (err) { $('#vd_status').innerHTML = `<span class="err">${esc(err.message)}</span>`; }
-      $('#vd_go').disabled = false;
+    const provider = () => $('#vd_provider').value;
+    const initial = localStorage.getItem('vf.vd_provider') === 'voxcpm' ? 'voxcpm' : 'elevenlabs';
+    const render = () => {
+      m.innerHTML = `<div class="modal"><div class="box">
+        <div class="row" style="justify-content:space-between"><b>设计品牌声音${info('用文字描述想要的声音，合成几个候选（不克隆任何真人）。')}</b><button class="ghost" id="close">✕</button></div>
+        <div class="row"><label class="muted">用哪个引擎</label><select id="vd_provider"><option value="elevenlabs" ${initial === 'elevenlabs' ? 'selected' : ''}>ElevenLabs（云端，付费为主，更快更稳）</option><option value="voxcpm" ${initial === 'voxcpm' ? 'selected' : ''}>VoxCPM2（本地免费，需自己装，较慢）</option></select></div>
+        <p class="hint" id="vd_hint">${VD_HINT[initial]}</p>
+        <textarea id="vd_desc" rows="3" placeholder="例：四十岁左右的男声，低沉、温暖、有磁性，语速从容，像纪录片解说，带一点英式口音">${esc(localStorage.getItem('vf.vd_desc') || '')}</textarea>
+        <textarea id="vd_text" rows="2" placeholder="试听文本（可空，默认用一段解说样例；≥100 字符）"></textarea>
+        <div class="row"><button class="primary" id="vd_go">生成 3 个候选</button><span class="muted" id="vd_status"></span></div>
+        <div id="vd_list"></div></div></div>`;
+      $('#close').onclick = () => { m.innerHTML = ''; };
+      $('#vd_provider').onchange = () => { localStorage.setItem('vf.vd_provider', provider()); $('#vd_hint').innerHTML = VD_HINT[provider()]; };
+      $('#vd_go').onclick = async () => {
+        const desc = $('#vd_desc').value.trim(); if (!desc) return; localStorage.setItem('vf.vd_desc', desc);
+        const p = provider();
+        $('#vd_go').disabled = true; $('#vd_status').textContent = p === 'voxcpm' ? '本地生成中（比云端慢，可能几分钟）…' : '合成中（约 20–40 秒）…';
+        try {
+          const j = await api(`/api/voice/design?lang=${lang}`, { provider: p, desc, text: $('#vd_text').value });
+          $('#vd_list').innerHTML = j.previews.map((pv, i) => `<div class="row"><b>候选 ${i + 1}</b><audio controls src="${fileUrl(pv.audio)}"></audio><input class="grow" value="品牌旁白 ${i + 1}" data-name><button class="small primary" data-keep="${esc(pv.id)}">保存并选用</button></div>`).join('');
+          $('#vd_status').textContent = '';
+          $('#vd_list').onclick = async e => {
+            const b = e.target.closest('button[data-keep]'); if (!b) return; b.disabled = true;
+            const name = b.closest('.row').querySelector('input[data-name]').value;
+            try {
+              const k = await api('/api/voice/keep', { provider: p, id: b.dataset.keep, name, desc });
+              $('#f_voice').value = k.voice_id; topSet('voice', k.voice_id); nestedSet('tts', 'provider', p); $('#f_provider').value = p; m.innerHTML = '';
+              $('#issues').innerHTML = `<div class="banner info">已保存声音 ${esc(name)}（${esc(k.voice_id)}）并设为项目声音；配音服务已切到 ${esc(p)}。</div>`;
+            } catch (err) { alert(err.message); b.disabled = false; }
+          };
+        } catch (err) { $('#vd_status').innerHTML = `<span class="err">${esc(err.message)}</span>`; }
+        $('#vd_go').disabled = false;
+      };
     };
+    render();
   };
   $('#f_rate').oninput = e => { const val = `${e.target.value >= 0 ? '+' : ''}${e.target.value}%`; $('#rateVal').textContent = val; topSet('rate', val); };
   $('#ttsFirst').onclick = () => segs.length && ttsOne(segs[0].id);

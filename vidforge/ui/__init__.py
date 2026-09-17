@@ -490,19 +490,21 @@ def make_handler(state: State):
                         return self._error(str(e), lines=lines)
                     return self._json({"text": text, "lines": lines})
                 if path == "/api/voice/design":
-                    from ..tts import voice_design
+                    from ..tts import voice_design, voxcpm
+                    mod = voxcpm if body.get("provider") == "voxcpm" else voice_design
                     env.load_dotenv(state.root)
                     out_dir = state.build_dir(q.get("lang")) / "ui" / "voice_design"
                     try:
-                        previews = voice_design.design(body.get("desc", ""), body.get("text"), out_dir)
+                        previews = mod.design(body.get("desc", ""), body.get("text"), out_dir)
                     except RuntimeError as e:
                         return self._error(str(e))
                     return self._json({"previews": [{"id": p["generated_voice_id"], "audio": state.rel(p["audio"])} for p in previews]})
                 if path == "/api/voice/keep":
-                    from ..tts import voice_design
+                    from ..tts import voice_design, voxcpm
+                    mod = voxcpm if body.get("provider") == "voxcpm" else voice_design
                     env.load_dotenv(state.root)
                     try:
-                        vid = voice_design.keep(body["id"], body.get("name") or "vidforge narrator", body.get("desc", ""))
+                        vid = mod.keep(body["id"], body.get("name") or "vidforge narrator", body.get("desc", ""))
                     except RuntimeError as e:
                         return self._error(str(e))
                     return self._json({"voice_id": vid})

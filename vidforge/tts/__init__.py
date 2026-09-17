@@ -79,4 +79,7 @@ def get_provider(name: str, **kwargs) -> TtsProvider:
     if name == "silent":
         from .silent import SilentProvider
         return SilentProvider(rate=kwargs.get("rate", "+0%"))
+    if name == "voxcpm":
+        from .voxcpm import VoxCPMProvider
+        return VoxCPMProvider(rate=kwargs.get("rate", "+0%"), **kwargs.get("config", {}))
     raise ValueError(f"unknown TTS provider '{name}'")

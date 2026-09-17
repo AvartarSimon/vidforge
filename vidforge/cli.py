@@ -120,16 +120,17 @@ def cmd_chat(args: argparse.Namespace) -> int:
 
 
 def cmd_voice(args: argparse.Namespace) -> int:
-    from .tts import voice_design
+    mod = __import__(f"vidforge.tts.{'voice_design' if args.provider == 'elevenlabs' else 'voxcpm'}", fromlist=["x"])
     env.load_dotenv()
     if args.action == "design":
-        previews = voice_design.design(args.desc, args.text)
-        print("previews (play them, then `vidforge voice keep <id> --name … --desc …`):")
+        previews = mod.design(args.desc, args.text)
+        print("previews (play them, then `vidforge voice keep <id> --name … --desc … --provider "
+              f"{args.provider}`):")
         for p in previews:
             print(f"  {p['generated_voice_id']}  {p['audio']}")
     else:
-        vid = voice_design.keep(args.id, args.name, args.desc or args.name)
-        print(f"voice_id: {vid}   -> put it in project.json as \"voice\" with tts.provider elevenlabs")
+        vid = mod.keep(args.id, args.name, args.desc or args.name)
+        print(f"voice: {vid}   -> put it in project.json as \"voice\" with tts.provider {args.provider}")
     return 0
 
 
@@ -360,9 +361,10 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--timeout", type=float, default=240)
     s.set_defaults(fn=cmd_chat)
 
-    s = sub.add_parser("voice", help="design a brand voice from a description (ElevenLabs Voice Design)")
+    s = sub.add_parser("voice", help="design a brand voice from a description (ElevenLabs, paid, or VoxCPM2, free/local)")
     s.add_argument("action", choices=["design", "keep"])
     s.add_argument("id", nargs="?", help="keep: generated_voice_id from a preview")
+    s.add_argument("--provider", choices=["elevenlabs", "voxcpm"], default="elevenlabs")
     s.add_argument("--desc", default="", help="voice description, e.g. 'deep warm magnetic male narrator, unhurried'")
     s.add_argument("--text", default="", help="sample text (>= 100 chars; default: a narration sample)")
     s.add_argument("--name", default="vidforge narrator")
