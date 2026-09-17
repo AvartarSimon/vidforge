@@ -139,6 +139,7 @@ class SubtitleStyle:
     font: str = "Arial"
     font_size: int = 22
     margin_v: int = 48
+    style: str = "outline"           # outline | box (semi-transparent background, YouTube-style)
 
 
 @dataclass
@@ -324,6 +325,8 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         fit = s.get("fit", "stretch")
         if fit not in FITS:
             raise ProjectError(f"{ctx}: fit '{fit}' not in {FITS}")
+        if float(s.get("pause_after", 0.5)) < 0:
+            raise ProjectError(f"{ctx}: pause_after must be >= 0")
         segments.append(Segment(
             id=sid, text=text, clips=clips, fit=fit,
             pause_after=float(s.get("pause_after", 0.5)), voice=s.get("voice"),

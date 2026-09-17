@@ -156,7 +156,9 @@ def plan_clips(seg: Segment, target: float) -> list[PlannedClip]:
 
 # -- clip rendering ---------------------------------------------------------------------------------
 def _zoompan_exprs(motion: str, amount: float, frames: int) -> tuple[str, str, str]:
-    p = f"(on/{frames})"
+    # smoothstep easing: the move starts and ends gently instead of the mechanical linear ramp
+    t = f"(on/{frames})"
+    p = f"({t}*{t}*(3-2*{t}))"
     center_x, center_y = "iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)"
     z_max = 1 + amount
     if motion == "zoom_in":
@@ -199,7 +201,8 @@ def render_clip(project: Project, pc: PlannedClip, out: Path, encoder: str) -> N
     sw, sh = w * ss, h * ss
     frames = max(1, round(dur * fps))
     z, x, y = _zoompan_exprs(c.motion, project.motion_amount, frames)
-    zp = f"zoompan=z='{z}':x='{x}':y='{y}':d={frames}:s={w}x{h}:fps={fps},setsar=1"
+    sharpen = ",unsharp=5:5:0.4:3:3:0.0" if project.quality == "final" else ""
+    zp = f"zoompan=z='{z}':x='{x}':y='{y}':d={frames}:s={w}x{h}:fps={fps}{sharpen},setsar=1"
     if image_needs_fill(c.image, w, h):
         # portrait / square picture: blurred, darkened copy fills the frame, the whole picture sits on top
         vf = (f"[0:v]split=2[bg][fg];"
@@ -321,8 +324,12 @@ def finalize(project: Project, merged: Path, srt: Path | None, total: float, out
 
     if srt is not None and project.subtitles.burn:
         st = project.subtitles
-        style = (f"FontName={st.font},FontSize={st.font_size},Outline=1,Shadow=0,"
-                 f"MarginV={st.margin_v},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000")
+        if st.style == "box":       # semi-transparent box behind the text (BorderStyle 3 uses BackColour)
+            style = (f"FontName={st.font},FontSize={st.font_size},BorderStyle=4,Outline=2,Shadow=0,"
+                     f"MarginV={st.margin_v},PrimaryColour=&H00FFFFFF,OutlineColour=&H99000000,BackColour=&H99000000")
+        else:
+            style = (f"FontName={st.font},FontSize={st.font_size},Outline=1,Shadow=0,"
+                     f"MarginV={st.margin_v},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000")
         filters.append(f"[0:v]subtitles='{ffmpeg.filter_path(srt)}':force_style='{style}'[v]")
         maps += ["-map", "[v]", *video_codec_args(project, "libx264")]
     else:
@@ -347,5 +354,21 @@ def finalize(project: Project, merged: Path, srt: Path | None, total: float, out
 
     if filters:
         args += ["-filter_complex", ";".join(filters)]
-    args += maps + ["-t", f"{total:.3f}", "-movflags", "+faststart", str(out)]
+    tmp = out.with_name(out.stem + ".tmp" + out.suffix)
+    args += maps + ["-t", f"{total:.3f}", "-movflags", "+faststart", str(tmp)]
     ffmpeg.run(args)
+    replace_with_retry(tmp, out)
+
+
+def replace_with_retry(src: Path, dst: Path, attempts: int = 10) -> None:
+    """os.replace, retried: on Windows the old final.mp4 may still be open in the browser."""
+    import os
+    import time as _t
+    for i in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if i == attempts - 1:
+                raise
+            _t.sleep(0.5 * (i + 1))

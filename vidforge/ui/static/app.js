@@ -477,7 +477,8 @@ function viewRender(v) {
   <div class="card">
     <div class="grid2">
       <div><label class="muted">质量</label><select id="f_quality"><option value="draft" ${raw.quality === 'draft' ? 'selected' : ''}>草稿（快 3 倍，看效果）</option><option value="final" ${(raw.quality || 'final') === 'final' ? 'selected' : ''}>成片（CRF 18，2× 超采样）</option></select></div>
-      <div><label class="muted">字幕</label><select id="f_burn"><option value="false" ${!nestedGet('subtitles', 'burn') ? 'selected' : ''}>只出 .srt（上传时作字幕轨）</option><option value="true" ${nestedGet('subtitles', 'burn') ? 'selected' : ''}>烧进画面</option></select></div>
+      <div><label class="muted">字幕</label><select id="f_burn"><option value="false" ${!nestedGet('subtitles', 'burn') ? 'selected' : ''}>只出 .srt（上传时作字幕轨）</option><option value="true" ${nestedGet('subtitles', 'burn') ? 'selected' : ''}>烧进画面</option></select>
+        <select id="f_substyle" style="margin-top:4px"><option value="outline" ${(nestedGet('subtitles', 'style') || 'outline') === 'outline' ? 'selected' : ''}>白字黑边</option><option value="box" ${nestedGet('subtitles', 'style') === 'box' ? 'selected' : ''}>白字 + 半透明底框</option></select></div>
       <div><label class="muted">片段间转场（秒，0 = 硬切）</label><input id="f_trans" type="number" step="0.1" min="0" max="2" value="${raw.transition ?? 0}"></div>
       <div><label class="muted">背景音乐</label><input id="f_bgm" value="${esc(raw.bgm?.file || '')}" placeholder="assets/bgm.mp3（留空则无）"></div>
       <div><label class="muted">章节标题卡</label><select id="f_cards"><option value="false" ${!raw.auto_title_cards ? 'selected' : ''}>不加</option><option value="true" ${raw.auto_title_cards ? 'selected' : ''}>有章节名的段前加 3 秒标题卡（需 Remotion）</option></select></div>
@@ -499,6 +500,7 @@ function viewRender(v) {
   </div>`;
   $('#f_quality').onchange = e => { raw.quality = e.target.value; markDirty(); };
   $('#f_burn').onchange = e => nestedSet('subtitles', 'burn', e.target.value === 'true');
+  $('#f_substyle').onchange = e => nestedSet('subtitles', 'style', e.target.value);
   $('#f_trans').onchange = e => { raw.transition = parseFloat(e.target.value) || 0; markDirty(); };
   $('#f_cards').onchange = e => { raw.auto_title_cards = e.target.value === 'true'; markDirty(); };
   $('#f_norm').onchange = e => { raw.normalize_audio = e.target.value === 'true'; markDirty(); };
@@ -523,7 +525,8 @@ async function poll() {
   const pr = $('#progress'); if (pr) {
     pr.hidden = !(st.state === 'running' || st.state === 'done');
     $('#bar').style.width = `${st.progress || 0}%`;
-    $('#ptext').textContent = st.state === 'running' ? `${st.progress || 0}%${st.segments_total ? ` · 段 ${st.segments_done}/${st.segments_total}` : ''}${st.eta ? ` · 预计还需 ${fmt(st.eta)}` : ''}` : (st.state === 'done' ? '完成' : '');
+    const ph = { tts: '配音', assets: '取素材', remotion: '动画', render: '渲染', assemble: '合成' }[st.phase] || '';
+    $('#ptext').textContent = st.state === 'running' ? `${st.progress || 0}% · ${ph}${st.segments_total ? ` ${st.segments_done}/${st.segments_total} 段` : ''}${st.eta ? ` · 预计还需 ${fmt(st.eta)}` : ''}` : (st.state === 'done' ? '完成' : '');
   }
   if (st.lines.length) { $('#log').hidden = false; $('#log').textContent = st.lines.join('\n'); $('#log').scrollTop = 1e9; }
   if (st.state === 'running') pollTimer = setTimeout(poll, 1000);

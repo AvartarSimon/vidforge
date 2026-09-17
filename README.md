@@ -53,7 +53,7 @@ vidforge ui my-video                # local web UI (127.0.0.1:8765): edit, proof
 vidforge remotion setup|studio      # animated segments: install once / open Remotion Studio
 vidforge upload my-video [--lang zh] [--privacy unlisted] [--publish-at 2026-10-01T09:00:00Z]
 vidforge i18n export my-video --lang zh   # translation sheet -> fill -> `i18n import` -> `build --lang zh`
-python -m unittest discover -s tests      # 30 tests, no network
+python -m unittest discover -s tests      # 44 tests; e2e needs pip install -e .[dev]
 ```
 
 ## project.json
@@ -99,11 +99,13 @@ Durations are never typed: each segment lasts as long as its narration plus `pau
 | `thumbnail.jpg` | 1280×720, first image darkened + outlined title |
 | `timeline.json` | segment start/end — paste as YouTube chapters (also printed after the build) |
 
-## Speed
+## Speed and length
 
-Rendering is CPU-bound in ffmpeg's `zoompan` (it works on a 2× supersampled frame to avoid
-jitter). Measured on this machine: ~1.3× real time at 1080p30 — a 20-minute video renders in
-~25 minutes. Set `"supersample": 1` for fast previews.
+Segments render in parallel; a hardware H.264 encoder (NVENC / QSV / AMF / VideoToolbox) is used
+when `encoder: auto` finds one. Measured here (Intel QSV, 4 workers): a 30-minute / 40-segment
+project renders in **159 s** with cached narration (258 s including first-time TTS); timeline
+drift over 30 minutes is 21 ms. `quality: draft` skips supersampling and sharpening for previews;
+`tools/stress.py` generates long synthetic projects. See `docs/six-hats-rounds-2026-09-17.md`.
 
 ## Roadmap
 

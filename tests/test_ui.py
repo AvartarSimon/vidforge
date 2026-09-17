@@ -106,8 +106,17 @@ class UiApi(unittest.TestCase):
         self.assertTrue((Path(self.td) / "assets" / "index.json").exists())
 
     def test_upload_asset(self):
-        st, j = self.call("/api/assets/upload", {"name": "my pic.png", "data_b64": base64.b64encode(b"png").decode()})
+        import io
+        from PIL import Image
+        buf = io.BytesIO(); Image.new("RGB", (8, 8), "red").save(buf, format="PNG")
+        st, j = self.call("/api/assets/upload", {"name": "my pic.png", "data_b64": base64.b64encode(buf.getvalue()).decode()})
         self.assertEqual(st, 200); self.assertEqual(j["path"], "assets/local/my_pic.png"); self.assertEqual(j["kind"], "image")
+
+    def test_upload_rejects_unreadable_image(self):
+        st, j = self.call("/api/assets/upload", {"name": "bad.jpg", "data_b64": base64.b64encode(b"not an image").decode()})
+        self.assertEqual(st, 400)
+        self.assertIn("HEIC", j["error"])
+        self.assertFalse((Path(self.td) / "assets" / "local" / "bad.jpg").exists())
 
     def test_health(self):
         st, j = self.call("/api/health")

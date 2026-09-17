@@ -102,7 +102,158 @@ def _workers(project: Project) -> int:
     return max(1, (os.cpu_count() or 2) // 2)
 
 
+# -- structured progress (read by the UI; no log parsing) -------------------------------------
+_progress: dict = {"phase": "idle", "done": 0, "total": 0}
+PHASE_WEIGHT = {"tts": (0, 15), "assets": (15, 20), "remotion": (20, 25), "render": (25, 92), "assemble": (92, 100)}
+
+
+def progress() -> dict:
+    lo, hi = PHASE_WEIGHT.get(_progress["phase"], (0, 0))
+    frac = _progress["done"] / _progress["total"] if _progress["total"] else 0
+    pct = 100 if _progress["phase"] == "done" else lo + (hi - lo) * frac
+    return {**_progress, "percent": round(pct, 1)}
+
+
+def _set_progress(phase: str, done: int = 0, total: int = 0) -> None:
+    _progress.update(phase=phase, done=done, total=total)
+
+
+class _Ctx:
+    """Everything the stages hand to each other."""
+
+    def __init__(self, project: Project):
+        self.project = project
+        self.bd = project.build_dir
+        self.encoder = render.pick_encoder(project)
+        self.audio: dict[str, Path] = {}
+        self.words: dict[str, list] = {}
+        self.narration: dict[str, float] = {}       # narration + pause, per segment
+        self.clips: dict[str, Path] = {}
+        self.durations: dict[str, float] = {}       # real muxed length per segment
+
+
+def _stage_tts(ctx: _Ctx) -> None:
+    """Serial (network-bound), cached by text/voice."""
+    p = ctx.project
+    tts = get_provider(p.tts.provider, rate=p.rate, config=p.tts.__dict__)
+    _log(f"{len(p.segments)} segments · tts {tts.name} · voice {p.voice} · {p.quality} · {ctx.encoder}")
+    for w in p.warnings:
+        _log(f"warning: {w}")
+    _set_progress("tts", 0, len(p.segments))
+    for i, seg in enumerate(p.segments):
+        _check_cancel()
+        audio = ctx.bd / "audio" / f"{_safe(seg.id)}.mp3"
+        words = synthesize_cached(tts, seg.text, seg.voice or p.voice, audio)
+        ctx.words[seg.id] = subtitles.restore_punctuation(words, seg.text)
+        ctx.audio[seg.id] = audio
+        ctx.narration[seg.id] = ffmpeg.duration(audio) + seg.pause_after
+        _set_progress("tts", i + 1, len(p.segments))
+        _log(f"  tts  {seg.id:<12} {len(words):>4} words  {ctx.narration[seg.id]:6.2f}s")
+
+
+def _stage_title_cards(ctx: _Ctx) -> None:
+    """auto_title_cards: a 3 s TitleCard in front of every labelled segment (needs Remotion)."""
+    if not ctx.project.auto_title_cards:
+        return
+    from .project import Clip, RemotionSpec
+    from .remotion import APP_DIR
+    if not (APP_DIR / "node_modules").exists():
+        _log("warning: auto_title_cards needs Remotion (vidforge remotion setup) — skipped")
+        return
+    n = 0
+    for seg in ctx.project.segments:
+        first = seg.clips[0] if seg.clips else None
+        if seg.label and not (first and first.remotion and first.remotion.composition == "TitleCard"):
+            n += 1
+            seg.clips.insert(0, Clip(remotion=RemotionSpec("TitleCard", {"kicker": f"Chapter {n}", "title": seg.label}), duration=3.0))
+    _log(f"auto title cards: {n}")
+
+
+def _stage_assets(ctx: _Ctx) -> None:
+    """Remote search clips (pexels:/pixabay:/commons:) -> local files, now that lengths are known."""
+    from . import assets
+    _set_progress("assets", 0, 1)
+    assets.resolve_all(ctx.project, ctx.narration, log=_log)
+    _set_progress("assets", 1, 1)
+
+
+def _stage_remotion(ctx: _Ctx) -> None:
+    """Animated clips -> mp4 (cached by props), each at its planned share of the segment."""
+    todo = [seg for seg in ctx.project.segments if any(c.remotion for c in seg.clips)]
+    _set_progress("remotion", 0, len(todo))
+    for i, seg in enumerate(todo):
+        from . import remotion
+        for pc in render.plan_clips(seg, ctx.narration[seg.id]):
+            if pc.clip.remotion is not None:
+                _check_cancel()
+                pc.clip.video = remotion.render(
+                    pc.clip.remotion.composition, pc.clip.remotion.props, duration=pc.seconds,
+                    fps=ctx.project.fps, width=ctx.project.width, height=ctx.project.height,
+                    out_dir=ctx.bd / "remotion", log=_log)
+        _set_progress("remotion", i + 1, len(todo))
+
+
+def _stage_render(ctx: _Ctx) -> None:
+    """Segments in parallel (CPU/GPU-bound)."""
+    p = ctx.project
+
+    def one(seg):
+        _check_cancel()
+        clip = ctx.bd / "clips" / f"{_safe(seg.id)}.mp4"
+        return seg.id, clip, render.render_segment(p, seg, ctx.audio[seg.id], clip, encoder=ctx.encoder)
+
+    n = _workers(p)
+    _log(f"rendering {len(p.segments)} segments with {n} worker(s)")
+    _set_progress("render", 0, len(p.segments))
+    with ThreadPoolExecutor(max_workers=n) as pool:
+        futures = {pool.submit(one, seg): seg for seg in p.segments}
+        for k, fut in enumerate(as_completed(futures)):
+            sid, clip, dur = fut.result()
+            ctx.clips[sid], ctx.durations[sid] = clip, dur
+            seg = futures[fut]
+            kinds = ",".join(c.remotion.composition if c.remotion else ("video" if c.video else c.motion) for c in seg.clips)
+            _set_progress("render", k + 1, len(p.segments))
+            _log(f"  clip {sid:<12} {dur:6.2f}s  ({len(seg.clips)} clip{'s' if len(seg.clips) > 1 else ''}: {kinds})")
+    _check_cancel()
+
+
+def _stage_assemble(ctx: _Ctx) -> tuple[Path, list[dict], float]:
+    """Subtitles + timeline from REAL segment lengths, concat, BGM/burn, thumbnail, credits."""
+    p, bd = ctx.project, ctx.bd
+    _set_progress("assemble", 0, 3)
+    cues, timeline, cursor = [], [], 0.0
+    for seg in p.segments:
+        cues += subtitles.build_cues(ctx.words[seg.id], offset=cursor, max_chars=p.subtitles.max_chars)
+        timeline.append({"id": seg.id, "label": seg.label, "start": round(cursor, 3), "end": round(cursor + ctx.durations[seg.id], 3)})
+        cursor += ctx.durations[seg.id]
+    (bd / "timeline.json").write_text(json.dumps(timeline, indent=1), encoding="utf-8")
+    srt = bd / "final.srt"
+    subtitles.write_srt(cues, srt)
+    if not cues:
+        _log("warning: no word timings received - subtitles skipped")
+
+    merged = bd / "merged.mp4"
+    render.concat([ctx.clips[s.id] for s in p.segments], merged)
+    _set_progress("assemble", 1, 3)
+    _check_cancel()
+    final = bd / "final.mp4"
+    render.finalize(p, merged, srt if cues else None, cursor, final)
+    _set_progress("assemble", 2, 3)
+
+    thumb_src = next((s.image for s in p.segments if s.image), None)
+    if thumb_src is None:
+        thumb_src = bd / "thumb_src.jpg"
+        ffmpeg.run(["-y", "-ss", "1", "-i", str(ctx.clips[p.segments[0].id]), "-frames:v", "1", str(thumb_src)])
+    thumbnail.make(thumb_src, p.thumbnail_text or p.title, bd / "thumbnail.jpg")
+    credits = _credits(p)
+    if credits:
+        (bd / "credits.txt").write_text(credits, encoding="utf-8")
+    _set_progress("assemble", 3, 3)
+    return final, timeline, cursor
+
+
 def build(project: Project, *, only_tts: bool = False, burn: bool | None = None) -> Path:
+    """TTS -> (title cards) -> assets -> remotion -> render segments -> assemble."""
     _cancel.clear()
     t0 = time.time()
     bd = project.build_dir
@@ -121,112 +272,23 @@ def build(project: Project, *, only_tts: bool = False, burn: bool | None = None)
         else:
             print(line, flush=True)
     set_log(tee)
-
     try:
-        # 1. TTS per segment (cached, serial: network-bound)
-        tts = get_provider(project.tts.provider, rate=project.rate, config=project.tts.__dict__)
-        encoder = render.pick_encoder(project)
-        _log(f"{len(project.segments)} segments · tts {tts.name} · voice {project.voice} · {project.quality} · {encoder}")
-        for w in project.warnings:
-            _log(f"warning: {w}")
-        words_by_seg = {}
-        narration_len: dict[str, float] = {}
-        for seg in project.segments:
-            _check_cancel()
-            audio = bd / "audio" / f"{_safe(seg.id)}.mp3"
-            words = synthesize_cached(tts, seg.text, seg.voice or project.voice, audio)
-            words = subtitles.restore_punctuation(words, seg.text)
-            words_by_seg[seg.id] = (audio, words)
-            narration_len[seg.id] = ffmpeg.duration(audio) + seg.pause_after
-            _log(f"  tts  {seg.id:<12} {len(words):>4} words  {narration_len[seg.id]:6.2f}s")
+        ctx = _Ctx(project)
+        _stage_tts(ctx)
         if only_tts:
             return bd
-
-        # 1a. Auto chapter cards: a 3 s TitleCard in front of every labelled segment
-        if project.auto_title_cards:
-            from .project import Clip, RemotionSpec
-            from .remotion import APP_DIR
-            if not (APP_DIR / "node_modules").exists():
-                _log("warning: auto_title_cards needs Remotion (vidforge remotion setup) — skipped")
-            else:
-                n = 0
-                for seg in project.segments:
-                    first = seg.clips[0] if seg.clips else None
-                    if seg.label and not (first and first.remotion and first.remotion.composition == "TitleCard"):
-                        n += 1
-                        seg.clips.insert(0, Clip(remotion=RemotionSpec("TitleCard", {"kicker": f"Chapter {n}", "title": seg.label}), duration=3.0))
-                _log(f"auto title cards: {n}")
-
-        # 1b. Remote assets (pexels:… etc.) now that narration lengths are known
-        from . import assets
-        assets.resolve_all(project, narration_len, log=_log)
-
-        # 1c. Remotion clips -> mp4 (cached), each sized to its planned share of the segment
-        for seg in project.segments:
-            if any(c.remotion for c in seg.clips):
-                from . import remotion
-                for pc in render.plan_clips(seg, narration_len[seg.id]):
-                    if pc.clip.remotion is not None:
-                        _check_cancel()
-                        pc.clip.video = remotion.render(
-                            pc.clip.remotion.composition, pc.clip.remotion.props, duration=pc.seconds,
-                            fps=project.fps, width=project.width, height=project.height,
-                            out_dir=bd / "remotion", log=_log)
-
-        # 2. Render segments in parallel; timeline in script order
-        clips_out: dict[str, Path] = {}
-        durations: dict[str, float] = {}
-
-        def one(seg):
-            _check_cancel()
-            clip = bd / "clips" / f"{_safe(seg.id)}.mp4"
-            dur = render.render_segment(project, seg, words_by_seg[seg.id][0], clip, encoder=encoder)
-            return seg.id, clip, dur
-
-        n = _workers(project)
-        _log(f"rendering {len(project.segments)} segments with {n} worker(s)")
-        with ThreadPoolExecutor(max_workers=n) as pool:
-            futures = {pool.submit(one, seg): seg for seg in project.segments}
-            for fut in as_completed(futures):
-                sid, clip, dur = fut.result()
-                clips_out[sid], durations[sid] = clip, dur
-                seg = futures[fut]
-                kinds = ",".join(c.remotion.composition if c.remotion else ("video" if c.video else c.motion) for c in seg.clips)
-                _log(f"  clip {sid:<12} {dur:6.2f}s  ({len(seg.clips)} clip{'s' if len(seg.clips) > 1 else ''}: {kinds})")
-        _check_cancel()
-
-        cues, timeline, cursor = [], [], 0.0
-        for seg in project.segments:
-            cues += subtitles.build_cues(words_by_seg[seg.id][1], offset=cursor, max_chars=project.subtitles.max_chars)
-            timeline.append({"id": seg.id, "label": seg.label, "start": round(cursor, 3), "end": round(cursor + durations[seg.id], 3)})
-            cursor += durations[seg.id]
-        (bd / "timeline.json").write_text(json.dumps(timeline, indent=1), encoding="utf-8")
-        srt = bd / "final.srt"
-        subtitles.write_srt(cues, srt)
-
-        # 3. Concat, then one finishing pass (BGM / burn)
-        merged = bd / "merged.mp4"
-        render.concat([clips_out[s.id] for s in project.segments], merged)
-        final = bd / "final.mp4"
-        if not cues:
-            _log("warning: no word timings received - subtitles skipped")
-        _check_cancel()
-        render.finalize(project, merged, srt if cues else None, cursor, final)
-
-        # 4. Thumbnail + credits
-        thumb_text = project.thumbnail_text or project.title
-        thumb_src = next((s.image for s in project.segments if s.image), None)
-        if thumb_src is None:
-            thumb_src = bd / "thumb_src.jpg"
-            ffmpeg.run(["-y", "-ss", "1", "-i", str(clips_out[project.segments[0].id]), "-frames:v", "1", str(thumb_src)])
-        thumbnail.make(thumb_src, thumb_text, bd / "thumbnail.jpg")
-        credits = _credits(project)
-        if credits:
-            (bd / "credits.txt").write_text(credits, encoding="utf-8")
-
-        _log(f"done in {time.time() - t0:.1f}s · {cursor:.1f}s video · {final}")
+        _stage_title_cards(ctx)
+        _stage_assets(ctx)
+        _stage_remotion(ctx)
+        _stage_render(ctx)
+        final, timeline, total = _stage_assemble(ctx)
+        _set_progress("done", 1, 1)
+        _log(f"done in {time.time() - t0:.1f}s · {total:.1f}s video · {final}")
         _log("chapters:\n" + "\n".join(_chapter_line(t) for t in timeline))
         return final
+    except BaseException:
+        _set_progress("idle")
+        raise
     finally:
         set_log(prev_sink)
         log_file.close()

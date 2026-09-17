@@ -150,6 +150,8 @@ class ProjectClips(unittest.TestCase):
             self._load([{"id": "s", "text": "a", "image": "a.jpg", "clips": [{"image": "a.jpg"}]}])
         with self.assertRaises(proj.ProjectError):
             self._load([{"id": "s", "text": "a"}])
+        with self.assertRaises(proj.ProjectError):
+            self._load([{"id": "s", "text": "a", "image": "a.jpg", "pause_after": -1}])
 
     def test_quality_and_silent_provider_fields(self):
         p = self._load([{"id": "s", "text": "a", "image": "a.jpg"}],
