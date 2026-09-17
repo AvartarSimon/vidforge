@@ -127,6 +127,34 @@ def cmd_voice(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_me(args: argparse.Namespace) -> int:
+    """Your footage library (~/.vidforge/me, or <project>/assets/me): scan tags/durations, or
+    relabel one take. `me` clips/overlays in project.json pick from here by tag at build time."""
+    from . import me
+    root = Path(args.project).resolve() if args.project else None
+    lib = me.MeLibrary(me.library_dir(root))
+    if args.action == "scan":
+        items = lib.scan()
+        if not items:
+            print(f"素材库是空的：{lib.folder}\n把视频放进去，文件名即标签，例如 backyard_glasses_talking_01.mp4")
+            return 0
+        print(f"{lib.folder}（{len(items)} 个）:")
+        for i in sorted(items, key=lambda x: x["name"]):
+            tags = ", ".join(i.get("tags", [])) or "(无标签)"
+            dur = f"{i['duration']:.1f}s" if i.get("duration") else "?"
+            print(f"  {i['name']:<40} {dur:>7}  {'说话' if i.get('talking') else '沉默':<4}  用过{i.get('uses', 0)}次  [{tags}]")
+        return 0
+    # tag
+    if not args.name:
+        raise SystemExit("`vidforge me tag <文件名> --tags a,b [--talking true|false]`")
+    lib.scan()
+    tags = [t.strip() for t in (args.tags or "").split(",") if t.strip()]
+    talking = {"true": True, "false": False}.get((args.talking or "").lower())
+    lib.set_tags(args.name, tags, talking)
+    print(f"已更新 {args.name}：标签 {tags or '(清空)'}" + (f"，talking={talking}" if talking is not None else ""))
+    return 0
+
+
 def cmd_start(args: argparse.Namespace) -> int:
     """Open the last project (or the project picker) in the browser — the one-command start."""
     from . import ui
@@ -280,6 +308,14 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--text", default="", help="sample text (>= 100 chars; default: a narration sample)")
     s.add_argument("--name", default="vidforge narrator")
     s.set_defaults(fn=cmd_voice)
+
+    s = sub.add_parser("me", help="your footage library: 'scan' lists takes/tags, 'tag' relabels one")
+    s.add_argument("action", choices=["scan", "tag"])
+    s.add_argument("name", nargs="?", help="tag: the file name inside the library folder")
+    s.add_argument("--project", help="use <project>/assets/me instead of the global ~/.vidforge/me")
+    s.add_argument("--tags", help="tag: comma-separated tags, e.g. backyard,glasses")
+    s.add_argument("--talking", choices=["true", "false"], help="tag: mark as a speaking take or silent B-roll")
+    s.set_defaults(fn=cmd_me)
 
     s = sub.add_parser("start", help="open vidforge: last project, or the project picker")
     s.add_argument("project", nargs="?")

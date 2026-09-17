@@ -54,10 +54,11 @@ class Clip:
     motion: str = "zoom_in"          # camera move for images
     remotion: RemotionSpec | None = None
     credit: str | None = None        # attribution text, kept in the project so credits.txt survives re-indexing
+    me: dict[str, Any] | None = None # {"tags": [...], "talking": bool} -> a take from your footage library
 
     @property
     def needs_asset(self) -> bool:
-        return self.image is None and self.video is None and self.remotion is None
+        return self.image is None and self.video is None and self.remotion is None and self.me is None
 
     @property
     def is_video(self) -> bool:
@@ -80,6 +81,7 @@ class Overlay:
     image: Path | None = None
     video: Path | None = None
     avatar: bool = False             # the project's digital host, lip-synced to this segment's narration
+    me: dict[str, Any] | None = None # {"tags": [...], "talking": bool}: a take of you from the footage library
     at: float = 0.0                  # seconds after the segment starts
     duration: float | None = None    # None = until the segment ends
     in_: float | None = None         # video slice
@@ -228,6 +230,7 @@ class Project:
     auto_title_cards: bool = False   # prepend a 3 s TitleCard to every segment that has a label (needs Remotion)
     presenter: PresenterConfig = field(default_factory=PresenterConfig)
     outro_vocab: int = 0             # learner edition: append a vocabulary card with N words (0 = off)
+    lipsync: str = "none"            # none | synclabs | musetalk — for `me` takes with talking=true
     normalize_audio: bool = True     # loudnorm the narration to -16 LUFS so every segment/provider sounds alike
     parallel: int = 0                # segments rendered at once; 0 = auto (cores / 2)
     out_dir: Path = Path("build")
@@ -292,12 +295,15 @@ def _apply_variant(data: dict, lang: str) -> dict:
 
 
 def _parse_clip(c: dict, ctx: str, resolve, lang: str, base_lang: str, langs: set[str]) -> Clip:
-    visuals = [k for k in ("image", "video", "remotion") if k in c]
+    visuals = [k for k in ("image", "video", "remotion", "me") if k in c]
     if len(visuals) != 1:
-        raise ProjectError(f"{ctx}: a clip needs exactly one of 'image', 'video', 'remotion' (got {visuals or 'none'})")
+        raise ProjectError(f"{ctx}: a clip needs exactly one of 'image', 'video', 'remotion', 'me' (got {visuals or 'none'})")
     key = visuals[0]
     clip = Clip()
-    if key == "remotion":
+    if key == "me":
+        m = c["me"] if isinstance(c["me"], dict) else {}
+        clip.me = {"tags": [str(t) for t in (m.get("tags") or [])], "talking": bool(m.get("talking", False))}
+    elif key == "remotion":
         r = c["remotion"]
         if not isinstance(r, dict) or "composition" not in r:
             raise ProjectError(f"{ctx}: remotion needs {{'composition': …, 'props': {{…}}}}")
@@ -316,7 +322,7 @@ def _parse_clip(c: dict, ctx: str, resolve, lang: str, base_lang: str, langs: se
             else:
                 clip.image = local
     if "in" in c or "out" in c:
-        if key != "video":
+        if key not in ("video", "me"):
             raise ProjectError(f"{ctx}: in/out only apply to video clips")
         clip.in_ = float(c.get("in", 0.0))
         clip.out = float(c["out"]) if "out" in c else None
@@ -381,7 +387,7 @@ def load(path: str | Path, lang: str | None = None) -> Project:
             text = "?"
 
         clips: list[Clip] = []
-        legacy = [k for k in ("image", "video", "remotion") if k in s]
+        legacy = [k for k in ("image", "video", "remotion", "me") if k in s]
         if "clips" in s and legacy:
             raise ProjectError(f"{ctx}: use either 'clips' or a single image/video/remotion, not both")
         if "clips" in s:
@@ -401,11 +407,14 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         for j, o in enumerate(s.get("overlays") or []):
             octx = f"{ctx}.overlays[{j}]"
             ov = Overlay()
-            kinds = [k for k in ("image", "video", "avatar") if o.get(k)]
+            kinds = [k for k in ("image", "video", "avatar", "me") if o.get(k)]
             if len(kinds) != 1:
-                raise ProjectError(f"{octx}: an overlay needs exactly one of image / video / avatar")
+                raise ProjectError(f"{octx}: an overlay needs exactly one of image / video / avatar / me")
             if kinds[0] == "avatar":
                 ov.avatar = True
+            elif kinds[0] == "me":
+                m = o["me"] if isinstance(o["me"], dict) else {}
+                ov.me = {"tags": [str(t) for t in (m.get("tags") or [])], "talking": bool(m.get("talking", False))}
             else:
                 local = resolve(str(o[kinds[0]]))
                 if not local.is_file():
@@ -500,6 +509,7 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         transition=float(data.get("transition", 0.0)),
         auto_title_cards=bool(data.get("auto_title_cards", False)),
         outro_vocab=int(data.get("outro_vocab", 0) or 0),
+        lipsync=str(data.get("lipsync", "none")),
         presenter=pres,
         normalize_audio=bool(data.get("normalize_audio", True)),
         parallel=int(data.get("parallel", 0)),

@@ -305,6 +305,23 @@ def make_handler(state: State):
                     return self._json({"history": state.history()})
                 if path == "/api/segment/history":
                     return self._json({"versions": state.segment_history(q.get("id", ""))})
+                if path == "/api/me":
+                    from .. import me
+                    lib = me.MeLibrary(me.library_dir(state.root))
+                    items = lib.scan() if q.get("scan") or not lib.items() else lib.items()
+                    return self._json({"folder": str(lib.folder), "items": items,
+                                       "tags": sorted({t for i in items for t in i.get("tags", [])})})
+                if path.startswith("/api/me/poster/"):
+                    from .. import me
+                    lib = me.MeLibrary(me.library_dir(state.root))
+                    f = lib.folder / Path(urllib.parse.unquote(path[len("/api/me/poster/"):])).name
+                    if not f.is_file():
+                        return self._error("not found", HTTPStatus.NOT_FOUND)
+                    out = state.build_dir(None) / "ui" / f"me_{f.stem}_{f.stat().st_size}.jpg"
+                    if not out.exists():
+                        out.parent.mkdir(parents=True, exist_ok=True)
+                        ffmpeg.run(["-y", "-ss", "1", "-i", str(f), "-frames:v", "1", "-vf", "scale=480:-2", str(out)])
+                    return self._file(out)
                 if path == "/api/llm/status":
                     from .. import llm
                     return self._json({"available": llm.available()})
@@ -459,6 +476,30 @@ def make_handler(state: State):
                     return self.fetch_candidate(body.get("candidate"))
                 if path == "/api/assets/upload":
                     return self.upload_asset(body)
+                if path == "/api/me/upload":
+                    from .. import me
+                    lib = me.MeLibrary(me.library_dir(state.root))
+                    name = re.sub(r"[^\w\-. \u4e00-\u9fff]+", "_", body.get("name", "take.mp4"))
+                    data = base64.b64decode(body.get("data_b64", ""))
+                    if not data:
+                        return self._error("empty file")
+                    dest = lib.folder / name
+                    lib.folder.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(data)
+                    try:
+                        ffmpeg.duration(dest)
+                    except ffmpeg.FfmpegError as e:
+                        dest.unlink(missing_ok=True)
+                        return self._error(f"不是可读的视频：{e}")
+                    lib.scan()
+                    if body.get("tags") is not None:
+                        lib.set_tags(dest.name, [t.strip() for t in str(body["tags"]).replace("，", ",").split(",") if t.strip()], body.get("talking"))
+                    return self._json({"name": dest.name, "items": lib.items()})
+                if path == "/api/me/tags":
+                    from .. import me
+                    lib = me.MeLibrary(me.library_dir(state.root))
+                    lib.set_tags(body["name"], body.get("tags", []), body.get("talking"))
+                    return self._json({"items": lib.items()})
                 if path == "/api/build":
                     burn = {"1": True, "0": False}.get(q.get("burn", ""), None)
                     ok = state.start_build(q.get("lang") or None, burn)
@@ -540,7 +581,8 @@ def make_handler(state: State):
                         if nat:
                             fixed_total += nat
                         clips.append({
-                            "kind": "remotion" if c.remotion else ("video" if c.is_video else "image"),
+                            "kind": "me" if c.me else ("remotion" if c.remotion else ("video" if c.is_video else "image")),
+                            "me": c.me,
                             "path": state.rel(c.video or c.image) if (c.video or c.image) else None,
                             "source": c.source, "in": c.in_, "out": c.out, "duration": c.duration, "motion": c.motion,
                             "remotion": c.remotion.composition if c.remotion else None,

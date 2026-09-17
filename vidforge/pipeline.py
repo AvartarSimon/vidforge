@@ -91,6 +91,16 @@ def preview_segment(project: Project, seg_id: str) -> tuple[Path, float]:
                 pc.clip.video = remotion.render(pc.clip.remotion.composition, pc.clip.remotion.props, duration=pc.seconds,
                                                 fps=project.fps, width=project.width, height=project.height,
                                                 out_dir=bd / "remotion", log=lambda *_: None)
+    if any(getattr(o, "me", None) for o in (*seg.clips, *seg.overlays)):
+        from . import lipsync, me
+        lib = me.MeLibrary(me.library_dir(project.root)); lib.scan()
+        for obj in (*seg.clips, *seg.overlays):
+            if getattr(obj, "me", None):
+                take = lib.pick(obj.me.get("tags"), bool(obj.me.get("talking")), min_seconds=narration + seg.pause_after)
+                if take is None:
+                    raise RuntimeError("素材库里没有匹配的镜头")
+                obj.video = lipsync.sync(take, audio, narration + seg.pause_after, bd / "lipsync", provider=project.lipsync) if obj.me.get("talking") else take
+                obj.me = None
     idx = next(i for i, s in enumerate(project.segments) if s.id == seg_id)
     if project.presenter.provider != "none" and (any(o.avatar for o in seg.overlays) or _wants_presenter(project, seg, idx)):
         from . import avatar
@@ -230,6 +240,44 @@ def _wants_presenter(project: Project, seg: Segment, index: int) -> bool:
         return seg.presenter
     where = project.presenter.where
     return where == "all" or (where == "first_last" and index in (0, len(project.segments) - 1))
+
+
+def _stage_me(ctx: _Ctx) -> None:
+    """Takes of you from the footage library -> clip/overlay videos. Speaking takes are lip-synced
+    to the narration (project.lipsync provider) and mark the video as synthetic media."""
+    from . import lipsync, me
+    p = ctx.project
+    lib = me.MeLibrary(me.library_dir(p.root))
+    if not lib.items():
+        lib.scan()
+    used: set[str] = set()
+    jobs = [(seg, obj) for seg in p.segments for obj in (*seg.clips, *seg.overlays) if getattr(obj, "me", None)]
+    if not jobs:
+        return
+    if not lib.items():
+        raise RuntimeError(f"素材库为空：把你的镜头放进 {lib.folder}（文件名即标签，例 backyard_glasses_talking_01.mp4），或在第 3 步「我的镜头」里上传")
+    _set_progress("remotion", 0, len(jobs))
+    for k, (seg, obj) in enumerate(jobs):
+        _check_cancel()
+        spec = obj.me
+        need = ctx.narration[seg.id]
+        take = lib.pick(spec.get("tags"), bool(spec.get("talking")), min_seconds=need if not spec.get("talking") else 0, avoid=used)
+        if take is None:
+            raise RuntimeError(f"segment {seg.id}: 素材库里没有 {'说话' if spec.get('talking') else '沉默'} 镜头（标签 {spec.get('tags')}）")
+        used.add(take.name)
+        lib.record_use(take)
+        if spec.get("talking"):
+            if p.lipsync == "none":
+                _log(f"warning: {seg.id} 用了说话镜头但 lipsync=none，口型不会对上；设 lipsync: synclabs|musetalk 或改用沉默镜头")
+            video = lipsync.sync(take, ctx.audio[seg.id], need, ctx.bd / "lipsync", provider=p.lipsync, log=_log)
+            if p.lipsync != "none":
+                p.youtube.disclosure.realistic_presenter = True
+        else:
+            video = take
+        obj.video = video
+        obj.me = None
+        _set_progress("remotion", k + 1, len(jobs))
+        _log(f"  me   {seg.id:<12} {take.name}{'  · lip-sync ' + p.lipsync if spec.get('talking') else ''}")
 
 
 def _stage_presenter(ctx: _Ctx) -> None:
@@ -390,6 +438,7 @@ def build(project: Project, *, only_tts: bool = False, burn: bool | None = None)
         _stage_title_cards(ctx)
         _stage_assets(ctx)
         _stage_remotion(ctx)
+        _stage_me(ctx)
         _stage_presenter(ctx)
         _stage_render(ctx)
         final, timeline, total = _stage_assemble(ctx)

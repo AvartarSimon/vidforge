@@ -499,6 +499,7 @@ async function ttsOne(id) {
 /* ---------------- 3 visuals ---------------- */
 function clipThumb(s, c, i) {
   const r = (P.resolved[s.id] || {}).clips?.[i] || {};
+  if (c.me) return `<div class="thumb">🎥 我的镜头<br><span class="muted">${esc((c.me.tags || []).join(' ') || '任意')}${c.me.talking ? ' · 说话' : ' · 沉默'}</span></div>`;
   if (c.remotion) return `<div class="thumb">${esc(c.remotion.composition)}<br><span class="muted">动画</span></div>`;
   if (r.path && r.kind === 'video') return `<div class="thumb"><img src="/api/poster/${encodeURIComponent(s.id)}/${i}?lang=${lang}&t=${encodeURIComponent(r.path)}" alt=""></div>`;
   if (r.path) return `<div class="thumb"><img src="${fileUrl(r.path)}" alt=""></div>`;
@@ -521,7 +522,7 @@ function viewVisuals(v) {
   <div class="visuals">
     <div class="storyboard" id="storyboard">
       ${segs.map(s => { const rr = res[s.id] || {}; const cl = segClips(s); const c0 = cl[0]; const p0 = rr.clips?.[0]?.path;
-        const th = !c0 ? '<span class="err">缺</span>' : c0.remotion ? c0.remotion.composition : p0 ? (rr.clips[0].kind === 'video' ? `<img src="/api/poster/${encodeURIComponent(s.id)}/0?lang=${lang}&t=${encodeURIComponent(p0)}">` : `<img src="${fileUrl(p0)}">`) : '自动';
+        const th = !c0 ? '<span class="err">缺</span>' : c0.me ? '🎥' : c0.remotion ? c0.remotion.composition : p0 ? (rr.clips[0].kind === 'video' ? `<img src="/api/poster/${encodeURIComponent(s.id)}/0?lang=${lang}&t=${encodeURIComponent(p0)}">` : `<img src="${fileUrl(p0)}">`) : '自动';
         return `<div class="sb-card ${s.id === selSeg ? 'sel' : ''}" data-id="${esc(s.id)}"><div class="thumb">${th}</div>
         <div><b>${esc(s.id)}</b> <span class="muted">${fmt(rr.need)}</span><div class="t">${esc(s[textKey()] || s.text || '')}</div>
         <div class="st">${cl.length ? `${cl.length} 个片段` : '<span class="err">● 需要画面</span>'}</div></div></div>`; }).join('')}
@@ -533,19 +534,20 @@ function viewVisuals(v) {
         <div class="clipstrip" id="clipstrip">
           ${seg.clips.map((c, i) => `
           <div class="clip" data-i="${i}">${clipThumb(seg, c, i)}
-            <span class="badge">${c.remotion ? '动画' : (c.video ? '视频' : '图片')}</span>
+            <span class="badge">${c.me ? '我' : c.remotion ? '动画' : (c.video ? '视频' : '图片')}</span>
             <div class="ops"><button data-act="left" ${i === 0 ? 'disabled' : ''}>←</button><button data-act="right" ${i === seg.clips.length - 1 ? 'disabled' : ''}>→</button><button data-act="del">✕</button></div>
             <div class="meta">
               ${c.video ? `<span>${c.out != null ? `${(c.in || 0).toFixed(1)} → ${c.out.toFixed(1)} s（${fmt(c.out - (c.in || 0))}）` : '整段'} <button class="small" data-act="trim">选段</button> <button class="small" data-act="more" title="用同一个视频再选几段">再选</button></span>` : ''}
               ${c.image ? `<span>运镜 <select data-act="motion">${['zoom_in', 'zoom_out', 'pan_left', 'pan_right', 'none'].map(m => `<option ${(c.motion || 'zoom_in') === m ? 'selected' : ''}>${m}</option>`).join('')}</select></span>
                           <span>时长 <input type="number" data-act="duration" step="0.5" min="1" style="width:60px" value="${c.duration ?? ''}" placeholder="自适应"> s</span>` : ''}
               ${c.remotion ? `<span>${esc(c.remotion.composition)} <button class="small" data-act="props">编辑</button></span>` : ''}
+              ${c.me ? `<span>标签：${esc((c.me.tags || []).join(', ') || '任意')}${c.me.talking ? '（说话，需口型同步）' : '（沉默 B-roll）'}</span>` : ''}
             </div>
           </div>`).join('')}
           <div class="clip" style="display:flex;align-items:center;justify-content:center;min-height:120px;border-style:dashed"><span class="muted">← 在下面添加片段</span></div>
         </div>
         <div class="row" style="margin-top:4px"><b style="font-size:12px">画中画</b>
-          ${(seg.overlays || []).map((o, i) => `<span class="pill" data-ov="${i}">${o.avatar ? '主持人' : o.video ? '视频' : '图片'} · ${o.position || 'bottom-right'} · ${Math.round((o.size || 0.3) * 100)}% · ${o.at || 0}s${o.duration ? '→' + (o.at + o.duration) + 's' : '→末'} <button class="small ghost" data-ovdel="${i}">✕</button></span>`).join('')}
+          ${(seg.overlays || []).map((o, i) => `<span class="pill" data-ov="${i}">${o.me ? '🎥 我' : o.avatar ? '主持人' : o.video ? '视频' : '图片'} · ${o.position || 'bottom-right'} · ${Math.round((o.size || 0.3) * 100)}% · ${o.at || 0}s${o.duration ? '→' + (o.at + o.duration) + 's' : '→末'} <button class="small ghost" data-ovdel="${i}">✕</button></span>`).join('')}
           <button class="small" id="ovAdd">＋ 图片/视频</button><button class="small" id="ovAvatar" title="这一段加数字主持人（第 4 步可设外观）">＋ 主持人</button>
           <span class="muted">说到某处时叠一张图或一段无声视频；主持人在第 4 步统一设置</span></div>
         <div class="row"><button id="previewBtn">▶ 预览这一段（草稿质量）</button><button class="small" id="dupBtn" title="复制这一段到后面">复制一段</button><button class="small" id="verBtn" title="这一段的历史版本">版本 ▾</button><span class="muted" id="previewInfo"></span></div>
@@ -558,6 +560,7 @@ function viewVisuals(v) {
           <button data-tab="search" class="${picker.tab === 'search' ? 'active' : ''}">搜索素材</button>
           <button data-tab="upload" class="${picker.tab === 'upload' ? 'active' : ''}">本地文件</button>
           <button data-tab="anim" class="${picker.tab === 'anim' ? 'active' : ''}">动画（Remotion）</button>
+          <button data-tab="me" class="${picker.tab === 'me' ? 'active' : ''}">🎥 我的镜头</button>
         </div>
         <div id="picker"></div>
       </div>
@@ -573,7 +576,7 @@ function viewVisuals(v) {
   $('#ovAvatar').onclick = () => { seg.overlays.push({ avatar: true, position: raw.presenter?.position || 'bottom-right', size: raw.presenter?.size || 0.28 }); markDirty(true); };
   $('#ovAdd').onclick = () => openOverlayDialog(seg, null);
   v.querySelectorAll('[data-ovdel]').forEach(b => b.onclick = e => { e.stopPropagation(); seg.overlays.splice(+b.dataset.ovdel, 1); markDirty(true); });
-  v.querySelectorAll('.pill[data-ov]').forEach(pl => pl.onclick = e => { if (e.target.closest('button')) return; const o = seg.overlays[+pl.dataset.ov]; if (!o.avatar) openOverlayDialog(seg, o); });
+  v.querySelectorAll('.pill[data-ov]').forEach(pl => pl.onclick = e => { if (e.target.closest('button')) return; const o = seg.overlays[+pl.dataset.ov]; if (!o.avatar && !o.me) openOverlayDialog(seg, o); });
   $('#previewBtn').onclick = async () => {
     if (!seg.clips.length) return alert('先给这一段加画面');
     if (!await save()) return;
@@ -612,6 +615,7 @@ function viewVisuals(v) {
 function renderPicker(seg, r) {
   const box = $('#picker');
   if (!box || step !== 3 || selSeg !== seg.id) return;      // user moved on while a search was in flight
+  if (picker.tab === 'me') { renderMeTab(seg, box); return; }
   if (picker.tab === 'upload') {
     box.innerHTML = `<div class="drop" id="drop">点击选择或拖入图片 / 视频文件（会复制到 assets/local/）<input type="file" id="file" hidden accept="image/*,video/*" multiple></div>`;
     const drop = $('#drop'); drop.onclick = () => $('#file').click();
@@ -629,6 +633,46 @@ function renderPicker(seg, r) {
       seg.clips.push({ remotion: { composition: b.dataset.comp, props: defaults[b.dataset.comp] } }); markDirty(true); };
     return;
   }
+  return renderSearchTab(seg, r, box);
+}
+
+/* footage library: your own takes, tagged by file name; add by tag so the least-used matching
+   take is auto-picked at render time (every video looks freshly recorded). */
+let ME = null, meFilter = { tag: '', talking: 'any' };
+async function renderMeTab(seg, box) {
+  if (!ME) { box.innerHTML = '<span class="muted">读取素材库…</span>'; try { ME = await api('/api/me'); } catch (e) { box.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; return; } }
+  const items = ME.items.filter(i => (!meFilter.tag || (i.tags || []).includes(meFilter.tag)) && (meFilter.talking === 'any' || String(!!i.talking) === meFilter.talking));
+  box.innerHTML = `
+    <p class="hint">素材库：<code>${esc(ME.folder)}</code>（所有项目共用）。文件名就是标签，例 <code>backyard_glasses_talking_01.mp4</code>；含 talking/说话 的是说话镜头。加入时选<b>标签</b>而不是具体文件，渲染时自动挑用得最少的匹配镜头，每期画面都不一样。</p>
+    <div class="row">
+      <select id="me_tag"><option value="">全部标签</option>${ME.tags.map(t => `<option ${meFilter.tag === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+      <select id="me_talk"><option value="any" ${meFilter.talking === 'any' ? 'selected' : ''}>沉默+说话</option><option value="false" ${meFilter.talking === 'false' ? 'selected' : ''}>沉默镜头（推荐，零风险）</option><option value="true" ${meFilter.talking === 'true' ? 'selected' : ''}>说话镜头（需口型同步）</option></select>
+      <button class="small" id="me_scan">重新扫描</button>
+      <label class="drop" style="padding:4px 10px">上传镜头…<input type="file" id="me_file" hidden accept="video/*" multiple></label>
+      <span class="muted">${items.length} 个</span></div>
+    <div class="row"><button class="primary small" id="me_add_main">＋ 作为本段主画面（按当前标签筛选）</button><button class="small" id="me_add_pip">＋ 作为画中画</button>
+      <label><input type="checkbox" id="me_talking" ${meFilter.talking === 'true' ? 'checked' : ''}> 说话镜头（口型同步，provider：${esc(raw.lipsync || 'none')}）</label></div>
+    <div class="cands">${items.map(i => `<div class="cand" data-name="${esc(i.name)}"><div class="thumb"><img loading="lazy" src="/api/me/poster/${encodeURIComponent(i.name)}" alt=""></div>
+      <div class="meta"><span title="${esc(i.name)}">${(i.tags || []).map(t => esc(t)).join(' · ') || esc(i.name)}${i.talking ? ' 🗣' : ''}</span><span>${i.duration ? fmt(i.duration) : ''} · 用过 ${i.uses || 0}</span></div></div>`).join('') || '<span class="muted">还没有镜头。录一批各场景的你：书房、后院、海边……每段 30–60 秒，沉默镜头为主。</span>'}</div>`;
+  $('#me_tag').onchange = e => { meFilter.tag = e.target.value; renderMeTab(seg, box); };
+  $('#me_talk').onchange = e => { meFilter.talking = e.target.value; renderMeTab(seg, box); };
+  $('#me_scan').onclick = async () => { ME = await api('/api/me?scan=1'); renderMeTab(seg, box); };
+  $('#me_file').onchange = async e => {
+    for (const f of e.target.files) {
+      const tags = prompt(`「${f.name}」的标签（逗号分隔，例：backyard, glasses；文件名里的词已自动算标签）`, '') ?? '';
+      const talking = confirm('这是"说话"镜头吗？（确定 = 说话，取消 = 沉默 B-roll）');
+      const b64 = await new Promise(res => { const rd = new FileReader(); rd.onload = () => res(rd.result.split(',')[1]); rd.readAsDataURL(f); });
+      try { const j = await api('/api/me/upload', { name: f.name, data_b64: b64, tags, talking }); ME.items = j.items; ME.tags = [...new Set(j.items.flatMap(i => i.tags || []))].sort(); } catch (err) { alert(err.message); }
+    }
+    renderMeTab(seg, box);
+  };
+  const spec = () => ({ tags: meFilter.tag ? [meFilter.tag] : [], talking: $('#me_talking').checked });
+  $('#me_add_main').onclick = () => { seg.clips.push({ me: spec() }); markDirty(true); };
+  $('#me_add_pip').onclick = () => { seg.overlays = seg.overlays || []; seg.overlays.push({ me: spec(), position: 'bottom-right', size: 0.3, animate: 'fade' }); markDirty(true); };
+  box.querySelectorAll('.cand').forEach(el => el.onclick = () => { const it = ME.items.find(i => i.name === el.dataset.name); const t = prompt('改标签（逗号分隔）', (it.tags || []).join(', ')); if (t === null) return; api('/api/me/tags', { name: it.name, tags: t.split(/[,，]/).map(x => x.trim()).filter(Boolean) }).then(j => { ME.items = j.items; ME.tags = [...new Set(j.items.flatMap(i => i.tags || []))].sort(); renderMeTab(seg, box); }); });
+}
+
+function renderSearchTab(seg, r, box) {
   // search tab
   const kws = r.keywords || [];
   if (!picker.q) picker.q = seg.visual_hint || kws[0] || '';   // a pasted script's 画面: line wins
