@@ -38,6 +38,34 @@ class ScriptParser(unittest.TestCase):
         segs = parse("1. In 1815 the volcano erupted and this is clearly a full sentence of narration, not a title.\n\n2. Europe froze.")
         self.assertTrue(all(s["label"] is None for s in segs))
 
+    def test_bare_title_before_visual_line_is_recognised_as_a_heading(self):
+        """Real GPT output for our own copy-paste format spec: it wrote plain title lines (no
+        '##') but did keep 'Visual: ...' before each paragraph. Before this rule, every such
+        title became a one-line segment indistinguishable from real narration, and — worse —
+        every Visual: line in the whole document collapsed onto the very first segment because
+        no heading was ever recognised to split blocks apart."""
+        text = ("The Year Without a Summer\n\nVisual: Mount Tambora volcano, 1815\n\n"
+                "Imagine waking up in June.\n\nIt should be summer.\n\n"
+                "The Volcano\n\nVisual: Mount Tambora eruption, ash\n\nThe story began one year earlier.")
+        segs = parse(text)
+        self.assertEqual([s["label"] for s in segs if s["label"]], ["The Year Without a Summer", "The Volcano"])
+        self.assertEqual(segs[0]["visual_hint"], "Mount Tambora volcano, 1815")
+        # the second chapter's visual must NOT have leaked onto the first chapter's segments
+        self.assertIsNone(segs[1]["visual_hint"])
+        third = next(s for s in segs if s["text"].startswith("The story began"))
+        self.assertEqual(third["visual_hint"], "Mount Tambora eruption, ash")
+
+    def test_visual_line_itself_is_never_mistaken_for_a_bare_title(self):
+        """A 'Visual:'/'画面:' line is short and has no ending punctuation too — it must not
+        become a heading just because the line after it also happens to be a marker line."""
+        segs = parse("Scene 1: Opening\nVisual: a\nNarration: first line\nVisual: b\nNarration: second line")
+        self.assertEqual(len(segs), 1)               # both narration lines join into one paragraph
+        self.assertEqual(segs[0]["visual_hint"], "a; b")
+
+    def test_each_visual_line_attaches_to_its_own_paragraph_not_the_whole_block(self):
+        segs = parse("## Chapter\nVisual: first shot\n\nFirst paragraph.\n\nVisual: second shot\n\nSecond paragraph.")
+        self.assertEqual([s["visual_hint"] for s in segs], ["first shot", "second shot"])
+
     def test_empty(self):
         self.assertEqual(parse("  \n "), [])
 

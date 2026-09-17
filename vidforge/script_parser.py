@@ -2,8 +2,18 @@
 
 Recognised, in priority order:
     headings   # / ##, "1." "1)" "一、" "第一章/节" "Part 1" "Segment 3:" "Scene 2", 【标题】
+    bare titles: a short line with no ending punctuation, immediately followed by a Visual:/画面:
+                 or Narration:/旁白: line, e.g. an AI that ignored "put ## before chapter names"
+                 but still wrote a plain title line before each Visual:/narration pair
     screenplay two-column lines: 旁白: / Narration: / VO:  -> text ;  画面: / Visual: / Shot: -> visual_hint
     blank-line paragraphs (fallback), long ones split at sentence ends (~50 words / 140 CJK chars)
+
+Without the bare-title rule, a script with plain titles and no "##" collapses into one giant
+block: every "Visual:" line in the whole document gets attached to that single block (so only
+the very first segment gets a visual hint, and it's every hint in the document concatenated),
+and each paragraph — titles included — becomes its own flat segment. The bare-title rule keys
+off the same Visual:/Narration: marker the AI was already asked to write, so it doesn't need
+the "##" to have been followed for the split to work.
 
 Returns [{"label": str|None, "text": str, "visual_hint": str|None}]. Pure function; unit-tested.
 """
@@ -29,10 +39,15 @@ _SENT_END = re.compile(r"(?<=[.!?。！？])\s+|(?<=[。！？])")
 
 
 @dataclass
+class Para:
+    lines: list[str] = field(default_factory=list)
+    visual: str | None = None       # the Visual:/画面: line(s) that appeared right before this paragraph
+
+
+@dataclass
 class Block:
     label: str | None = None
-    lines: list[str] = field(default_factory=list)
-    visual: list[str] = field(default_factory=list)
+    paras: list[Para] = field(default_factory=list)
 
 
 def _is_cjk(s: str) -> bool:
@@ -48,6 +63,26 @@ def _heading(line: str) -> str | None:
             if rx is _HEADING[-1] and (len(t.split()) > 10 or t.endswith((".", "。", "!", "！", "?", "？"))):
                 return None
             return t or "…"
+    return None
+
+
+_TITLE_END = ".!?。！？…,，、"
+
+
+def _bare_title(line: str, lines: list[str], i: int) -> str | None:
+    """A short line with no ending punctuation, directly followed (skipping blanks) by a
+    Visual:/画面: or Narration:/旁白: marker, is almost certainly a chapter title written
+    without a leading '##' — see module docstring for why this matters."""
+    t = line.strip()
+    if not t or t[-1] in _TITLE_END or len(t) > 40 or len(t.split()) > 8:
+        return None
+    if _NARR.match(line) or _VISUAL.match(line) or _IGNORE.match(line):
+        return None                                       # the line itself is a marker, not a title
+    j = i + 1
+    while j < len(lines) and not lines[j].strip():
+        j += 1
+    if j < len(lines) and (_VISUAL.match(lines[j]) or _NARR.match(lines[j])):
+        return t.strip("*_ ")
     return None
 
 
@@ -70,50 +105,74 @@ def parse(text: str) -> list[dict]:
     text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
     if not text:
         return []
+    lines = text.split("\n")
     blocks: list[Block] = []
     cur = Block()
+    cur_para = Para()
+    pending_visual: str | None = None      # a Visual:/画面: line waiting for the paragraph it describes
     structured = False
-    for raw in text.split("\n"):
+
+    def flush_para() -> None:
+        nonlocal cur_para
+        if cur_para.lines:
+            cur.paras.append(cur_para)
+        cur_para = Para()
+
+    def flush_block() -> None:
+        nonlocal cur
+        flush_para()
+        if cur.paras or cur.label:
+            blocks.append(cur)
+        cur = Block()
+
+    for i, raw in enumerate(lines):
         line = raw.rstrip()
         if not line.strip():
-            if cur.lines or cur.visual:
-                cur.lines.append("")                      # paragraph break inside a block
+            flush_para()                                  # blank line = paragraph break
             continue
         h = _heading(line)
+        if h is None:
+            h = _bare_title(line, lines, i)
         if h is not None:
             structured = True
-            if cur.lines or cur.visual or cur.label:
-                blocks.append(cur)
-            cur = Block(label=h)
+            flush_block()
+            cur.label = h
             continue
         m = _NARR.match(line)
         if m:
             structured = True
-            cur.lines.append(m.group("t").strip()); continue
-        m = _VISUAL.match(line)
-        if m:
-            structured = True
-            cur.visual.append(m.group("t").strip()); continue
-        if _IGNORE.match(line):
-            continue
-        cur.lines.append(line.strip())
-    if cur.lines or cur.visual or cur.label:
-        blocks.append(cur)
+            text_line = m.group("t").strip()
+        else:
+            mv = _VISUAL.match(line)
+            if mv:
+                structured = True
+                v = mv.group("t").strip()
+                if cur_para.lines:                        # paragraph already started: attach directly
+                    cur_para.visual = f"{cur_para.visual}; {v}" if cur_para.visual else v
+                else:                                      # paragraph hasn't started: queue for it
+                    pending_visual = f"{pending_visual}; {v}" if pending_visual else v
+                continue
+            if _IGNORE.match(line):
+                continue
+            text_line = line.strip()
+        if not cur_para.lines and pending_visual is not None:
+            cur_para.visual, pending_visual = pending_visual, None
+        cur_para.lines.append(text_line)
+    flush_block()
 
     segments: list[dict] = []
     for b in blocks:
-        paras = [p.strip() for p in "\n".join(b.lines).split("\n\n") if p.strip()]
-        body = " ".join(p.replace("\n", " ") for p in paras)
-        hint = "; ".join(b.visual) or None
-        if not body:
+        if not b.paras:
             if b.label:                                   # heading with no body: a chapter card
-                segments.append({"label": b.label, "text": b.label, "visual_hint": hint})
+                segments.append({"label": b.label, "text": b.label, "visual_hint": None})
             continue
         # each paragraph is one idea = one segment; under a heading we tolerate longer paragraphs
         limits = (90, 220) if structured and b.label is not None else (60, 140)
-        pieces = []
-        for p in paras:
-            pieces += _split_long(p.replace("\n", " "), *limits)
-        for i, piece in enumerate(pieces):
-            segments.append({"label": b.label if i == 0 else None, "text": piece, "visual_hint": hint if i == 0 else None})
+        first_of_block = True
+        for para in b.paras:
+            body = " ".join(para.lines)
+            for i, piece in enumerate(_split_long(body, *limits)):
+                segments.append({"label": b.label if first_of_block else None, "text": piece,
+                                 "visual_hint": para.visual if i == 0 else None})
+                first_of_block = False
     return segments
