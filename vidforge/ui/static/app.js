@@ -6,22 +6,29 @@ const fmt = (s) => s == null ? '–' : (s >= 60 ? `${Math.floor(s / 60)}:${Strin
 const fileUrl = (rel, bust) => rel ? `/files/${rel.split('/').map(encodeURIComponent).join('/')}${bust ? '?t=' + bust : ''}` : null;
 // The reusable "how to write a script for vidforge" spec — paste-ready for any AI chat, so
 // scripts written elsewhere still split into segments correctly when pasted back into step 1.
-const SCRIPT_FORMAT_SPEC = {
-  zh: `给我写视频解说脚本时请遵守这个格式（这样能直接粘贴进 vidforge 自动拆成段）：
+// Word count scales with the project's target length (raw.target_minutes) instead of being fixed,
+// and "##" before each chapter is now REQUIRED wording, not optional: a title line with no "##"
+// only splits correctly when the AI also wrote a "Visual:"/"画面:" line right after it (vidforge
+// falls back to treating a short, unpunctuated line followed by one of those as a chapter title) —
+// asking for "##" up front avoids relying on that fallback at all.
+function scriptFormatSpec(mins, zh) {
+  const words = Math.round(mins * (zh ? 240 : 150));
+  return zh
+    ? `给我写一条约 ${mins} 分钟（正文约 ${words} 字）的视频解说脚本时请遵守这个格式（这样能直接粘贴进 vidforge 自动拆成段）：
 1. 每段讲一个意思，2–4 句，口语化、短句、标点齐全——标点决定字幕断行和停顿，不要用省略号或破折号代替句号。
 2. 段与段之间空一行分隔（不要用列表符号）。
-3. 每段前可以加一个 Markdown 二级标题作章节名："## 章节名"（可选，不加也能按空行自动分段）。
-4. 每段正文前可以单独一行写"画面：xxx"，给出这段适合的画面/素材描述（2–4 个具体名词，中英均可），vidforge 会据此自动配图，这一行可选。
+3. 每个段落前必须加一个 Markdown 二级标题作章节名："## 章节名"——这一步不要省略，没有 ## 时 vidforge 只能靠"这行没有标点、后面紧跟画面/旁白提示"来猜是不是标题，容易出错。
+4. 每段正文前可以单独写一行"画面：xxx"，给出这一段适合的画面/素材描述（2–4 个具体名词，中英均可），vidforge 会据此自动配图；一段最多算一条，可选。
 5. 数字、年份按口语读法写清楚；不确定的史实标注 [待核实]。
-6. 只输出脚本正文本身，不要前言、解释或总结这段格式要求。`,
-  en: `When writing a narration script for me, follow this format (so it pastes straight into vidforge and splits into segments correctly):
+6. 正文总字数约 ${words} 字（对应约 ${mins} 分钟旁白）。只输出脚本正文本身，不要前言、解释或总结这段格式要求。`
+    : `When writing me a ~${mins}-minute (~${words}-word) narration script, follow this format (so it pastes straight into vidforge and splits into segments correctly):
 1. One idea per segment, 2-4 sentences, spoken style, short sentences, full punctuation — punctuation drives subtitle breaks and pauses.
 2. Separate segments with a blank line (no bullet/numbered list markers).
-3. Optionally put a Markdown level-2 heading before each segment as its chapter name: "## Chapter title" (optional — a blank line alone is enough to split).
-4. Optionally put one line "Visual: ..." before a segment's narration with 2-4 concrete search keywords for stock footage; vidforge uses it to auto-pick images.
+3. Put a Markdown level-2 heading before EVERY segment as its chapter name: "## Chapter title" — don't skip this. Without it, vidforge has to guess a bare title line is a heading (only works when a Visual:/Narration: line immediately follows it), which is fragile.
+4. Optionally put one line "Visual: ..." before a segment's narration with 2-4 concrete search keywords for stock footage; vidforge uses it to auto-pick images. At most one per segment.
 5. Spell out numbers and years the way they should be read aloud; mark uncertain facts [verify].
-6. Output only the script itself — no preamble, no explanation of this format.`,
-};
+6. Total length about ${words} words for ~${mins} minutes of narration. Output only the script itself — no preamble, no explanation of this format.`;
+}
 // hover-only tip: a small "i" badge instead of a paragraph, so explanatory text stops eating UI space.
 const info = (html) => `<span class="info-tip" tabindex="0"><span class="info-pop">${html}</span></span>`;
 // small clipboard button anywhere; text goes through esc() so it round-trips via the data attribute untouched.
@@ -265,7 +272,13 @@ function checks() {
 function renderChecks() {
   const host = $('#checks') || (() => { const d = document.createElement('div'); d.id = 'checks'; $('#issues').after(d); return d; })();
   const items = checks();
-  host.innerHTML = items.length ? `<details class="banner info" open><summary>规范检查（${items.length}）· 依据 docs/best-practices.md</summary><ul style="margin:6px 0 0 18px">${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></details>` : '';
+  // collapsed by default — it's a real actionable checklist (not a static tip), so it stays a
+  // one-click-away <details> rather than a hover icon, but shouldn't default to eating space on
+  // every visit; remembers whether the user prefers it open.
+  const open = localStorage.getItem('vf.checks_open') === '1';
+  host.innerHTML = items.length ? `<details class="banner info" ${open ? 'open' : ''}><summary>⚠ 规范检查（${items.length}）· 依据 docs/best-practices.md</summary><ul style="margin:6px 0 0 18px">${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></details>` : '';
+  const det = host.querySelector('details');
+  if (det) det.ontoggle = () => localStorage.setItem('vf.checks_open', det.open ? '1' : '0');
 }
 
 /* ---------------- 1 script ---------------- */
@@ -282,7 +295,8 @@ function viewScript(v) {
   <div class="card">
     <div class="row" style="justify-content:space-between"><b>段落（${segs.length}）</b>
       <span><button class="small" id="addSeg">＋ 添加一段</button> <button class="small" id="togglePaste">${segs.length ? '从整篇脚本重新拆段…' : ''}</button></span></div>
-    <p class="hint">一段 = 一个画面（或几个片段）+ 讲这段时说的话。旁白<b>按口语写、短句、标点齐全</b>——标点决定字幕断行和停顿。${copyBtn(SCRIPT_FORMAT_SPEC[(isBase() ? P.base_lang : lang).startsWith('zh') ? 'zh' : 'en'], '复制详细格式要求，粘贴到任意 AI 对话里让它照这个格式写脚本')}${isBase() ? '' : `<span class="warn">当前编辑的是 <b>${lang}</b> 版旁白；空着的段会用红框提示。</span>`}</p>
+    <p class="hint">一段 = 一个画面（或几个片段）+ 讲这段时说的话。旁白<b>按口语写、短句、标点齐全</b>——标点决定字幕断行和停顿。${copyBtn(scriptFormatSpec(raw.target_minutes || 10, (isBase() ? P.base_lang : lang).startsWith('zh')), '复制详细格式要求（含目标字数），粘贴到任意 AI 对话里让它照这个格式写脚本')}
+      <label class="muted" style="margin-left:6px">目标时长 <input id="f_minutes" type="number" min="1" max="60" style="width:48px" value="${raw.target_minutes || 10}"> 分钟</label>${isBase() ? '' : `<span class="warn">当前编辑的是 <b>${lang}</b> 版旁白；空着的段会用红框提示。</span>`}</p>
     <details id="topicPanel"><summary>🔎 选题助手：看 YouTube 上同类视频的数据，让 AI 判断值不值得做、用什么视角</summary>
       <div class="row" style="margin-top:6px"><input id="t_q" class="grow" placeholder="候选主题，例：year without a summer 1816" value="${esc(topGet('title') || '')}"><input id="t_pos" class="grow" placeholder="频道定位（可选），例：英文历史解说，15 分钟长视频"><button id="t_search">看同类视频</button></div>
       <div id="t_table"></div>
@@ -293,7 +307,7 @@ function viewScript(v) {
       <details id="genPanel" ${segs.length ? '' : 'open'}><summary>✨ 用我的浏览器里的 AI 生成脚本（ChatGPT / Claude / Gemini / DeepSeek / Grok / 千问 / Kimi / 文心）${info('会打开一个专用的 Edge 窗口（第一次点「登录各站点」登录一次即可，8 个站点在 8 个标签页里，记得逐个登录完再关窗口）。生成期间不要在那个窗口里操作；遇到验证码就手动点一下。回答会自动填入下面的文本框，再点「拆成段落」。')}</summary>
         <div class="grid2" style="margin-top:6px">
           <div><label class="muted">主题 / 标题</label><input id="g_topic" value="${esc(topGet('title') || '')}"></div>
-          <div><label class="muted">目标时长（分钟）</label><input id="g_minutes" type="number" min="1" max="60" value="10"></div>
+          <div><label class="muted">目标时长（分钟）</label><input id="g_minutes" type="number" min="1" max="60" value="${raw.target_minutes || 10}"></div>
           <div><label class="muted">受众 / 语气</label><input id="g_audience" placeholder="例：对历史感兴趣的普通观众，轻松但准确"></div>
           <div><label class="muted">用哪个网站</label><select id="g_site"></select></div>
         </div>
@@ -323,6 +337,7 @@ function viewScript(v) {
   </div>`;
   $('#f_title').oninput = e => topSet('title', e.target.value);
   $('#f_thumb').oninput = e => topSet('thumbnail_text', e.target.value.replace(/\\n/g, '\n'));
+  $('#f_minutes').onchange = e => { raw.target_minutes = parseInt(e.target.value, 10) || 10; markDirty(); if ($('#g_minutes')) $('#g_minutes').value = raw.target_minutes; };
   $('#addSeg').onclick = () => { raw.segments.push({ id: newId(), text: isBase() ? '' : '(en)', [textKey()]: '', clips: [] }); markDirty(true); };
   $('#togglePaste').onclick = () => { $('#paste').hidden = !$('#paste').hidden; };
   // ---- topic research
@@ -401,16 +416,22 @@ Requirements:
 5. Spell out numbers the way they should be read aloud; mark uncertain facts with [verify].
 6. End with a short recap and a teaser for the next episode. Output only the script, no preamble.`) + categoryNote();
   };
+  $('#g_minutes').onchange = e => { raw.target_minutes = parseInt(e.target.value, 10) || 10; markDirty(); if ($('#f_minutes')) $('#f_minutes').value = raw.target_minutes; };
   $('#g_copy').onclick = async () => { await navigator.clipboard.writeText(buildPrompt()); $('#g_status').textContent = '提示词已复制，贴到任意 AI，再把回答贴回下面的框。'; };
   $('#g_login').onclick = () => startBrowserLogin(null, $('#g_status'));
   $('#g_login_one').onclick = () => startBrowserLogin([$('#g_site').value], $('#g_status'));
-  $('#g_go').onclick = async () => {
+  const genGo = async (retry = false) => {
     const site = $('#g_site').value; localStorage.setItem('vf.site', site);
     $('#g_go').disabled = true; $('#g_status').textContent = `正在 ${$('#g_site').selectedOptions[0].textContent} 里提问并等待回答（通常 30–120 秒）…`;
     try { const j = await api('/api/chat', { site, prompt: buildPrompt() }); $('#script').value = j.text; $('#g_status').textContent = `收到 ${j.text.length} 字，点「拆成段落」。`; $('#script').scrollIntoView({ behavior: 'smooth' }); }
-    catch (e) { $('#g_status').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+    catch (e) {
+      const loginWall = !retry && /登录|验证|verify|log ?in/i.test(e.message);
+      $('#g_status').innerHTML = `<span class="err">${esc(e.message)}</span>` + (loginWall ? ' <button class="small" id="g_login_retry">先登录再重试</button>' : '');
+      if (loginWall) $('#g_login_retry').onclick = async () => { await startBrowserLogin([site], $('#g_status')); genGo(true); };
+    }
     $('#g_go').disabled = false;
   };
+  $('#g_go').onclick = () => genGo(false);
   $('#splitBtn').onclick = async () => {
     const text = $('#script').value.trim(); if (!text) return;
     const j = await api('/api/script/split', { text });
@@ -966,9 +987,17 @@ $('#aiToggle').onclick = async () => {
   if (!d.hidden && !$('#ai_site').children.length) {
     const sites = await api('/api/chat/sites').catch(() => ({ sites: [] }));
     const opts = sites.sites.map(x => `<option value="${x.id}">${esc(x.label)}（我的浏览器）</option>`);
-    if (H?.llm) opts.unshift(`<option value="__local">本地模型 ${esc(H.llm.model)}（离线，快）</option>`);
+    if (H?.llm) opts.unshift(`<option value="__local">本地模型 ${esc(H.llm.model)}（离线，快，推荐）</option>`);
     $('#ai_site').innerHTML = opts.join('');
-    $('#ai_site').value = localStorage.getItem('vf.ai_site') || (H?.llm ? '__local' : 'deepseek');
+    // a browser-bridge site only wins the default if it's KNOWN to be logged in — otherwise a
+    // stale choice from before login ever happened (or before it expired) would silently and
+    // permanently break "AI 助手" every time the drawer opens, with no obvious way out.
+    const saved = localStorage.getItem('vf.ai_site');
+    let initial = saved || (H?.llm ? '__local' : sites.sites[0]?.id);
+    if (saved && saved !== '__local' && H?.llm) {
+      try { const st = await api('/api/chat/login/status'); if (st.status?.[saved] !== true) initial = '__local'; } catch { /* keep saved */ }
+    }
+    $('#ai_site').value = initial || '__local';
     $('#ai_site').onchange = refreshAiLoginHint;
     refreshAiLoginHint();
   } else if (!d.hidden) {
@@ -978,16 +1007,22 @@ $('#aiToggle').onclick = async () => {
 $('#ai_login').onclick = () => startBrowserLogin([$('#ai_site').value], $('#ai_login_hint')).then(refreshAiLoginHint);
 $('#drawerClose').onclick = () => { $('#drawer').hidden = true; };
 $('#ai_ctx').onclick = () => { const s = raw?.segments?.find(x => x.id === selSeg) || raw?.segments?.[0]; if (s) $('#ai_q').value += `\n\n当前段旁白：${s[textKey()] || s.text}`; };
-$('#ai_send').onclick = async () => {
+async function aiAsk(retry = false) {
   const qv = $('#ai_q').value.trim(); if (!qv) return;
   const site = $('#ai_site').value; localStorage.setItem('vf.ai_site', site);
-  $('#ai_send').disabled = true; $('#ai_status').textContent = site === '__local' ? '本地模型思考中…' : '在浏览器里提问，等待回答…';
+  $('#ai_send').disabled = true; $('#ai_status').textContent = site === '__local' ? '本地模型思考中…' : (retry ? '登录后重新提问，等待回答…' : '在浏览器里提问，等待回答…');
   try {
     const j = site === '__local' ? await api('/api/llm', { prompt: qv }) : await api('/api/chat', { site, prompt: qv });
     $('#ai_answer').textContent = j.text; $('#ai_actions').hidden = false; $('#ai_status').textContent = '';
-  } catch (e) { $('#ai_answer').innerHTML = `<span class="err">${esc(e.message)}</span>`; $('#ai_status').textContent = ''; }
+  } catch (e) {
+    const loginWall = !retry && site !== '__local' && /登录|验证|verify|log ?in/i.test(e.message);
+    $('#ai_answer').innerHTML = `<span class="err">${esc(e.message)}</span>` + (loginWall ? ' <button class="small" id="ai_login_retry">先登录再重试</button>' : '');
+    $('#ai_status').textContent = '';
+    if (loginWall) $('#ai_login_retry').onclick = async () => { await startBrowserLogin([site], $('#ai_status')); aiAsk(true); };
+  }
   $('#ai_send').disabled = false;
-};
+}
+$('#ai_send').onclick = () => aiAsk(false);
 $('#ai_insert').onclick = () => { const t = $('#script'); if (t) { t.value = (t.value ? t.value + '\n\n' : '') + $('#ai_answer').textContent; $('#paste').hidden = false; t.scrollIntoView({ behavior: 'smooth' }); } else alert('先到第 1 步，脚本框在那里'); };
 $('#ai_copy').onclick = () => navigator.clipboard.writeText($('#ai_answer').textContent);
 $('#ai_clear').onclick = () => { $('#ai_answer').textContent = ''; $('#ai_q').value = ''; $('#ai_actions').hidden = true; };
