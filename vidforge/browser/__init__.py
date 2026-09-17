@@ -38,11 +38,20 @@ def _playwright():
     return sync_playwright
 
 
-def launch(pw, headless: bool = False, channel_order=("msedge", "chrome")):
-    """Persistent context on the dedicated profile; returns (context, page)."""
+def launch(pw, headless: bool = False, channel_order: tuple[str, ...] | None = None):
+    """Persistent context on the dedicated profile; returns (context, page).
+
+    Tries Edge first, falls back to Chrome only if Edge genuinely won't launch — set
+    VIDFORGE_BROWSER_CHANNEL=chrome (or msedge) to force one. Prints which channel actually
+    started and, if Edge was skipped, why — otherwise "it opened Chrome instead of Edge" is
+    unexplainable after the fact.
+    """
+    import os
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    forced = os.environ.get("VIDFORGE_BROWSER_CHANNEL", "").strip()
+    order = channel_order or ((forced,) if forced else ("msedge", "chrome"))
     last = None
-    for channel in channel_order:
+    for channel in order:
         try:
             ctx = pw.chromium.launch_persistent_context(
                 str(PROFILE_DIR), channel=channel, headless=headless, viewport=None,
@@ -51,6 +60,8 @@ def launch(pw, headless: bool = False, channel_order=("msedge", "chrome")):
                 locale="zh-CN",
             )
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            if channel != order[0]:
+                print(f"[vidforge] {order[0]} unavailable ({last}); launched {channel} instead.")
             return ctx, page
         except Exception as e:  # noqa: BLE001
             last = e

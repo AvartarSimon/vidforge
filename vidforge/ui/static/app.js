@@ -14,17 +14,17 @@ const fileUrl = (rel, bust) => rel ? `/files/${rel.split('/').map(encodeURICompo
 function scriptFormatSpec(mins, zh) {
   const words = Math.round(mins * (zh ? 240 : 150));
   return zh
-    ? `给我写一条约 ${mins} 分钟（正文约 ${words} 字）的视频解说脚本时请遵守这个格式（这样能直接粘贴进 vidforge 自动拆成段）：
+    ? `写一条约 ${mins} 分钟（正文约 ${words} 字）的视频解说脚本，请遵守这个格式（这样能直接粘贴进 vidforge 自动拆成段）：
 1. 每段讲一个意思，2–4 句，口语化、短句、标点齐全——标点决定字幕断行和停顿，不要用省略号或破折号代替句号。
 2. 段与段之间空一行分隔（不要用列表符号）。
-3. 每个段落前必须加一个 Markdown 二级标题作章节名："## 章节名"——这一步不要省略，没有 ## 时 vidforge 只能靠"这行没有标点、后面紧跟画面/旁白提示"来猜是不是标题，容易出错。
+3. 每个段落前必须加一个 Markdown 二级标题作章节名，格式固定是"## 章节名"——用 ## 这个符号本身，不要只把标题加粗（**标题**）代替，那样识别不出来；这一步不要省略。
 4. 每段正文前可以单独写一行"画面：xxx"，给出这一段适合的画面/素材描述（2–4 个具体名词，中英均可），vidforge 会据此自动配图；一段最多算一条，可选。
 5. 数字、年份按口语读法写清楚；不确定的史实标注 [待核实]。
 6. 正文总字数约 ${words} 字（对应约 ${mins} 分钟旁白）。只输出脚本正文本身，不要前言、解释或总结这段格式要求。`
-    : `When writing me a ~${mins}-minute (~${words}-word) narration script, follow this format (so it pastes straight into vidforge and splits into segments correctly):
+    : `Write a ~${mins}-minute (~${words}-word) narration script following this format (so it pastes straight into vidforge and splits into segments correctly):
 1. One idea per segment, 2-4 sentences, spoken style, short sentences, full punctuation — punctuation drives subtitle breaks and pauses.
 2. Separate segments with a blank line (no bullet/numbered list markers).
-3. Put a Markdown level-2 heading before EVERY segment as its chapter name: "## Chapter title" — don't skip this. Without it, vidforge has to guess a bare title line is a heading (only works when a Visual:/Narration: line immediately follows it), which is fragile.
+3. Put a Markdown level-2 heading before EVERY segment as its chapter name, using the literal "## " marker — e.g. "## Chapter title". Don't just **bold** the title instead; that doesn't get recognised. Don't skip this.
 4. Optionally put one line "Visual: ..." before a segment's narration with 2-4 concrete search keywords for stock footage; vidforge uses it to auto-pick images. At most one per segment.
 5. Spell out numbers and years the way they should be read aloud; mark uncertain facts [verify].
 6. Total length about ${words} words for ~${mins} minutes of narration. Output only the script itself — no preamble, no explanation of this format.`;
@@ -403,7 +403,7 @@ function viewScript(v) {
 要求：
 1. 总字数约 ${words} 字，口语化、短句、标点齐全（标点决定字幕断行和停顿）。
 2. 前 30 秒是钩子：用一个反差、问题或具体数字抓住观众。
-3. 按内容分成 8–15 个段落，每个段落一个意思、2–4 句；每个段落前用 Markdown 二级标题写章节名（格式：## 章节名）。
+3. 按内容分成 8–15 个段落，每个段落一个意思、2–4 句；每个段落前用 ## 这个 Markdown 二级标题符号写章节名（格式：## 章节名，用 ## 本身，不要只加粗标题代替）。
 4. 每个段落标题下面先写一行 "画面：" 给出适合的画面/素材描述（英文关键词 2–4 个，便于搜图），再写旁白正文。
 5. 数字和年份用汉字读法或明确写法；涉及具体史实处如不确定请标注 [核实]。
 6. 结尾一段是简短总结 + 引出下一集。只输出脚本本身，不要前言和解释。`
@@ -411,7 +411,7 @@ function viewScript(v) {
 Requirements:
 1. About ${words} words, spoken style, short sentences, full punctuation (it drives subtitle breaks and pauses).
 2. The first 30 seconds are a hook: a contrast, a question or a concrete number.
-3. Split into 8-15 segments, one idea each, 2-4 sentences; put a Markdown level-2 heading before each (format: ## Chapter title).
+3. Split into 8-15 segments, one idea each, 2-4 sentences; put the literal "## " marker before each as a Markdown level-2 heading (format: ## Chapter title) — don't just **bold** the title instead.
 4. Under each heading first write one line "Visual: <2-4 English search keywords for stock footage>", then the narration.
 5. Spell out numbers the way they should be read aloud; mark uncertain facts with [verify].
 6. End with a short recap and a teaser for the next episode. Output only the script, no preamble.`) + categoryNote();
@@ -513,7 +513,7 @@ function viewVoice(v) {
     const m = $('#modal');
     m.innerHTML = `<div class="modal"><div class="box">
       <div class="row" style="justify-content:space-between"><b>设计品牌声音${info('用文字描述想要的声音，ElevenLabs 会合成 3 个候选（不克隆任何真人，可商用）。')}</b><button class="ghost" id="close">✕</button></div>
-      <p class="hint">⚠ 需要 .env 里配置 <code>ELEVENLABS_API_KEY</code>（Creator 及以上套餐）——没配的话点「生成」会在下面显示这一条报错，不是卡住或“找不到”。</p>
+      <p class="hint">⚠ 需要 .env 里配置 <code>ELEVENLABS_API_KEY</code>——没配的话点「生成」会在下面显示这一条报错，不是卡住或"找不到"。Voice Design 本身免费版账号（每月约 1 万 credits）应该就能试；付费档位区别主要在音质（更高码率/采样率）和每月额度，具体以 <a href="https://elevenlabs.io/pricing" target="_blank">elevenlabs.io/pricing</a> 当前页面为准。</p>
       <textarea id="vd_desc" rows="3" placeholder="例：四十岁左右的男声，低沉、温暖、有磁性，语速从容，像纪录片解说，带一点英式口音">${esc(localStorage.getItem('vf.vd_desc') || '')}</textarea>
       <textarea id="vd_text" rows="2" placeholder="试听文本（可空，默认用一段解说样例；≥100 字符）"></textarea>
       <div class="row"><button class="primary" id="vd_go">生成 3 个候选</button><span class="muted" id="vd_status"></span></div>

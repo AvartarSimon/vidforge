@@ -9,7 +9,9 @@ Three previews come back; keep one and it becomes a voice_id usable everywhere i
 
 Endpoints: POST /v1/text-to-voice/design and POST /v1/text-to-voice (2025 API); the older
 /create-previews + /create-voice-from-preview pair is tried when the new ones 404.
-Requires ELEVENLABS_API_KEY (Creator plan or above for Voice Design). ⚠ Not exercised here.
+Requires ELEVENLABS_API_KEY. Voice Design itself is usable on the free tier (~10k credits/month
+as of 2026-09); paid tiers mainly raise the monthly quota and unlock higher-bitrate output —
+check elevenlabs.io/pricing, it changes. ⚠ Not exercised here.
 """
 
 from __future__ import annotations
