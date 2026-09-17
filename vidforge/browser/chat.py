@@ -80,6 +80,19 @@ def _answer_text(page, selectors: list[str]) -> str:
         return ""
 
 
+def _login_wall_hint(page) -> str:
+    """Best-effort: is the input box missing because we're stuck on a login/verification page?"""
+    try:
+        text = (page.title() + " " + page.url).lower()
+        body = page.evaluate("() => document.body ? document.body.innerText.slice(0, 500) : ''").lower()
+        markers = ["log in", "sign in", "登录", "登陆", "verify", "验证", "captcha", "手机号", "密码", "continue with"]
+        if any(m in text or m in body for m in markers):
+            return "看起来还停在登录/验证页，还没登录成功——"
+    except Exception:  # noqa: BLE001
+        pass
+    return "可能未登录或有验证页——"
+
+
 def _generating(page, selectors: list[str]) -> bool:
     for sel in selectors + GENERIC_STOP:
         try:
@@ -103,8 +116,11 @@ def ask(site_name: str, prompt: str, *, timeout: float = 240, settle: float = 4.
             page.goto(site["url"], wait_until="domcontentloaded", timeout=60000)
             box = _first(page, site["input"] + GENERIC_INPUT, timeout=20000)
             if box is None:
-                page.screenshot(path=str(_shot(site_name)))
-                raise BrowserError(f"{site['label']}：没找到输入框——可能未登录或有验证页。请运行 `vidforge browser login` 在窗口里登录后重试。")
+                shot = _shot(site_name)
+                page.screenshot(path=str(shot))
+                hint = _login_wall_hint(page)
+                raise BrowserError(f"{site['label']}：没找到输入框——{hint}请运行 `vidforge browser login` 登录后重试"
+                                   f"（截图已存到 {shot}，可以看看页面停在哪一步）。")
             before = _answer_text(page, site["answer"])
             box.click()
             page.keyboard.type(prompt, delay=2)                  # human-ish pace, fast enough for a long prompt

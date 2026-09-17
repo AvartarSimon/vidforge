@@ -18,10 +18,12 @@ Requires `pip install playwright` (no browser download: uses the installed Edge 
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 
 PROFILE_DIR = Path.home() / ".vidforge" / "browser-profile"
 _lock = threading.Lock()
+LAST_LOGIN_STATUS: dict[str, bool] = {}   # site id -> logged in, from the last `login_session()` run
 
 
 class BrowserError(RuntimeError):
@@ -55,27 +57,52 @@ def launch(pw, headless: bool = False, channel_order=("msedge", "chrome")):
     raise BrowserError(f"无法启动 Edge/Chrome：{last}")
 
 
-def login_session(sites: list[str] | None = None) -> None:
-    """Open the profile window with one tab per site; returns when the user closes the window."""
-    from .chat import SITES
+def login_session(sites: list[str] | None = None) -> dict[str, bool]:
+    """Open the profile window with one tab per site; returns when the user closes the window.
+
+    While the window is open, each tab is polled for its chat input box (the same selectors
+    `chat.ask()` looks for) so we know, per site, whether the login actually went through —
+    without this the only feedback was a confusing "input box not found" the next time someone
+    tried to generate something. Result is also kept in LAST_LOGIN_STATUS for the UI to read.
+    """
+    from .chat import GENERIC_INPUT, SITES
     sync_playwright = _playwright()
-    names = sites or list(SITES)
+    names = [n for n in (sites or list(SITES)) if n in SITES]
+    status = {n: False for n in names}
     with _lock, sync_playwright() as pw:
         ctx, page = launch(pw, headless=False)
+        pages: dict[str, object] = {}
         first = True
         for name in names:
-            site = SITES.get(name)
-            if not site:
-                continue
             p = page if first else ctx.new_page()
             first = False
+            pages[name] = p
             try:
-                p.goto(site["url"], wait_until="domcontentloaded", timeout=60000)
+                p.goto(SITES[name]["url"], wait_until="domcontentloaded", timeout=60000)
             except Exception:  # noqa: BLE001
                 pass
-        print("[vidforge] 请在打开的窗口里逐个登录各站点；全部登录后关闭窗口即可（登录状态会保存在 "
-              f"{PROFILE_DIR}）。")
         try:
-            ctx.wait_for_event("close", timeout=0)
+            next(iter(pages.values())).bring_to_front()   # surface the window — a background
+        except Exception:                                  # thread's popup can otherwise open
+            pass                                            # behind everything else unnoticed
+        print(f"[vidforge] 请在打开的窗口里逐个登录各站点；全部登录后关闭窗口即可（登录状态会保存在 {PROFILE_DIR}）。")
+        t0 = time.time()
+        try:
+            while ctx.pages and time.time() - t0 < 3600:
+                for name, p in pages.items():
+                    if status[name]:
+                        continue
+                    try:
+                        if p.is_closed():
+                            continue
+                        for sel in SITES[name]["input"] + GENERIC_INPUT:
+                            if p.locator(sel).last.is_visible(timeout=300):
+                                status[name] = True
+                                break
+                    except Exception:  # noqa: BLE001
+                        continue
+                time.sleep(2)
         except Exception:  # noqa: BLE001
-            pass
+            pass   # the context/window was closed out from under the loop — that's the exit signal
+    LAST_LOGIN_STATUS.update(status)
+    return status
