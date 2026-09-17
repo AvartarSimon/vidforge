@@ -72,7 +72,9 @@ class Wizard(unittest.TestCase):
             # 1 script: paste two paragraphs, split
             page.fill("#script", "# Opening\nThe first segment talks about the sea.\n\nThe second segment is about the sky and clouds.")
             page.click("#splitBtn")
-            page.wait_for_selector(".seg-row[data-i='1']")
+            page.wait_for_selector("#modal #ok")            # split preview -> accept
+            page.click("#modal #ok")
+            page.wait_for_selector("#seglist .seg-row[data-i='1']")
             page.wait_for_function("document.querySelector('#saveState').textContent === '已保存'")
             raw = json.loads((self.td / "project.json").read_text(encoding="utf-8"))
             self.assertEqual([s["id"] for s in raw["segments"]], ["seg1", "seg2"])

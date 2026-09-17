@@ -39,7 +39,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from .. import env, ffmpeg, keywords, pipeline, project as proj
+from .. import env, ffmpeg, keywords, pipeline, project as proj, script_parser
 from ..tts.silent import estimate_seconds
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -187,10 +187,7 @@ def make_handler(state: State):
                 if path == "/api/health":
                     return self._json(self.health())
                 if path == "/api/voices":
-                    from ..tts import get_provider
-                    env.load_dotenv(state.root)
-                    prov = get_provider(q.get("provider", "edge"))
-                    return self._json([{"name": n, "desc": d} for n, d in prov.list_voices(q.get("lang"))])
+                    return self._json(self.voices(q.get("provider", "edge"), q.get("lang")))
                 if path == "/api/search":
                     return self.search(q)
                 if path == "/api/keywords":
@@ -217,6 +214,10 @@ def make_handler(state: State):
                     return self.save_project(body)
                 if path == "/api/tts":
                     return self.tts(body.get("id"), q.get("lang"))
+                if path == "/api/voices/preview":
+                    return self.voice_preview(body.get("voice"), body.get("text"), body.get("provider", "edge"), q.get("lang"))
+                if path == "/api/script/split":
+                    return self._json({"segments": script_parser.parse(body.get("text", ""))})
                 if path == "/api/assets/fetch":
                     return self.fetch_candidate(body.get("candidate"))
                 if path == "/api/assets/upload":
@@ -352,8 +353,10 @@ def make_handler(state: State):
                 p = state.load(None); enc = pick_encoder(p)
             except Exception:  # noqa: BLE001
                 enc = "?"
+            from ..render import available_encoders
+            hw = [e for e in ("h264_nvenc", "h264_qsv", "h264_amf", "h264_videotoolbox") if e in available_encoders()]
             return {
-                "ffmpeg": {"ok": ff_ok, "path": ff}, "encoder": enc,
+                "ffmpeg": {"ok": ff_ok, "path": ff}, "encoder": enc, "encoders": ["libx264", *hw],
                 "node": bool(shutil.which("node")), "remotion": (APP_DIR / "node_modules").exists(),
                 "keys": {k: bool(os.environ.get(k)) for k in ("PEXELS_API_KEY", "PIXABAY_API_KEY", "ELEVENLABS_API_KEY")},
                 "youtube_secret": (Path.home() / ".vidforge" / "client_secret.json").exists()
@@ -390,6 +393,39 @@ def make_handler(state: State):
                 tmp.unlink(missing_ok=True)
             state.write_raw(data)
             return self._json({"saved": True})
+
+        def voices(self, provider: str, lang: str | None) -> list[dict]:
+            """Structured voice list; edge gives locale/gender/personality, others only names."""
+            env.load_dotenv(state.root)
+            if provider == "edge":
+                import asyncio
+                import edge_tts
+                vs = asyncio.run(edge_tts.list_voices())
+                out = []
+                for v in vs:
+                    loc = v["Locale"]
+                    if lang and not loc.lower().startswith(lang.lower()):
+                        continue
+                    out.append({"name": v["ShortName"], "locale": loc, "gender": v["Gender"],
+                                "personalities": (v.get("VoiceTag") or {}).get("VoicePersonalities", []),
+                                "friendly": v.get("FriendlyName", "")})
+                return sorted(out, key=lambda x: (x["locale"], x["gender"], x["name"]))
+            from ..tts import get_provider
+            prov = get_provider(provider)
+            return [{"name": n.split(" ")[0], "locale": "", "gender": "", "personalities": [d], "friendly": n} for n, d in prov.list_voices(lang)]
+
+        def voice_preview(self, voice: str | None, text: str | None, provider: str, lang: str | None):
+            """3-second sample of a voice (cached under build/ui/voices/)."""
+            if not voice:
+                return self._error("voice required")
+            from ..tts import get_provider, synthesize_cached
+            p = state.load(lang)
+            sample = (text or "").strip() or (p.segments[0].text[:160] if p.segments else "Hello, this is a short sample of my voice.")
+            prov = get_provider(provider, rate=p.rate, config={**p.tts.__dict__, "provider": provider})
+            out = state.build_dir(lang) / "ui" / "voices" / f"{re.sub(r'[^A-Za-z0-9_-]+', '_', voice)}_{abs(hash(sample)) % 10**8}.mp3"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            synthesize_cached(prov, sample, voice, out)
+            return self._json({"audio": state.rel(out), "duration": ffmpeg.duration(out)})
 
         def tts(self, seg_id: str | None, lang: str | None):
             if not seg_id:

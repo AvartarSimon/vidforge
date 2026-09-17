@@ -129,32 +129,33 @@ function viewScript(v) {
   $('#f_thumb').oninput = e => topSet('thumbnail_text', e.target.value.replace(/\\n/g, '\n'));
   $('#addSeg').onclick = () => { raw.segments.push({ id: newId(), text: isBase() ? '' : '(en)', [textKey()]: '', clips: [] }); markDirty(true); };
   $('#togglePaste').onclick = () => { $('#paste').hidden = !$('#paste').hidden; };
-  $('#splitBtn').onclick = () => {
-    const paras = $('#script').value.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
-    if (!paras.length) return;
-    if (segs.length && !confirm(`将替换现有 ${segs.length} 段（画面配置会丢失）。继续？`)) return;
-    // long paragraphs are split on sentence ends into ~50-word segments (one picture per idea)
-    const pieces = [];
-    for (const p of paras) {
-      let label = null, text = p;
-      const m = p.match(/^#\s*(.+)\n([\s\S]*)$/); if (m) { label = m[1].trim(); text = m[2].trim(); }
-      const sentences = text.match(/[^.!?。！？]+[.!?。！？]+["”』」]?|[^.!?。！？]+$/g) || [text];
-      let buf = '', first = true;
-      const push = () => { if (buf.trim()) { pieces.push({ text: buf.trim(), label: first ? label : null }); first = false; buf = ''; } };
-      for (const sen of sentences) {
-        const words = (buf + sen).trim().split(/\s+/).length, cjk = (buf + sen).length;
-        if (buf && (words > 60 || cjk > 140)) push();
-        buf += sen;
-      }
-      push();
-    }
-    raw.segments = pieces.map((pc, i) => {
-      const s = { id: `seg${i + 1}`, text: isBase() ? pc.text : '(en)', clips: [] };
-      if (!isBase()) s[textKey()] = pc.text;
-      if (pc.label) s[labelKey()] = pc.label;
-      return s;
-    });
-    markDirty(true);
+  $('#splitBtn').onclick = async () => {
+    const text = $('#script').value.trim(); if (!text) return;
+    const j = await api('/api/script/split', { text });
+    const pieces0 = j.segments; if (!pieces0.length) return;
+    // preview table: label / text / words / est. seconds — accept or cancel
+    const est = t => { const cjk = (t.match(/[\u4e00-\u9fff]/g) || []).length; return cjk > t.length * 0.3 ? cjk / 3.8 : t.split(/\s+/).length / 2.6; };
+    const total = pieces0.reduce((a, p) => a + est(p.text), 0);
+    const m = $('#modal');
+    m.innerHTML = `<div class="modal"><div class="box" style="max-height:90vh;overflow:auto">
+      <div class="row" style="justify-content:space-between"><b>拆分预览：${pieces0.length} 段 · 预计 ${fmt(total)}</b><button class="ghost" id="close">✕</button></div>
+      <p class="hint">识别到的章节名在第一列；每段字数/预计时长在右侧。可以在这里直接改，或取消后调整原文再拆。</p>
+      <div class="seglist">${pieces0.map((p, i) => `<div class="seg-row" data-i="${i}" style="grid-template-columns:150px 1fr 90px"><input data-k="label" value="${esc(p.label || '')}" placeholder="章节名"><textarea data-k="text">${esc(p.text)}</textarea><span class="muted">${p.text.split(/\s+/).length} 词<br>${fmt(est(p.text))}${p.visual_hint ? `<br title="${esc(p.visual_hint)}">🖼 画面提示` : ''}</span></div>`).join('')}</div>
+      <div class="row" style="justify-content:flex-end;margin-top:8px"><button id="cancel">取消</button><button class="primary" id="ok">采用这 ${pieces0.length} 段${segs.length ? `（替换现有 ${segs.length} 段）` : ''}</button></div></div></div>`;
+    $('#close').onclick = $('#cancel').onclick = () => { m.innerHTML = ''; };
+    $('#ok').onclick = () => {
+      const pieces = $$('.seg-row', m).map((row, i) => ({ label: row.querySelector('[data-k=label]').value.trim() || null, text: row.querySelector('[data-k=text]').value.trim(), visual_hint: pieces0[i].visual_hint })).filter(p => p.text);
+      m.innerHTML = '';
+      raw.segments = pieces.map((pc, i) => {
+        const s = { id: `seg${i + 1}`, text: isBase() ? pc.text : '(en)', clips: [] };
+        if (!isBase()) s[textKey()] = pc.text;
+        if (pc.label) s[labelKey()] = pc.label;
+        if (pc.visual_hint) s.visual_hint = pc.visual_hint;
+        return s;
+      });
+      markDirty(true);
+    };
+    return;
   };
   $('#seglist').oninput = e => {
     const row = e.target.closest('.seg-row'); if (!row) return;
@@ -185,7 +186,7 @@ function viewVoice(v) {
         <option value="edge" ${provider === 'edge' ? 'selected' : ''}>edge（免费，微软神经语音）</option>
         <option value="elevenlabs" ${provider === 'elevenlabs' ? 'selected' : ''}>ElevenLabs（付费，需 key）</option>
         <option value="silent" ${provider === 'silent' ? 'selected' : ''}>静音占位（只看画面，不联网）</option></select></div>
-      <div><label class="muted">声音 <span id="voiceLoading"></span></label><input id="f_voice" list="voiceList" value="${esc(topGet('voice') || '')}" placeholder="点击查看可选声音"><datalist id="voiceList"></datalist></div>
+      <div><label class="muted">声音</label><div class="row" style="margin:0"><input id="f_voice" class="grow" value="${esc(topGet('voice') || '')}" placeholder="点「浏览」按口音/性别挑"><button id="browseVoice">浏览…</button></div></div>
       <div><label class="muted">语速 <span id="rateVal">${esc(topGet('rate') || '+0%')}</span></label><input type="range" id="f_rate" min="-30" max="30" step="1" value="${parseInt(topGet('rate') || '0', 10) || 0}"></div>
       <div><label class="muted">试听</label><div class="row"><button id="ttsFirst">▶ 用第一段试听这个声音</button><button class="primary" id="ttsAll">全部配音</button></div></div>
     </div>
@@ -199,20 +200,12 @@ function viewVoice(v) {
       <span class="txt">${esc(s[textKey()] || '')}</span>
       <span class="audio">${r.audio ? `<audio controls preload="none" src="${fileUrl(r.audio)}?t=${r.duration}"></audio>` : '<span class="muted">尚未配音</span>'}</span>
       <span class="${r.audio_fresh ? '' : 'warn'}" title="${r.audio_fresh ? '' : '文字改过，需重新配音'}">${r.duration ? fmt(r.duration) : ''}${r.audio && !r.audio_fresh ? ' ⟳' : ''}</span>
-      <span></span><span></span><span><button class="small" data-act="tts">▶ 试听</button></span><span></span>
+      <span></span><span class="muted">${s.voice ? `声音：${esc(s.voice)} <button class="small" data-act="clearvoice" title="恢复全局声音">×</button>` : ''}</span><span><button class="small" data-act="tts">▶ 试听</button> <button class="small" data-act="voice" title="只给这一段换声音（引用、对话）">换声</button></span><span></span>
     </div>`; }).join('')}
   </div>`;
   $('#f_provider').onchange = e => nestedSet('tts', 'provider', e.target.value);
   $('#f_voice').oninput = e => topSet('voice', e.target.value);
-  $('#f_voice').onfocus = async () => {
-    if ($('#voiceList').children.length) return;
-    $('#voiceLoading').textContent = '加载中…';
-    try {
-      const vs = await api(`/api/voices?provider=${$('#f_provider').value}&lang=${encodeURIComponent(isBase() ? (lang === 'en' ? 'en' : lang) : lang)}`);
-      $('#voiceList').innerHTML = vs.map(x => `<option value="${esc(x.name.split(' ')[0])}">${esc(x.desc)}</option>`).join('');
-    } catch (e) { $('#issues').innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
-    $('#voiceLoading').textContent = '';
-  };
+  $('#browseVoice').onclick = () => openVoiceBrowser($('#f_provider').value, v => { $('#f_voice').value = v; topSet('voice', v); });
   $('#f_rate').oninput = e => { const val = `${e.target.value >= 0 ? '+' : ''}${e.target.value}%`; $('#rateVal').textContent = val; topSet('rate', val); };
   $('#ttsFirst').onclick = () => segs.length && ttsOne(segs[0].id);
   $('#ttsAll').onclick = async () => {
@@ -223,8 +216,55 @@ function viewVoice(v) {
     }
     load();
   };
-  $('#voiceList2').onclick = e => { const b = e.target.closest('button[data-act=tts]'); if (b) ttsOne(b.closest('.voice-row').dataset.id); };
+  $('#voiceList2').onclick = e => {
+    const b = e.target.closest('button[data-act]'); if (!b) return;
+    const id = b.closest('.voice-row').dataset.id, s = raw.segments.find(x => x.id === id);
+    if (b.dataset.act === 'tts') ttsOne(id);
+    if (b.dataset.act === 'voice') openVoiceBrowser($('#f_provider').value, v => { s.voice = v; markDirty(true); }, s[textKey()]);
+    if (b.dataset.act === 'clearvoice') { delete s.voice; markDirty(true); }
+  };
 }
+/* voice browser: filter by language / region / gender, 3-second preview, pick */
+const REGION = { 'en-US': '美国', 'en-GB': '英国（伦敦）', 'en-AU': '澳大利亚', 'en-NZ': '新西兰', 'en-IE': '爱尔兰', 'en-CA': '加拿大', 'en-IN': '印度', 'en-ZA': '南非', 'en-SG': '新加坡', 'en-HK': '香港英语', 'en-PH': '菲律宾', 'en-NG': '尼日利亚', 'en-KE': '肯尼亚', 'en-TZ': '坦桑尼亚',
+  'zh-CN': '普通话', 'zh-CN-liaoning': '东北话', 'zh-CN-shaanxi': '陕西关中话', 'zh-HK': '粤语', 'zh-TW': '台湾国语', 'ja-JP': '日语', 'ko-KR': '韩语', 'de-DE': '德语', 'fr-FR': '法语', 'es-ES': '西班牙语' };
+const regionOf = v => { const m = v.name.match(/^([a-z]{2}-[A-Z]{2}(?:-[a-z]+)?)/); return m ? m[1] : v.locale; };
+async function openVoiceBrowser(provider, onPick, sampleText) {
+  const m = $('#modal');
+  m.innerHTML = `<div class="modal"><div class="box" style="max-height:90vh;display:flex;flex-direction:column">
+    <div class="row" style="justify-content:space-between"><b>选择声音</b><button class="ghost" id="close">✕</button></div>
+    <div class="row"><select id="vb_lang"><option value="${isBase() && lang === 'en' ? 'en' : lang}">当前语言（${isBase() && lang === 'en' ? 'en' : lang}）</option><option value="">全部语言</option></select>
+      <select id="vb_region"><option value="">全部口音/地区</option></select>
+      <select id="vb_gender"><option value="">男女都看</option><option value="Female">女声</option><option value="Male">男声</option></select>
+      <span class="muted" id="vb_count"></span></div>
+    <div id="vb_list" style="overflow:auto;flex:1"><span class="muted">加载中…</span></div></div></div>`;
+  $('#close').onclick = () => { m.innerHTML = ''; };
+  let all = [];
+  try { all = await api(`/api/voices?provider=${provider}`); } catch (e) { $('#vb_list').innerHTML = `<div class="banner err">${esc(e.message)}</div>`; return; }
+  const regions = [...new Set(all.map(regionOf))].sort();
+  $('#vb_region').innerHTML += regions.map(r => `<option value="${r}">${REGION[r] || r} (${r})</option>`).join('');
+  const draw = () => {
+    const L = $('#vb_lang').value, Rg = $('#vb_region').value, G = $('#vb_gender').value;
+    const rows = all.filter(v => (!L || v.locale.toLowerCase().startsWith(L.toLowerCase())) && (!Rg || regionOf(v) === Rg) && (!G || v.gender === G));
+    $('#vb_count').textContent = `${rows.length} 个`;
+    $('#vb_list').innerHTML = rows.map(v => `<div class="voice-row" style="grid-template-columns:260px 110px 1fr 200px" data-v="${esc(v.name)}">
+      <b>${esc(v.name.replace(/Neural$/, ''))}</b><span class="muted">${esc(REGION[regionOf(v)] || v.locale)} · ${v.gender === 'Female' ? '女' : v.gender === 'Male' ? '男' : ''}</span>
+      <span class="muted">${esc((v.personalities || []).join(', '))}</span>
+      <span><button class="small" data-act="play">▶ 试听</button> <button class="small primary" data-act="pick">选用</button> <span class="vb_audio"></span></span></div>`).join('') || '<span class="muted">没有匹配的声音</span>';
+  };
+  $('#vb_lang').onchange = $('#vb_region').onchange = $('#vb_gender').onchange = draw;
+  draw();
+  $('#vb_list').onclick = async e => {
+    const b = e.target.closest('button[data-act]'); if (!b) return;
+    const row = b.closest('.voice-row'), v = row.dataset.v;
+    if (b.dataset.act === 'pick') { m.innerHTML = ''; onPick(v); return; }
+    b.disabled = true; b.textContent = '…';
+    try { const j = await api(`/api/voices/preview?lang=${lang}`, { voice: v, provider, text: (sampleText || '').slice(0, 160) });
+      row.querySelector('.vb_audio').innerHTML = `<audio autoplay controls src="${fileUrl(j.audio)}"></audio>`; }
+    catch (err) { alert(err.message); }
+    b.disabled = false; b.textContent = '▶ 试听';
+  };
+}
+
 async function ttsOne(id) {
   if (!await save()) return;
   const row = $(`.voice-row[data-id="${id}"]`);
@@ -277,7 +317,7 @@ function viewVisuals(v) {
             <span class="badge">${c.remotion ? '动画' : (c.video ? '视频' : '图片')}</span>
             <div class="ops"><button data-act="left" ${i === 0 ? 'disabled' : ''}>←</button><button data-act="right" ${i === seg.clips.length - 1 ? 'disabled' : ''}>→</button><button data-act="del">✕</button></div>
             <div class="meta">
-              ${c.video ? `<span>${c.out != null ? `${(c.in || 0).toFixed(1)} → ${c.out.toFixed(1)} s（${fmt(c.out - (c.in || 0))}）` : '整段'} <button class="small" data-act="trim">选段</button></span>` : ''}
+              ${c.video ? `<span>${c.out != null ? `${(c.in || 0).toFixed(1)} → ${c.out.toFixed(1)} s（${fmt(c.out - (c.in || 0))}）` : '整段'} <button class="small" data-act="trim">选段</button> <button class="small" data-act="more" title="用同一个视频再选几段">再选</button></span>` : ''}
               ${c.image ? `<span>运镜 <select data-act="motion">${['zoom_in', 'zoom_out', 'pan_left', 'pan_right', 'none'].map(m => `<option ${(c.motion || 'zoom_in') === m ? 'selected' : ''}>${m}</option>`).join('')}</select></span>
                           <span>时长 <input type="number" data-act="duration" step="0.5" min="1" style="width:60px" value="${c.duration ?? ''}" placeholder="自适应"> s</span>` : ''}
               ${c.remotion ? `<span>${esc(c.remotion.composition)} <button class="small" data-act="props">编辑</button></span>` : ''}
@@ -324,7 +364,8 @@ function viewVisuals(v) {
     if (a === 'del') seg.clips.splice(i, 1);
     if (a === 'left') seg.clips.splice(i - 1, 0, seg.clips.splice(i, 1)[0]);
     if (a === 'right') seg.clips.splice(i + 1, 0, seg.clips.splice(i, 1)[0]);
-    if (a === 'trim') { const rr = (res[seg.id] || {}).clips?.[i]; return openTrim({ url: fileUrl(rr?.path), duration: null, in: c.in || 0, out: c.out }, (io) => { c.in = io.in; c.out = io.out; markDirty(true); }); }
+    if (a === 'trim') { const rr = (res[seg.id] || {}).clips?.[i]; return openTrim({ url: fileUrl(rr?.path), duration: null, ranges: [{ in: c.in || 0, out: c.out }] }, (ranges) => { c.in = ranges[0].in; c.out = ranges[0].out; ranges.slice(1).forEach((r, k) => seg.clips.splice(i + 1 + k, 0, { video: c.video, in: r.in, out: r.out, credit: c.credit })); markDirty(true); }); }
+    if (a === 'more') { const rr = (res[seg.id] || {}).clips?.[i]; return openTrim({ url: fileUrl(rr?.path), duration: null, ranges: [{ in: (c.out || 0), out: null }] }, (ranges) => { ranges.forEach((r, k) => seg.clips.splice(i + 1 + k, 0, { video: c.video, in: r.in, out: r.out, credit: c.credit })); markDirty(true); }); }
     if (a === 'props') return openProps(c);
     markDirty(true);
   };
@@ -361,7 +402,7 @@ function renderPicker(seg, r) {
   }
   // search tab
   const kws = r.keywords || [];
-  if (!picker.q) picker.q = kws[0] || '';
+  if (!picker.q) picker.q = seg.visual_hint || kws[0] || '';   // a pasted script's 画面: line wins
   box.innerHTML = `
     <div class="row">
       <select id="src"><option value="pexels" ${picker.source === 'pexels' ? 'selected' : ''}>Pexels</option><option value="pixabay" ${picker.source === 'pixabay' ? 'selected' : ''}>Pixabay</option><option value="commons" ${picker.source === 'commons' ? 'selected' : ''}>Wikimedia Commons（公有领域/CC）</option></select>
@@ -397,7 +438,7 @@ function renderPicker(seg, r) {
   cands.onclick = e => {
     const el = e.target.closest('.cand'); if (!el) return;
     const c = picker.cands[+el.dataset.i];
-    if (c.kind === 'video') openTrim({ url: c.preview_url, duration: c.duration, in: 0, out: Math.min(c.duration || 10, Math.max(3, Math.ceil((r.need || 8) - (segFixed(seg, r) || 0)))) }, (io) => addCandidate(seg, c, io));
+    if (c.kind === 'video') openTrim({ url: c.preview_url, duration: c.duration, ranges: [{ in: 0, out: Math.min(c.duration || 10, Math.max(3, Math.ceil((r.need || 8) - (segFixed(seg, r) || 0)))) }] }, (ranges) => addCandidate(seg, c, ranges));
     else addCandidate(seg, c, null);
   };
   if (!picker.cands.length && picker.q && !picker.loading && !picker.err) doSearch(1);
@@ -408,9 +449,12 @@ async function addCandidate(seg, c, io) {
   $('#issues').innerHTML = `<div class="banner info">下载中：${esc(c.title || c.author)}…</div>`;
   try {
     const j = await api('/api/assets/fetch', { candidate: c });
-    const clip = c.kind === 'video' ? { video: j.path, in: +io.in.toFixed(2), out: +io.out.toFixed(2) } : { image: j.path, motion: 'zoom_in' };
-    clip.credit = j.credit;
-    seg.clips.push(clip);
+    const ranges = c.kind === 'video' ? (Array.isArray(io) ? io : [io]) : [null];
+    for (const rg of ranges) {
+      const clip = rg ? { video: j.path, in: +rg.in.toFixed(2), out: +rg.out.toFixed(2) } : { image: j.path, motion: 'zoom_in' };
+      clip.credit = j.credit;
+      seg.clips.push(clip);
+    }
     $('#issues').innerHTML = '';
     if (await save()) await load();
   } catch (e) { $('#issues').innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
@@ -428,36 +472,42 @@ async function uploadFiles(seg, files) {
   if (await save()) await load();
 }
 
-/* trim dialog: in/out sliders over a preview player */
+/* trim dialog: one or more [in,out] ranges over a preview player; each range becomes a clip */
 function openTrim(opts, onDone) {
   const m = $('#modal');
-  let dur = opts.duration || 0, tin = opts.in || 0, tout = opts.out || dur || 10;
+  let dur = opts.duration || 0;
+  let ranges = (opts.ranges || [{ in: 0, out: null }]).map(r => ({ in: r.in || 0, out: r.out }));
+  let cur = 0;
   m.innerHTML = `<div class="modal"><div class="box">
     <div class="row" style="justify-content:space-between"><b>选择片段范围</b><button class="ghost" id="close">✕</button></div>
     <video id="pv" src="${esc(opts.url || '')}" controls muted playsinline></video>
-    <div class="rangebar" id="bar"><div class="sel" id="selbar"></div></div>
+    <div class="rangebar" id="bar"></div>
+    <div id="rlist" class="row"></div>
     <div class="trim"><span class="muted">开始</span><input type="range" id="tin" min="0" step="0.1"><span class="t" id="tinv"></span></div>
     <div class="trim"><span class="muted">结束</span><input type="range" id="tout" min="0" step="0.1"><span class="t" id="toutv"></span></div>
     <div class="row" style="justify-content:space-between"><span class="muted" id="info"></span>
-      <span><button id="playSel">▶ 播放所选</button> <button class="primary" id="ok">加入这一段</button></span></div>
+      <span><button id="addRange">＋ 再加一段</button> <button id="playSel">▶ 播放所选</button> <button class="primary" id="ok">加入</button></span></div>
   </div></div>`;
   const pv = $('#pv'), a = $('#tin'), b = $('#tout');
-  const upd = () => {
-    tin = +a.value; tout = +b.value; if (tout <= tin + 0.2) { tout = Math.min(dur || 1e9, tin + 0.2); b.value = tout; }
-    $('#tinv').textContent = tin.toFixed(1); $('#toutv').textContent = tout.toFixed(1);
-    $('#info').textContent = `已选 ${(tout - tin).toFixed(1)} s${dur ? ` / 素材共 ${dur.toFixed(1)} s` : ''}`;
-    if (dur) { $('#selbar').style.left = `${tin / dur * 100}%`; $('#selbar').style.width = `${(tout - tin) / dur * 100}%`; }
+  const clamp = () => { const r = ranges[cur]; if (r.out == null || r.out <= r.in + 0.2) r.out = Math.min(dur || 1e9, r.in + Math.max(3, 0.2)); if (dur) { r.in = Math.min(r.in, dur - 0.2); r.out = Math.min(r.out, dur); } };
+  const drawBar = () => {
+    $('#bar').innerHTML = dur ? ranges.map((r, i) => `<div class="sel" style="left:${r.in / dur * 100}%;width:${(r.out - r.in) / dur * 100}%;opacity:${i === cur ? 1 : .45}"></div>`).join('') : '';
+    $('#rlist').innerHTML = ranges.map((r, i) => `<button class="small ${i === cur ? 'primary' : ''}" data-i="${i}">段 ${i + 1}: ${r.in.toFixed(1)}–${(r.out ?? 0).toFixed(1)} s</button>${ranges.length > 1 ? `<button class="small ghost" data-del="${i}" title="删除这一段">✕</button>` : ''}`).join('');
+    const total = ranges.reduce((t, r) => t + ((r.out ?? r.in) - r.in), 0);
+    $('#info').textContent = `共 ${ranges.length} 段 · 已选 ${total.toFixed(1)} s${dur ? ` / 素材 ${dur.toFixed(1)} s` : ''}`;
   };
-  const setup = () => { dur = dur || pv.duration || 10; a.max = b.max = dur.toFixed(1); a.value = Math.min(tin, dur); b.value = Math.min(tout || dur, dur); upd(); };
-  pv.onloadedmetadata = () => { if (!opts.duration) dur = pv.duration; setup(); };
-  setup();
-  a.oninput = () => { upd(); pv.currentTime = tin; };
-  b.oninput = () => { upd(); pv.currentTime = tout; };
+  const show = () => { const r = ranges[cur]; clamp(); a.max = b.max = (dur || 60).toFixed(1); a.value = r.in; b.value = r.out; $('#tinv').textContent = r.in.toFixed(1); $('#toutv').textContent = r.out.toFixed(1); drawBar(); };
+  pv.onloadedmetadata = () => { if (!opts.duration) dur = pv.duration; show(); };
+  show();
+  a.oninput = () => { ranges[cur].in = +a.value; if (ranges[cur].out <= ranges[cur].in + 0.2) ranges[cur].out = ranges[cur].in + 0.2; show(); pv.currentTime = ranges[cur].in; };
+  b.oninput = () => { ranges[cur].out = Math.max(+b.value, ranges[cur].in + 0.2); show(); pv.currentTime = ranges[cur].out; };
+  $('#rlist').onclick = e => { const t = e.target.closest('button'); if (!t) return; if (t.dataset.del != null) { ranges.splice(+t.dataset.del, 1); cur = Math.min(cur, ranges.length - 1); } else cur = +t.dataset.i; show(); };
+  $('#addRange').onclick = () => { const last = ranges[ranges.length - 1]; const start = Math.min(last.out ?? 0, (dur || 1e9) - 0.5); ranges.push({ in: start, out: Math.min(dur || start + 5, start + 5) }); cur = ranges.length - 1; show(); };
   let stopAt = null;
   pv.ontimeupdate = () => { if (stopAt != null && pv.currentTime >= stopAt) { pv.pause(); stopAt = null; } };
-  $('#playSel').onclick = () => { pv.currentTime = tin; stopAt = tout; pv.play(); };
+  $('#playSel').onclick = () => { pv.currentTime = ranges[cur].in; stopAt = ranges[cur].out; pv.play(); };
   $('#close').onclick = () => { m.innerHTML = ''; };
-  $('#ok').onclick = () => { m.innerHTML = ''; onDone({ in: tin, out: tout }); };
+  $('#ok').onclick = () => { m.innerHTML = ''; onDone(ranges.map(r => ({ in: r.in, out: r.out }))); };
 }
 function openProps(c) {
   const m = $('#modal');
@@ -484,6 +534,17 @@ function viewRender(v) {
       <div><label class="muted">章节标题卡</label><select id="f_cards"><option value="false" ${!raw.auto_title_cards ? 'selected' : ''}>不加</option><option value="true" ${raw.auto_title_cards ? 'selected' : ''}>有章节名的段前加 3 秒标题卡（需 Remotion）</option></select></div>
       <div><label class="muted">旁白响度归一</label><select id="f_norm"><option value="true" ${raw.normalize_audio !== false ? 'selected' : ''}>开（-16 LUFS，推荐）</option><option value="false" ${raw.normalize_audio === false ? 'selected' : ''}>关</option></select></div>
     </div>
+    <details><summary>高级参数（编码器 / 并行 / 超采样 / 运镜幅度 / 分辨率）</summary>
+      <div class="grid2" style="margin-top:6px">
+        <div><label class="muted">视频编码器</label><select id="a_enc"><option value="auto" ${(raw.encoder || 'auto') === 'auto' ? 'selected' : ''}>auto（有显卡硬编就用）</option>${(H?.encoders || ['libx264']).map(e => `<option ${raw.encoder === e ? 'selected' : ''}>${e}</option>`).join('')}</select></div>
+        <div><label class="muted">并行渲染段数（0 = 核数/2）</label><input id="a_par" type="number" min="0" max="32" value="${raw.parallel ?? 0}"></div>
+        <div><label class="muted">运镜超采样（空 = 按质量：草稿 1 / 成片 2；3 更细腻慢 2 倍）</label><input id="a_ss" type="number" min="1" max="3" value="${raw.supersample ?? ''}" placeholder="按质量"></div>
+        <div><label class="muted">运镜幅度（0.08 克制 · 0.15 默认 · 0.25 明显）</label><input id="a_motion" type="number" step="0.01" min="0" max="0.5" value="${raw.motion_amount ?? 0.15}"></div>
+        <div><label class="muted">画幅</label><select id="a_size">${[['1920x1080', '1080p 横屏（YouTube）'], ['3840x2160', '4K 横屏（渲染 ×4）'], ['1080x1920', '竖屏 1080×1920（Shorts / 抖音）'], ['1280x720', '720p（快速）']].map(([v, l]) => `<option value="${v}" ${`${raw.width || 1920}x${raw.height || 1080}` === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div><label class="muted">帧率</label><select id="a_fps">${[24, 25, 30, 60].map(f => `<option ${(raw.fps || 30) == f ? 'selected' : ''}>${f}</option>`).join('')}</select></div>
+      </div>
+      <p class="hint">这些都写进 project.json；渲染日志里第一行会显示实际选用的编码器。qsv = Intel 显卡，nvenc = NVIDIA，amf = AMD，videotoolbox = Mac。</p>
+    </details>
     <div class="row" style="margin-top:10px">
       <button class="primary" id="buildBtn">▶ 渲染</button>
       <button id="cancelBtn" hidden>停止</button>
@@ -511,6 +572,12 @@ function viewRender(v) {
     $('#log').hidden = false; poll();
   };
   $('#cancelBtn').onclick = () => api('/api/build/cancel', {});
+  $('#a_enc').onchange = e => { raw.encoder = e.target.value; markDirty(); };
+  $('#a_par').onchange = e => { raw.parallel = parseInt(e.target.value, 10) || 0; markDirty(); };
+  $('#a_ss').onchange = e => { const v = parseInt(e.target.value, 10); if (v >= 1) raw.supersample = v; else delete raw.supersample; markDirty(); };
+  $('#a_motion').onchange = e => { raw.motion_amount = parseFloat(e.target.value) || 0.15; markDirty(); };
+  $('#a_size').onchange = e => { const [w, h] = e.target.value.split('x').map(Number); raw.width = w; raw.height = h; markDirty(); };
+  $('#a_fps').onchange = e => { raw.fps = parseInt(e.target.value, 10); markDirty(); };
   renderResult(); poll();
 }
 async function poll() {
@@ -528,9 +595,24 @@ async function poll() {
     const ph = { tts: '配音', assets: '取素材', remotion: '动画', render: '渲染', assemble: '合成' }[st.phase] || '';
     $('#ptext').textContent = st.state === 'running' ? `${st.progress || 0}% · ${ph}${st.segments_total ? ` ${st.segments_done}/${st.segments_total} 段` : ''}${st.eta ? ` · 预计还需 ${fmt(st.eta)}` : ''}` : (st.state === 'done' ? '完成' : '');
   }
-  if (st.lines.length) { $('#log').hidden = false; $('#log').textContent = st.lines.join('\n'); $('#log').scrollTop = 1e9; }
+  if (st.lines.length) { $('#log').hidden = false; $('#log').innerHTML = st.lines.map(logLine).join('\n'); $('#log').scrollTop = 1e9; }
   if (st.state === 'running') pollTimer = setTimeout(poll, 1000);
   else if (st.finished && Date.now() / 1000 - st.finished < 4 && !poll.reloaded) { poll.reloaded = true; await load(); setTimeout(() => poll.reloaded = false, 5000); }
+}
+/* colour + Chinese label per log line; the raw English stays for grep/bug reports */
+function logLine(l) {
+  const t = esc(l.replace(/^\[vidforge\] /, ''));
+  if (/^ERROR/.test(l) || /ERROR:/.test(l)) return `<span class="lg-err">✖ ${t}</span>`;
+  if (/warning:/.test(l)) return `<span class="lg-warn">⚠ ${t}</span>`;
+  if (/^\[vidforge\]\s+tts /.test(l)) return `<span class="lg-dim">🎙 配音 ${t.replace(/^tts\s+/, '')}</span>`;
+  if (/^\[vidforge\]\s+asset /.test(l)) return `<span class="lg-dim">🖼 素材 ${t.replace(/^asset\s+/, '')}</span>`;
+  if (/\[remotion\]/.test(l)) return `<span class="lg-dim">✨ 动画 ${t.replace('[remotion] ', '')}</span>`;
+  if (/^\[vidforge\]\s+clip /.test(l)) return `<span class="lg-ok">🎬 段完成 ${t.replace(/^clip\s+/, '')}</span>`;
+  if (/^\[vidforge\] rendering /.test(l)) return `<span>⚙ ${t.replace('rendering', '并行渲染').replace('segments with', '段，').replace('worker(s)', '个线程')}</span>`;
+  if (/^\[vidforge\] done in/.test(l)) return `<span class="lg-ok"><b>✔ 完成 ${t.replace('done in', '用时').replace('video', '视频')}</b></span>`;
+  if (/ segments · tts /.test(l)) return `<span><b>▶ ${t.replace('segments', '段').replace('tts', '配音').replace('voice', '声音')}</b>（最后一项是实际编码器）</span>`;
+  if (/^\[vidforge\] chapters:/.test(l)) return `<span class="lg-dim">📑 章节：</span>`;
+  return `<span class="lg-dim">${t}</span>`;
 }
 function renderResult() {
   const o = P.outputs; if (!o.final) return;
