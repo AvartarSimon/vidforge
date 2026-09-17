@@ -9,6 +9,7 @@ falling back to the next free port instead of erroring or double-binding."""
 from __future__ import annotations
 
 import json
+import shutil
 import socket
 import tempfile
 import threading
@@ -16,6 +17,7 @@ import time
 import unittest
 import urllib.request
 from pathlib import Path
+from unittest import mock
 
 from vidforge import ui
 
@@ -28,6 +30,14 @@ def _free_port() -> int:
 
 class ReuseExistingInstance(unittest.TestCase):
     def setUp(self):
+        # serve()/State touch ~/.vidforge (recent-projects list, history) — isolate that from
+        # the real one so a test run doesn't leave temp-directory clutter in the user's actual
+        # "recent projects" file.
+        self.config_dir = Path(tempfile.mkdtemp()) / "vidforge-config"
+        self.patches = [mock.patch.object(ui, "CONFIG_DIR", self.config_dir),
+                        mock.patch.object(ui, "RECENT", self.config_dir / "recent.json")]
+        for p in self.patches:
+            p.start()
         self.td = Path(tempfile.mkdtemp())
         (self.td / "assets").mkdir()
         (self.td / "project.json").write_text(json.dumps({"title": "T", "segments": []}), encoding="utf-8")
@@ -42,6 +52,12 @@ class ReuseExistingInstance(unittest.TestCase):
                 time.sleep(0.1)
         else:
             self.fail("server never came up")
+
+    def tearDown(self):
+        for p in self.patches:
+            p.stop()
+        shutil.rmtree(self.td, ignore_errors=True)
+        shutil.rmtree(self.config_dir.parent, ignore_errors=True)
 
     def test_second_serve_call_reuses_the_running_instance_instead_of_erroring(self):
         # a second `serve()` on the same port must return promptly (not block, not raise, not
