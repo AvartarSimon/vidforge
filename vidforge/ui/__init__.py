@@ -190,6 +190,11 @@ def make_handler(state: State):
                     return self._json(self.voices(q.get("provider", "edge"), q.get("lang")))
                 if path == "/api/search":
                     return self.search(q)
+                if path == "/api/chat/sites":
+                    from ..browser.chat import SITES
+                    from ..browser import PROFILE_DIR
+                    return self._json({"sites": [{"id": k, "label": v["label"], "url": v["url"]} for k, v in SITES.items()],
+                                       "profile": str(PROFILE_DIR), "logged_in_profile": PROFILE_DIR.exists()})
                 if path == "/api/keywords":
                     p = state.load(q.get("lang"))
                     seg = next((s for s in p.segments if s.id == q.get("id")), None)
@@ -214,6 +219,17 @@ def make_handler(state: State):
                     return self.save_project(body)
                 if path == "/api/tts":
                     return self.tts(body.get("id"), q.get("lang"))
+                if path == "/api/chat":
+                    from ..browser import BrowserError, chat, login_session
+                    if body.get("login"):
+                        threading.Thread(target=login_session, daemon=True).start()
+                        return self._json({"started": True})
+                    lines: list[str] = []
+                    try:
+                        text = chat.ask(body.get("site", "deepseek"), body.get("prompt", ""), timeout=float(body.get("timeout", 240)), log=lines.append)
+                    except BrowserError as e:
+                        return self._error(str(e), lines=lines)
+                    return self._json({"text": text, "lines": lines})
                 if path == "/api/voices/preview":
                     return self.voice_preview(body.get("voice"), body.get("text"), body.get("provider", "edge"), q.get("lang"))
                 if path == "/api/script/split":

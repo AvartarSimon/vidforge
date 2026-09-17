@@ -137,12 +137,15 @@ def http_json(url: str, headers: dict | None = None, timeout: int = 60) -> dict:
         raise AssetError(f"{url.split('/')[2]} unreachable: {e.reason}") from None
 
 
-def download(url: str, dest: Path) -> Path:
+def download(url: str, dest: Path, referer: str | None = None) -> Path:
     if dest.exists() and dest.stat().st_size > 0:
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
-    req = urllib.request.Request(url, headers={"User-Agent": "vidforge/0.2 (local tool)"})
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) vidforge/0.3"}
+    if referer:
+        headers["Referer"] = referer
+    req = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=300) as resp, open(tmp, "wb") as f:
             while chunk := resp.read(1 << 20):
@@ -185,7 +188,13 @@ def get_provider(name: str):
     if name == "commons":
         from .wikimedia import CommonsProvider
         return CommonsProvider()
-    raise AssetError(f"unknown asset provider '{name}' (pexels | pixabay | commons)")
+    if name in ("google", "google_all"):
+        from .google_images import GoogleImagesProvider
+        return GoogleImagesProvider(cc_only=(name == "google"))
+    if name == "baidu":
+        from .baidu import BaiduImagesProvider
+        return BaiduImagesProvider()
+    raise AssetError(f"unknown asset provider '{name}' (pexels | pixabay | commons | google | google_all | baidu)")
 
 
 def search(root: Path, provider: str, query: str, kind: str, page: int = 1, relax: bool = True) -> list[Candidate]:

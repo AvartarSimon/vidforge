@@ -35,6 +35,9 @@ vidforge ui examples\demo           # 打开 http://127.0.0.1:8765
 - 旁白**按口语写、短句、标点齐全**：标点决定字幕在哪断行、TTS 在哪停顿。
 - 每段 = 一个意思 = 一组画面。2–4 句最合适。
 
+**用你浏览器里的 AI 直接生成脚本**（第 1 步顶部的折叠面板）：填主题、时长、受众、要点 → 选网站（ChatGPT / Claude / Gemini / DeepSeek / Grok / 千问 / Kimi / 文心）→「在我的浏览器里生成」。第一次先点「登录各站点…」：会打开一个**专用的 Edge 窗口**（独立配置文件，不动你日常的浏览器），逐个登录后关窗即可，之后不用再登。生成时那个窗口会自动打开、输入、等待、复制回答，回答填进文本框后点「拆成段落」。不想让它碰账号就点「只复制提示词」自己去贴。
+⚠ 这些网站的条款都不允许自动化访问；它是**你自己的账号、可见窗口、一次一问**，风险由你判断，遇到验证码手动点一下即可。
+
 ### 第 2 步 · 配音
 - 配音服务：`edge`（免费）默认；`ElevenLabs` 需在 `.env` 放 key；`静音占位` 不联网，只用来快速看画面。
 - 点声音框会列出可选声音；「用第一段试听这个声音」几秒出结果。
@@ -54,6 +57,8 @@ vidforge ui examples\demo           # 打开 http://127.0.0.1:8765
    - 图片：点即加入。竖图/古画会自动用"模糊背景 + 完整居中"处理，不裁切。
    - 视频：悬停预览，点开选段对话框，拖起止点（默认给你选了正好补满旁白的长度），「播放所选」确认后加入。
    - 每张素材的作者与许可自动记进 `credits.txt`，发布时贴进简介。只接许可明确的来源（Commons 只保留公有领域 / CC0 / CC BY）。
+   - **Google 图片 · 仅 CC 许可**：通过你的浏览器搜（会弹出 Edge 窗口约 15 秒），默认只返回带 Creative Commons 标记的结果；**Google 全部 / 百度图片**标 ⚠ 版权未知，加入前要确认——用于变现视频可能收到版权投诉，来源页会记进 credits。
+   - 声音：第 2 步「浏览…」按口音/地区/性别筛（英语 14 种口音、普通话、东北话、陕西话、粤语、台湾国语），每个可 3 秒试听；每段行右侧「换声」可只给这一段换声音。
 2. **本地文件**：拖入或选择图片/视频（会复制进 `assets/local/`）。iPhone 的 HEIC 请先转 JPG。
 3. **动画（Remotion）**：TitleCard 标题卡 / Timeline 时间轴 / BarChart 柱状图，加入后点「编辑」改文字。第一次用需要 `vidforge remotion setup`（要 Node.js）。
 
@@ -107,8 +112,10 @@ vidforge upload my-video [--lang zh] [--publish-at 2026-10-01T09:00:00Z]
 vidforge voices --lang zh-CN | --provider elevenlabs
 vidforge remotion setup | studio
 vidforge doctor
+vidforge browser login [chatgpt claude …]   # 打开专用浏览器登录各 AI 站点（一次）
+vidforge chat deepseek "用三句话介绍坦博拉火山"   # 通过你的浏览器提问并打印回答
 python tools/stress.py out --minutes 30 && vidforge build out   # 30 分钟压力测试
-python -m unittest discover -s tests   # 44 个测试；e2e 需 pip install -e ".[dev]"
+python -m unittest discover -s tests   # 51 个测试；e2e 需 pip install -e ".[dev]"
 ```
 
 `project.json` 是唯一真相，向导和命令行改的是同一个文件。片段写法：
@@ -141,4 +148,6 @@ python -m unittest discover -s tests   # 44 个测试；e2e 需 pip install -e "
 | 中文字幕方块 | 字幕字体：Windows `Microsoft YaHei`，Mac `PingFang SC`（`variants.zh.subtitles.font`） |
 | 渲染失败 | 看进度条下的日志；`build/build.log` 有全文，贴给我 |
 | 上传后是私有 | 正常，Studio 里改 |
+| 浏览器生成提示"没找到输入框" | 先 `vidforge browser login`（或页面上「登录各站点…」）登录；或该站点改了页面结构——把 `~/.vidforge/browser-<站点>-*.png` 截图发我 |
+| Google 图片提示 unusual traffic | 在弹出的窗口里完成人机验证后重试；一次别搜太多 |
 | 想手工精修 | `build/merged.mp4`（无 BGM、未烧字幕）+ `final.srt` 拖进 DaVinci Resolve |

@@ -99,6 +99,20 @@ def cmd_i18n(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_browser(args: argparse.Namespace) -> int:
+    from . import browser
+    if args.action == "login":
+        browser.login_session(args.sites or None)
+    return 0
+
+
+def cmd_chat(args: argparse.Namespace) -> int:
+    from .browser import chat
+    text = chat.ask(args.site, " ".join(args.prompt), timeout=args.timeout)
+    print(text)
+    return 0
+
+
 def cmd_ui(args: argparse.Namespace) -> int:
     from . import ui
     ui.serve(args.project, port=args.port, open_browser=not args.no_browser)
@@ -182,6 +196,17 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("project")
     s.add_argument("--lang", required=True)
     s.set_defaults(fn=cmd_i18n)
+
+    s = sub.add_parser("browser", help="'login': open the dedicated browser profile to log into chat sites once")
+    s.add_argument("action", choices=["login"])
+    s.add_argument("sites", nargs="*", help="chatgpt claude gemini deepseek grok qwen kimi yiyan (default: all)")
+    s.set_defaults(fn=cmd_browser)
+
+    s = sub.add_parser("chat", help="ask a web chat through your logged-in browser and print the answer")
+    s.add_argument("site", choices=["chatgpt", "claude", "gemini", "deepseek", "grok", "qwen", "kimi", "yiyan"])
+    s.add_argument("prompt", nargs="+")
+    s.add_argument("--timeout", type=float, default=240)
+    s.set_defaults(fn=cmd_chat)
 
     s = sub.add_parser("ui", help="local web UI for a project (edit, proof-listen, build)")
     s.add_argument("project")

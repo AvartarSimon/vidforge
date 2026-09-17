@@ -28,7 +28,7 @@ from typing import Any
 
 MOTIONS = ("zoom_in", "zoom_out", "pan_left", "pan_right", "none")
 FITS = ("stretch", "trim")
-ASSET_PREFIXES = ("pexels:", "pixabay:", "commons:", "wikimedia:")
+ASSET_PREFIXES = ("pexels:", "pixabay:", "commons:", "wikimedia:", "google:", "google_all:", "baidu:")
 QUALITIES = ("draft", "final")
 
 

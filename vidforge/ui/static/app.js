@@ -111,6 +111,23 @@ function viewScript(v) {
       <span><button class="small" id="addSeg">＋ 添加一段</button> <button class="small" id="togglePaste">${segs.length ? '从整篇脚本重新拆段…' : ''}</button></span></div>
     <p class="hint">一段 = 一个画面（或几个片段）+ 讲这段时说的话。旁白<b>按口语写、短句、标点齐全</b>——标点决定字幕断行和停顿。${isBase() ? '' : `<span class="warn">当前编辑的是 <b>${lang}</b> 版旁白；空着的段会用红框提示。</span>`}</p>
     <div id="paste" ${segs.length ? 'hidden' : ''}>
+      <details id="genPanel" ${segs.length ? '' : 'open'}><summary>✨ 用我的浏览器里的 AI 生成脚本（ChatGPT / Claude / Gemini / DeepSeek / Grok / 千问 / Kimi / 文心）</summary>
+        <div class="grid2" style="margin-top:6px">
+          <div><label class="muted">主题 / 标题</label><input id="g_topic" value="${esc(topGet('title') || '')}"></div>
+          <div><label class="muted">目标时长（分钟）</label><input id="g_minutes" type="number" min="1" max="60" value="10"></div>
+          <div><label class="muted">受众 / 语气</label><input id="g_audience" placeholder="例：对历史感兴趣的普通观众，轻松但准确"></div>
+          <div><label class="muted">用哪个网站</label><select id="g_site"></select></div>
+        </div>
+        <label class="muted">要点 / 参考资料（可选，越具体越好）</label>
+        <textarea id="g_points" rows="4" placeholder="- 1815 年 4 月坦博拉喷发&#10;- 1816 年欧洲北美夏季异常&#10;- 玛丽·雪莱与《弗兰肯斯坦》"></textarea>
+        <div class="row">
+          <button class="primary" id="g_go">在我的浏览器里生成</button>
+          <button id="g_copy">只复制提示词（我自己去贴）</button>
+          <button class="small" id="g_login">登录各站点…</button>
+          <span class="muted" id="g_status"></span>
+        </div>
+        <p class="hint">会打开一个专用的 Edge 窗口（第一次点「登录各站点」登录一次即可）。生成期间不要在那个窗口里操作；遇到验证码就手动点一下。回答会自动填入下面的文本框，再点「拆成段落」。</p>
+      </details>
       <textarea id="script" rows="10" placeholder="把整篇脚本贴在这里，一段一空行；每段 2–4 句最合适。&#10;&#10;第一行如果以 # 开头会成为该段的章节名。"></textarea>
       <div class="row"><button class="primary" id="splitBtn">拆成段落</button><span class="muted" id="splitInfo"></span></div>
     </div>
@@ -129,6 +146,38 @@ function viewScript(v) {
   $('#f_thumb').oninput = e => topSet('thumbnail_text', e.target.value.replace(/\\n/g, '\n'));
   $('#addSeg').onclick = () => { raw.segments.push({ id: newId(), text: isBase() ? '' : '(en)', [textKey()]: '', clips: [] }); markDirty(true); };
   $('#togglePaste').onclick = () => { $('#paste').hidden = !$('#paste').hidden; };
+  api('/api/chat/sites').then(j => { $('#g_site').innerHTML = j.sites.map(s => `<option value="${s.id}" ${s.id === (localStorage.getItem('vf.site') || 'deepseek') ? 'selected' : ''}>${esc(s.label)}</option>`).join(''); }).catch(() => {});
+  const buildPrompt = () => {
+    const zh = (isBase() ? P.base_lang : lang).startsWith('zh');
+    const topic = $('#g_topic').value.trim(), mins = +$('#g_minutes').value || 10, aud = $('#g_audience').value.trim(), pts = $('#g_points').value.trim();
+    const words = Math.round(mins * (zh ? 240 : 150));
+    return zh
+      ? `请为一条约 ${mins} 分钟的讲解类视频写完整旁白脚本。主题：${topic}。${aud ? '受众/语气：' + aud + '。' : ''}${pts ? '\n必须覆盖的要点/参考：\n' + pts + '\n' : ''}
+要求：
+1. 总字数约 ${words} 字，口语化、短句、标点齐全（标点决定字幕断行和停顿）。
+2. 前 30 秒是钩子：用一个反差、问题或具体数字抓住观众。
+3. 按内容分成 8–15 个段落，每个段落一个意思、2–4 句；每个段落前用 Markdown 二级标题写章节名（格式：## 章节名）。
+4. 每个段落标题下面先写一行 "画面：" 给出适合的画面/素材描述（英文关键词 2–4 个，便于搜图），再写旁白正文。
+5. 数字和年份用汉字读法或明确写法；涉及具体史实处如不确定请标注 [核实]。
+6. 结尾一段是简短总结 + 引出下一集。只输出脚本本身，不要前言和解释。`
+      : `Write the complete narration script for a ~${mins}-minute explainer video. Topic: ${topic}. ${aud ? 'Audience/tone: ' + aud + '.' : ''}${pts ? '\nPoints/sources that must be covered:\n' + pts + '\n' : ''}
+Requirements:
+1. About ${words} words, spoken style, short sentences, full punctuation (it drives subtitle breaks and pauses).
+2. The first 30 seconds are a hook: a contrast, a question or a concrete number.
+3. Split into 8-15 segments, one idea each, 2-4 sentences; put a Markdown level-2 heading before each (format: ## Chapter title).
+4. Under each heading first write one line "Visual: <2-4 English search keywords for stock footage>", then the narration.
+5. Spell out numbers the way they should be read aloud; mark uncertain facts with [verify].
+6. End with a short recap and a teaser for the next episode. Output only the script, no preamble.`;
+  };
+  $('#g_copy').onclick = async () => { await navigator.clipboard.writeText(buildPrompt()); $('#g_status').textContent = '提示词已复制，贴到任意 AI，再把回答贴回下面的框。'; };
+  $('#g_login').onclick = async () => { await api('/api/chat', { login: true }); $('#g_status').textContent = '已打开浏览器窗口：逐个登录，完成后关闭窗口。'; };
+  $('#g_go').onclick = async () => {
+    const site = $('#g_site').value; localStorage.setItem('vf.site', site);
+    $('#g_go').disabled = true; $('#g_status').textContent = `正在 ${$('#g_site').selectedOptions[0].textContent} 里提问并等待回答（通常 30–120 秒）…`;
+    try { const j = await api('/api/chat', { site, prompt: buildPrompt() }); $('#script').value = j.text; $('#g_status').textContent = `收到 ${j.text.length} 字，点「拆成段落」。`; $('#script').scrollIntoView({ behavior: 'smooth' }); }
+    catch (e) { $('#g_status').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+    $('#g_go').disabled = false;
+  };
   $('#splitBtn').onclick = async () => {
     const text = $('#script').value.trim(); if (!text) return;
     const j = await api('/api/script/split', { text });
@@ -405,7 +454,8 @@ function renderPicker(seg, r) {
   if (!picker.q) picker.q = seg.visual_hint || kws[0] || '';   // a pasted script's 画面: line wins
   box.innerHTML = `
     <div class="row">
-      <select id="src"><option value="pexels" ${picker.source === 'pexels' ? 'selected' : ''}>Pexels</option><option value="pixabay" ${picker.source === 'pixabay' ? 'selected' : ''}>Pixabay</option><option value="commons" ${picker.source === 'commons' ? 'selected' : ''}>Wikimedia Commons（公有领域/CC）</option></select>
+      <select id="src"><option value="pexels" ${picker.source === 'pexels' ? 'selected' : ''}>Pexels</option><option value="pixabay" ${picker.source === 'pixabay' ? 'selected' : ''}>Pixabay</option><option value="commons" ${picker.source === 'commons' ? 'selected' : ''}>Wikimedia Commons（公有领域/CC）</option>
+        <option value="google" ${picker.source === 'google' ? 'selected' : ''}>Google 图片 · 仅 CC 许可（用我的浏览器）</option><option value="google_all" ${picker.source === 'google_all' ? 'selected' : ''}>Google 图片 · 全部 ⚠ 版权未知</option><option value="baidu" ${picker.source === 'baidu' ? 'selected' : ''}>百度图片 ⚠ 版权未知</option></select>
       <select id="kind"><option value="image" ${picker.kind === 'image' ? 'selected' : ''}>图片</option><option value="video" ${picker.kind === 'video' ? 'selected' : ''}>视频</option></select>
       <input id="q" class="grow" value="${esc(picker.q)}" placeholder="英文关键词效果最好">
       <button class="primary" id="go">搜索</button>
@@ -420,7 +470,7 @@ function renderPicker(seg, r) {
   const doSearch = async (page = 1) => {
     picker.q = $('#q').value.trim(); picker.source = $('#src').value; picker.kind = $('#kind').value; picker.page = page; picker.loading = true; picker.err = null; renderPicker(seg, r);
     try {
-      if (picker.source === 'commons' && picker.kind === 'video') throw new Error('Commons 只提供图片');
+      if (['commons', 'google', 'google_all', 'baidu'].includes(picker.source) && picker.kind === 'video') throw new Error('这个来源只提供图片；视频请用 Pexels / Pixabay');
       const j = await api(`/api/search?source=${picker.source}&kind=${picker.kind}&q=${encodeURIComponent(picker.q)}&page=${page}`);
       picker.cands = page > 1 ? picker.cands.concat(j.candidates) : j.candidates;
       if (!picker.cands.length) picker.err = '没有结果，换个关键词（英文）试试。';
@@ -439,7 +489,10 @@ function renderPicker(seg, r) {
     const el = e.target.closest('.cand'); if (!el) return;
     const c = picker.cands[+el.dataset.i];
     if (c.kind === 'video') openTrim({ url: c.preview_url, duration: c.duration, ranges: [{ in: 0, out: Math.min(c.duration || 10, Math.max(3, Math.ceil((r.need || 8) - (segFixed(seg, r) || 0)))) }] }, (ranges) => addCandidate(seg, c, ranges));
-    else addCandidate(seg, c, null);
+    else {
+      if (/版权未知/.test(c.license || '') && !confirm(`这张图来自网页，版权未知：\n${c.page_url}\n\n用于变现视频可能收到版权投诉。确定加入？（来源会记入 credits.txt）`)) return;
+      addCandidate(seg, c, null);
+    }
   };
   if (!picker.cands.length && picker.q && !picker.loading && !picker.err) doSearch(1);
 }
