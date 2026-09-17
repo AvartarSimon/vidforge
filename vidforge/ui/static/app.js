@@ -332,7 +332,7 @@ function viewVoice(v) {
         <option value="edge" ${provider === 'edge' ? 'selected' : ''}>edge（免费，微软神经语音）</option>
         <option value="elevenlabs" ${provider === 'elevenlabs' ? 'selected' : ''}>ElevenLabs（付费，需 key）</option>
         <option value="silent" ${provider === 'silent' ? 'selected' : ''}>静音占位（只看画面，不联网）</option></select></div>
-      <div><label class="muted">声音</label><div class="row" style="margin:0"><input id="f_voice" class="grow" value="${esc(topGet('voice') || '')}" placeholder="点「浏览」按口音/性别挑"><button id="browseVoice">浏览…</button></div></div>
+      <div><label class="muted">声音</label><div class="row" style="margin:0"><input id="f_voice" class="grow" value="${esc(topGet('voice') || '')}" placeholder="点「浏览」按口音/性别挑"><button id="browseVoice">浏览…</button><button id="designVoice" title="用文字描述设计一个专属声音（ElevenLabs Voice Design，不克隆任何真人）">✨ 设计品牌声音…</button></div></div>
       <div><label class="muted">语速 <span id="rateVal">${esc(topGet('rate') || '+0%')}</span></label><input type="range" id="f_rate" min="-30" max="30" step="1" value="${parseInt(topGet('rate') || '0', 10) || 0}"></div>
       <div><label class="muted">试听</label><div class="row"><button id="ttsFirst">▶ 用第一段试听这个声音</button><button class="primary" id="ttsAll">全部配音</button></div></div>
     </div>
@@ -352,6 +352,33 @@ function viewVoice(v) {
   $('#f_provider').onchange = e => nestedSet('tts', 'provider', e.target.value);
   $('#f_voice').oninput = e => topSet('voice', e.target.value);
   $('#browseVoice').onclick = () => openVoiceBrowser($('#f_provider').value, v => { $('#f_voice').value = v; topSet('voice', v); });
+  $('#designVoice').onclick = () => {
+    const m = $('#modal');
+    m.innerHTML = `<div class="modal"><div class="box">
+      <div class="row" style="justify-content:space-between"><b>设计品牌声音</b><button class="ghost" id="close">✕</button></div>
+      <p class="hint">用文字描述想要的声音，ElevenLabs 会合成 3 个候选（不克隆任何真人，可商用）。需要 .env 里的 ELEVENLABS_API_KEY（Creator 及以上套餐）。</p>
+      <textarea id="vd_desc" rows="3" placeholder="例：四十岁左右的男声，低沉、温暖、有磁性，语速从容，像纪录片解说，带一点英式口音">${esc(localStorage.getItem('vf.vd_desc') || '')}</textarea>
+      <textarea id="vd_text" rows="2" placeholder="试听文本（可空，默认用一段解说样例；≥100 字符）"></textarea>
+      <div class="row"><button class="primary" id="vd_go">生成 3 个候选</button><span class="muted" id="vd_status"></span></div>
+      <div id="vd_list"></div></div></div>`;
+    $('#close').onclick = () => { m.innerHTML = ''; };
+    $('#vd_go').onclick = async () => {
+      const desc = $('#vd_desc').value.trim(); if (!desc) return; localStorage.setItem('vf.vd_desc', desc);
+      $('#vd_go').disabled = true; $('#vd_status').textContent = '合成中（约 20–40 秒）…';
+      try {
+        const j = await api(`/api/voice/design?lang=${lang}`, { desc, text: $('#vd_text').value });
+        $('#vd_list').innerHTML = j.previews.map((p, i) => `<div class="row"><b>候选 ${i + 1}</b><audio controls src="${fileUrl(p.audio)}"></audio><input class="grow" value="品牌旁白 ${i + 1}" data-name><button class="small primary" data-keep="${esc(p.id)}">保存并选用</button></div>`).join('');
+        $('#vd_status').textContent = '';
+        $('#vd_list').onclick = async e => {
+          const b = e.target.closest('button[data-keep]'); if (!b) return; b.disabled = true;
+          const name = b.closest('.row').querySelector('input[data-name]').value;
+          try { const k = await api('/api/voice/keep', { id: b.dataset.keep, name, desc }); $('#f_voice').value = k.voice_id; topSet('voice', k.voice_id); nestedSet('tts', 'provider', 'elevenlabs'); $('#f_provider').value = 'elevenlabs'; m.innerHTML = ''; $('#issues').innerHTML = `<div class="banner info">已保存声音 ${esc(name)}（${esc(k.voice_id)}）并设为项目声音；配音服务已切到 ElevenLabs。</div>`; }
+          catch (err) { alert(err.message); b.disabled = false; }
+        };
+      } catch (err) { $('#vd_status').innerHTML = `<span class="err">${esc(err.message)}</span>`; }
+      $('#vd_go').disabled = false;
+    };
+  };
   $('#f_rate').oninput = e => { const val = `${e.target.value >= 0 ? '+' : ''}${e.target.value}%`; $('#rateVal').textContent = val; topSet('rate', val); };
   $('#ttsFirst').onclick = () => segs.length && ttsOne(segs[0].id);
   $('#ttsAll').onclick = async () => {
@@ -471,6 +498,10 @@ function viewVisuals(v) {
           </div>`).join('')}
           <div class="clip" style="display:flex;align-items:center;justify-content:center;min-height:120px;border-style:dashed"><span class="muted">← 在下面添加片段</span></div>
         </div>
+        <div class="row" style="margin-top:4px"><b style="font-size:12px">画中画</b>
+          ${(seg.overlays || []).map((o, i) => `<span class="pill" data-ov="${i}">${o.avatar ? '主持人' : o.video ? '视频' : '图片'} · ${o.position || 'bottom-right'} · ${Math.round((o.size || 0.3) * 100)}% · ${o.at || 0}s${o.duration ? '→' + (o.at + o.duration) + 's' : '→末'} <button class="small ghost" data-ovdel="${i}">✕</button></span>`).join('')}
+          <button class="small" id="ovAdd">＋ 图片/视频</button><button class="small" id="ovAvatar" title="这一段加数字主持人（第 4 步可设外观）">＋ 主持人</button>
+          <span class="muted">说到某处时叠一张图或一段无声视频；主持人在第 4 步统一设置</span></div>
         <div class="row"><button id="previewBtn">▶ 预览这一段（草稿质量）</button><button class="small" id="dupBtn" title="复制这一段到后面">复制一段</button><span class="muted" id="previewInfo"></span></div>
         <div id="previewBox"></div>
         <div class="row"><label>片段不够长时 <select id="fit"><option value="stretch" ${seg.fit !== 'trim' ? 'selected' : ''}>延长/循环最后一个片段</option><option value="trim" ${seg.fit === 'trim' ? 'selected' : ''}>同上（保留字段）</option></select></label>
@@ -492,6 +523,11 @@ function viewVisuals(v) {
   $('#storyboard').prepend(autoBtn);
   $('#storyboard').onclick = e => { const c = e.target.closest('.sb-card'); if (c) { selSeg = c.dataset.id; picker.cands = []; picker.q = ''; render(); } };
   $('#fit').onchange = e => { seg.fit = e.target.value; markDirty(); };
+  seg.overlays = seg.overlays || [];
+  $('#ovAvatar').onclick = () => { seg.overlays.push({ avatar: true, position: raw.presenter?.position || 'bottom-right', size: raw.presenter?.size || 0.28 }); markDirty(true); };
+  $('#ovAdd').onclick = () => openOverlayDialog(seg, null);
+  v.querySelectorAll('[data-ovdel]').forEach(b => b.onclick = e => { e.stopPropagation(); seg.overlays.splice(+b.dataset.ovdel, 1); markDirty(true); });
+  v.querySelectorAll('.pill[data-ov]').forEach(pl => pl.onclick = e => { if (e.target.closest('button')) return; const o = seg.overlays[+pl.dataset.ov]; if (!o.avatar) openOverlayDialog(seg, o); });
   $('#previewBtn').onclick = async () => {
     if (!seg.clips.length) return alert('先给这一段加画面');
     if (!await save()) return;
@@ -659,6 +695,42 @@ function openTrim(opts, onDone) {
   $('#close').onclick = () => { m.innerHTML = ''; };
   $('#ok').onclick = () => { m.innerHTML = ''; onDone(ranges.map(r => ({ in: r.in, out: r.out }))); };
 }
+/* overlay (picture-in-picture) dialog: file from this segment's clips or upload, timing, position, size */
+function openOverlayDialog(seg, existing) {
+  const m = $('#modal');
+  const o = existing || { image: null, at: 0, position: 'bottom-right', size: 0.3, animate: 'slide', border: true };
+  const cand = seg.clips.filter(c => c.image || c.video).map(c => c.image || c.video);
+  const need = (P.resolved[seg.id] || {}).need || 10;
+  m.innerHTML = `<div class="modal"><div class="box">
+    <div class="row" style="justify-content:space-between"><b>画中画</b><button class="ghost" id="close">✕</button></div>
+    <div class="grid2">
+      <div><label class="muted">素材</label><select id="ov_src">${cand.map(p => `<option value="${esc(p)}" ${(o.image || o.video) === p ? 'selected' : ''}>${esc(p.split('/').pop())}</option>`).join('')}<option value="__upload">上传新文件…</option></select><input type="file" id="ov_file" hidden accept="image/*,video/*"></div>
+      <div><label class="muted">位置</label><select id="ov_pos">${['top-left', 'top', 'top-right', 'left', 'center', 'right', 'bottom-left', 'bottom', 'bottom-right'].map(p => `<option ${o.position === p ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
+      <div><label class="muted">出现于（秒，从本段开始；旁白约 ${fmt(need)}）</label><input id="ov_at" type="number" step="0.5" min="0" value="${o.at || 0}"></div>
+      <div><label class="muted">持续（秒，空 = 到段末）</label><input id="ov_dur" type="number" step="0.5" min="0.5" value="${o.duration ?? ''}"></div>
+      <div><label class="muted">宽度（画面的 %）</label><input id="ov_size" type="range" min="10" max="60" value="${Math.round((o.size || 0.3) * 100)}"><span id="ov_sizev">${Math.round((o.size || 0.3) * 100)}%</span></div>
+      <div><label class="muted">进场</label><select id="ov_anim">${[['slide', '滑入'], ['fade', '淡入'], ['none', '直接出现']].map(([v, l]) => `<option value="${v}" ${(o.animate || 'slide') === v ? 'selected' : ''}>${l}</option>`).join('')}</select> <label><input type="checkbox" id="ov_border" ${o.border !== false ? 'checked' : ''}> 白边</label></div>
+    </div>
+    <p class="hint">视频素材一律静音；比窗口短会循环。提示：说到某个名词时出现，看第 2 步该段的字幕时间即可。</p>
+    <div class="row" style="justify-content:flex-end"><button class="primary" id="ov_ok">${existing ? '保存' : '加入'}</button></div></div></div>`;
+  $('#close').onclick = () => { m.innerHTML = ''; };
+  $('#ov_size').oninput = e => $('#ov_sizev').textContent = e.target.value + '%';
+  $('#ov_src').onchange = e => { if (e.target.value === '__upload') $('#ov_file').click(); };
+  $('#ov_file').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    const b64 = await new Promise(res => { const rd = new FileReader(); rd.onload = () => res(rd.result.split(',')[1]); rd.readAsDataURL(f); });
+    try { const j = await api('/api/assets/upload', { name: f.name, data_b64: b64 }); const opt = document.createElement('option'); opt.value = j.path; opt.textContent = f.name; opt.selected = true; $('#ov_src').insertBefore(opt, $('#ov_src').lastElementChild); } catch (err) { alert(err.message); }
+  };
+  $('#ov_ok').onclick = () => {
+    const src = $('#ov_src').value; if (!src || src === '__upload') return alert('先选素材');
+    const isVideo = /\.(mp4|mov|mkv|webm|m4v)$/i.test(src);
+    const nv = { [isVideo ? 'video' : 'image']: src, at: parseFloat($('#ov_at').value) || 0, position: $('#ov_pos').value, size: +$('#ov_size').value / 100, animate: $('#ov_anim').value, border: $('#ov_border').checked };
+    const d = parseFloat($('#ov_dur').value); if (d > 0) nv.duration = d;
+    if (existing) { Object.keys(existing).forEach(k => delete existing[k]); Object.assign(existing, nv); } else seg.overlays.push(nv);
+    m.innerHTML = ''; markDirty(true);
+  };
+}
+
 function openProps(c) {
   const m = $('#modal');
   m.innerHTML = `<div class="modal"><div class="box">
@@ -684,6 +756,20 @@ function viewRender(v) {
       <div><label class="muted">章节标题卡</label><select id="f_cards"><option value="false" ${!raw.auto_title_cards ? 'selected' : ''}>不加</option><option value="true" ${raw.auto_title_cards ? 'selected' : ''}>有章节名的段前加 3 秒标题卡（需 Remotion）</option></select></div>
       <div><label class="muted">旁白响度归一</label><select id="f_norm"><option value="true" ${raw.normalize_audio !== false ? 'selected' : ''}>开（-16 LUFS，推荐）</option><option value="false" ${raw.normalize_audio === false ? 'selected' : ''}>关</option></select></div>
     </div>
+    <details ${raw.presenter && raw.presenter.provider !== 'none' && raw.presenter.where !== 'none' ? 'open' : ''}><summary>数字主持人（画中画里"你"的形象）</summary>
+      <div class="grid2" style="margin-top:6px">
+        <div><label class="muted">类型</label><select id="p_prov">${[['host', '风格化插画主持人（本地生成，免费，无需披露）'], ['heygen', 'HeyGen 逼真数字分身（需 key + 你的 avatar；自动勾选合成内容披露）'], ['none', '不用']].map(([v, l]) => `<option value="${v}" ${(raw.presenter?.provider || 'host') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div><label class="muted">出现在</label><select id="p_where">${[['none', '不自动加（在第 3 步按段添加）'], ['first_last', '开场段 + 收尾段'], ['all', '每一段']].map(([v, l]) => `<option value="${v}" ${(raw.presenter?.where || 'none') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div><label class="muted">位置</label><select id="p_pos">${['bottom-right', 'bottom-left', 'top-right', 'top-left', 'right', 'left'].map(p => `<option ${(raw.presenter?.position || 'bottom-right') === p ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
+        <div><label class="muted">大小（画面宽的 %）</label><input id="p_size" type="number" min="15" max="50" value="${Math.round((raw.presenter?.size || 0.28) * 100)}"></div>
+        <div><label class="muted">发型</label><select id="p_hair">${[['side', '侧分'], ['short', '短发'], ['long', '长发'], ['bald', '光头']].map(([v, l]) => `<option value="${v}" ${(raw.presenter?.style?.hairStyle || 'side') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div><label class="muted">肤色 / 发色 / 衣服 / 背景</label><div class="row" style="margin:0"><input type="color" id="p_skin" value="${esc(raw.presenter?.style?.skin || '#e8b98f')}"><input type="color" id="p_hairc" value="${esc(raw.presenter?.style?.hair || '#2b2118')}"><input type="color" id="p_shirt" value="${esc(raw.presenter?.style?.shirt || '#264653')}"><input type="color" id="p_bg" value="${esc(raw.presenter?.style?.bg || '#0f1115')}"></div></div>
+        <div><label class="muted">署名（角落小字）</label><input id="p_name" value="${esc(raw.presenter?.style?.name || '')}" placeholder="频道名或你的名字"></div>
+        <div><label class="muted">配饰</label><label><input type="checkbox" id="p_glasses" ${raw.presenter?.style?.glasses ? 'checked' : ''}> 眼镜</label> <label><input type="checkbox" id="p_beard" ${raw.presenter?.style?.beard ? 'checked' : ''}> 胡须</label></div>
+        <div><label class="muted">HeyGen avatar id（仅逼真分身）</label><input id="p_heygen" value="${esc(raw.presenter?.heygen_avatar_id || '')}"></div>
+      </div>
+      <p class="hint">插画主持人的口型由配音音量驱动，眨眼与微动作自动生成；换成基于你照片的分层插画在路线图里。逼真分身属于"合成人物"，YouTube 会显示"合成内容"标签——这不影响获利，不披露才有风险。</p>
+    </details>
     <details><summary>高级参数（编码器 / 并行 / 超采样 / 运镜幅度 / 分辨率）</summary>
       <div class="grid2" style="margin-top:6px">
         <div><label class="muted">视频编码器</label><select id="a_enc"><option value="auto" ${(raw.encoder || 'auto') === 'auto' ? 'selected' : ''}>auto（有显卡硬编就用）</option>${(H?.encoders || ['libx264']).map(e => `<option ${raw.encoder === e ? 'selected' : ''}>${e}</option>`).join('')}</select></div>
@@ -723,6 +809,17 @@ function viewRender(v) {
   };
   $('#cancelBtn').onclick = () => api('/api/build/cancel', {});
   $('#a_enc').onchange = e => { raw.encoder = e.target.value; markDirty(); };
+  const pres = () => { raw.presenter = raw.presenter || {}; raw.presenter.style = raw.presenter.style || {}; return raw.presenter; };
+  $('#p_prov').onchange = e => { pres().provider = e.target.value; markDirty(); };
+  $('#p_where').onchange = e => { pres().where = e.target.value; markDirty(); };
+  $('#p_pos').onchange = e => { pres().position = e.target.value; markDirty(); };
+  $('#p_size').onchange = e => { pres().size = (+e.target.value || 28) / 100; markDirty(); };
+  $('#p_hair').onchange = e => { pres().style.hairStyle = e.target.value; markDirty(); };
+  for (const [id, key] of [['p_skin', 'skin'], ['p_hairc', 'hair'], ['p_shirt', 'shirt'], ['p_bg', 'bg']]) $('#' + id).onchange = e => { pres().style[key] = e.target.value; markDirty(); };
+  $('#p_name').onchange = e => { pres().style.name = e.target.value; markDirty(); };
+  $('#p_glasses').onchange = e => { pres().style.glasses = e.target.checked; markDirty(); };
+  $('#p_beard').onchange = e => { pres().style.beard = e.target.checked; markDirty(); };
+  $('#p_heygen').onchange = e => { pres().heygen_avatar_id = e.target.value.trim() || null; markDirty(); };
   $('#a_par').onchange = e => { raw.parallel = parseInt(e.target.value, 10) || 0; markDirty(); };
   $('#a_ss').onchange = e => { const v = parseInt(e.target.value, 10); if (v >= 1) raw.supersample = v; else delete raw.supersample; markDirty(); };
   $('#a_motion').onchange = e => { raw.motion_amount = parseFloat(e.target.value) || 0.15; markDirty(); };
@@ -788,7 +885,12 @@ function viewPublish(v) {
       <div><label class="muted">可见性</label><select id="y_priv">${['private', 'unlisted', 'public'].map(p => `<option ${(nestedGet('youtube', 'privacy') || 'private') === p ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
       <div><label class="muted">分类</label><select id="y_cat">${[[27, 'Education'], [28, 'Science & Technology'], [22, 'People & Blogs'], [24, 'Entertainment'], [25, 'News & Politics']].map(([n, l]) => `<option value="${n}" ${(nestedGet('youtube', 'category_id') || 27) == n ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     </div>
-    <label class="muted">简介（章节和素材署名会自动追加在后面）</label>
+    <div class="row" style="margin:8px 0"><b style="font-size:12px">AI 使用声明</b>
+      <label><input type="checkbox" id="d_voice" ${(nestedGet('youtube', 'disclosure')?.ai_voice ?? true) ? 'checked' : ''}> AI 配音</label>
+      <label><input type="checkbox" id="d_vis" ${nestedGet('youtube', 'disclosure')?.ai_visuals ? 'checked' : ''}> AI 生成画面</label>
+      <label><input type="checkbox" id="d_real" ${nestedGet('youtube', 'disclosure')?.realistic_presenter || raw.presenter?.provider === 'heygen' ? 'checked' : ''} ${raw.presenter?.provider === 'heygen' ? 'disabled' : ''}> 逼真合成主持人/换脸</label>
+      <span class="muted" id="d_hint"></span></div>
+    <label class="muted">简介（章节、素材署名和 AI 声明会自动追加在后面）</label>
     <textarea id="y_desc" rows="6">${esc(nestedGet('youtube', 'description') || '')}</textarea>
     <details><summary>将自动追加的内容</summary><pre class="chapters">${esc(chaptersText(o.timeline))}\n\n${esc(o.credits || '')}</pre></details>
     <div class="row" style="margin-top:8px">
@@ -804,6 +906,12 @@ function viewPublish(v) {
   $('#y_priv').onchange = e => nestedSet('youtube', 'privacy', e.target.value);
   $('#y_cat').onchange = e => nestedSet('youtube', 'category_id', +e.target.value);
   $('#y_desc').oninput = e => nestedSet('youtube', 'description', e.target.value);
+  const disc = () => { const y = isBase() ? (raw.youtube = raw.youtube || {}) : (variant().youtube = variant().youtube || {}); y.disclosure = y.disclosure || { ai_voice: true }; return y.disclosure; };
+  const dHint = () => { const d = nestedGet('youtube', 'disclosure') || { ai_voice: true }; const flag = d.realistic_presenter || d.ai_visuals || raw.presenter?.provider === 'heygen'; $('#d_hint').textContent = flag ? 'YouTube「合成内容」标签：会自动勾选（含逼真合成人物/画面）。' : 'YouTube「合成内容」标签：不需要（纯 AI 配音的解说不在披露范围）。国内平台：简介会附"本视频包含人工智能生成内容"。'; };
+  dHint();
+  $('#d_voice').onchange = e => { disc().ai_voice = e.target.checked; markDirty(); dHint(); };
+  $('#d_vis').onchange = e => { disc().ai_visuals = e.target.checked; markDirty(); dHint(); };
+  $('#d_real').onchange = e => { disc().realistic_presenter = e.target.checked; markDirty(); dHint(); };
   $('#uploadBtn').onclick = async () => {
     if (!await save()) return;
     $('#ulog').hidden = false; $('#ulog').textContent = '上传中…（第一次会打开浏览器要求授权）';

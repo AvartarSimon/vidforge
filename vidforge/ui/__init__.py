@@ -254,6 +254,23 @@ def make_handler(state: State):
                     except BrowserError as e:
                         return self._error(str(e), lines=lines)
                     return self._json({"text": text, "lines": lines})
+                if path == "/api/voice/design":
+                    from ..tts import voice_design
+                    env.load_dotenv(state.root)
+                    out_dir = state.build_dir(q.get("lang")) / "ui" / "voice_design"
+                    try:
+                        previews = voice_design.design(body.get("desc", ""), body.get("text"), out_dir)
+                    except RuntimeError as e:
+                        return self._error(str(e))
+                    return self._json({"previews": [{"id": p["generated_voice_id"], "audio": state.rel(p["audio"])} for p in previews]})
+                if path == "/api/voice/keep":
+                    from ..tts import voice_design
+                    env.load_dotenv(state.root)
+                    try:
+                        vid = voice_design.keep(body["id"], body.get("name") or "vidforge narrator", body.get("desc", ""))
+                    except RuntimeError as e:
+                        return self._error(str(e))
+                    return self._json({"voice_id": vid})
                 if path == "/api/voices/preview":
                     return self.voice_preview(body.get("voice"), body.get("text"), body.get("provider", "edge"), q.get("lang"))
                 if path == "/api/script/split":
@@ -349,8 +366,11 @@ def make_handler(state: State):
                             "remotion": c.remotion.composition if c.remotion else None,
                             "natural": nat, "index": i,
                         })
+                    overlays = [{"kind": "avatar" if o.avatar else ("video" if o.video else "image"),
+                                 "path": state.rel(o.video or o.image) if (o.video or o.image) else None,
+                                 "at": o.at, "duration": o.duration, "position": o.position, "size": o.size, "animate": o.animate} for o in s.overlays]
                     resolved[s.id] = {
-                        "text": s.text, "label": s.label, "clips": clips,
+                        "text": s.text, "label": s.label, "clips": clips, "overlays": overlays,
                         "audio": state.rel(audio) if audio.exists() else None, "audio_fresh": fresh,
                         "duration": dur, "need": round(need, 2), "fixed_total": round(fixed_total, 2),
                         "keywords": keywords.suggest(s.text),

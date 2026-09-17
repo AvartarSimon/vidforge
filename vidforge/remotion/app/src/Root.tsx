@@ -2,6 +2,7 @@ import { CalculateMetadataFunction, Composition } from "remotion";
 import { BarChart, BarChartProps } from "./compositions/BarChart";
 import { Timeline, TimelineProps } from "./compositions/Timeline";
 import { TitleCard, TitleCardProps } from "./compositions/TitleCard";
+import { Host, HostProps } from "./compositions/Host";
 import { Base } from "./theme";
 
 // vidforge passes durationInFrames/fps/width/height in the props file: the composition
@@ -15,8 +16,19 @@ const fromProps: CalculateMetadataFunction<Base> = ({ props }) => ({
 
 const base: Base = { durationInFrames: 150, fps: 30, width: 1920, height: 1080 };
 
+const demoEnvelope = Array.from({ length: 150 }, (_, i) => Math.max(0, Math.sin(i / 3) * 0.6 + Math.sin(i / 7) * 0.4) * (i % 40 < 30 ? 1 : 0));
+
 export const Root: React.FC = () => (
   <>
+    <Composition<any, HostProps>
+      id="Host"
+      component={Host}
+      calculateMetadata={fromProps}
+      {...base}
+      width={480}
+      height={360}
+      defaultProps={{ ...base, width: 480, height: 360, envelope: demoEnvelope, name: "Simon", style: { hairStyle: "side", glasses: true } }}
+    />
     <Composition<any, TitleCardProps>
       id="TitleCard"
       component={TitleCard}

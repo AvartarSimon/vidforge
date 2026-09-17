@@ -115,7 +115,7 @@ vidforge doctor
 vidforge browser login [chatgpt claude …]   # 打开专用浏览器登录各 AI 站点（一次）
 vidforge chat deepseek "用三句话介绍坦博拉火山"   # 通过你的浏览器提问并打印回答
 python tools/stress.py out --minutes 30 && vidforge build out   # 30 分钟压力测试
-python -m unittest discover -s tests   # 51 个测试；e2e 需 pip install -e ".[dev]"
+python -m unittest discover -s tests   # 56 个测试；e2e 需 pip install -e ".[dev]"
 ```
 
 `project.json` 是唯一真相，向导和命令行改的是同一个文件。片段写法：

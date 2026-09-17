@@ -36,5 +36,6 @@ def build_description(project: Project, build_dir: Path) -> str:
     credits = build_dir / "credits.txt"
     if credits.exists():
         parts.append(credits.read_text(encoding="utf-8").strip())
+    parts += project.youtube.disclosure.lines(project.language)
     text = "\n\n".join(p for p in parts if p)
     return text[:4990]

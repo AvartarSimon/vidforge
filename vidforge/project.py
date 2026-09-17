@@ -71,11 +71,45 @@ class Clip:
         return None
 
 
+POSITIONS = ("top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right")
+
+
+@dataclass
+class Overlay:
+    """Picture-in-picture layer over a segment: a still, a (muted) video slice, or the presenter avatar."""
+    image: Path | None = None
+    video: Path | None = None
+    avatar: bool = False             # the project's digital host, lip-synced to this segment's narration
+    at: float = 0.0                  # seconds after the segment starts
+    duration: float | None = None    # None = until the segment ends
+    in_: float | None = None         # video slice
+    out: float | None = None
+    position: str = "bottom-right"   # one of POSITIONS, or "x,y" as fractions of the frame (0..1)
+    size: float = 0.3                # width as a fraction of the frame width
+    border: bool = True
+    animate: str = "slide"           # slide | fade | none
+    credit: str | None = None
+
+
+@dataclass
+class PresenterConfig:
+    """The digital host: a stylised character (Remotion 'Host', local, free) or a photoreal
+    provider (HeyGen) that needs an API key and a synthetic-content disclosure."""
+    provider: str = "host"           # host | heygen | none
+    where: str = "none"              # none | first_last | all  — which segments get the presenter overlay by default
+    position: str = "bottom-right"
+    size: float = 0.28
+    style: dict[str, Any] = field(default_factory=dict)     # Host: skin/hair/shirt/bg/hair_style/glasses …
+    heygen_avatar_id: str | None = None
+
+
 @dataclass
 class Segment:
     id: str
     text: str
     clips: list[Clip] = field(default_factory=list)
+    overlays: list[Overlay] = field(default_factory=list)
+    presenter: bool | None = None    # override PresenterConfig.where for this segment
     fit: str = "stretch"             # stretch | trim — what to do when clips are shorter than the narration
     pause_after: float = 0.5         # seconds of silence appended after the narration
     voice: str | None = None         # override the project voice for this segment
@@ -114,6 +148,35 @@ class TtsConfig:
 
 
 @dataclass
+class Disclosure:
+    """What synthetic media the video contains — drives YouTube's altered/synthetic flag and the
+    description lines required by China's 2025-09-01 AI-content labelling rules."""
+    ai_voice: bool = True                 # TTS narration (vidforge default)
+    ai_visuals: bool = False              # AI-generated pictures/video (not stock, not drawn charts)
+    realistic_presenter: bool = False     # photoreal digital twin / face swap (HeyGen etc.)
+    note: str = ""                        # extra wording
+
+    @property
+    def youtube_synthetic_flag(self) -> bool:
+        # YouTube asks for the label when content could be mistaken for a real person/place/event
+        return self.realistic_presenter or self.ai_visuals
+
+    def lines(self, lang: str) -> list[str]:
+        parts = []
+        if lang.startswith("zh"):
+            what = [w for w, on in (("配音由 AI 合成", self.ai_voice), ("部分画面由 AI 生成", self.ai_visuals), ("主持人形象为数字合成", self.realistic_presenter)) if on]
+            if what:
+                parts.append("本视频包含人工智能生成内容：" + "，".join(what) + "。")
+        else:
+            what = [w for w, on in (("AI-synthesised narration", self.ai_voice), ("AI-generated visuals", self.ai_visuals), ("a digitally synthesised presenter", self.realistic_presenter)) if on]
+            if what:
+                parts.append("This video contains AI-generated content: " + ", ".join(what) + ".")
+        if self.note.strip():
+            parts.append(self.note.strip())
+        return parts
+
+
+@dataclass
 class YouTubeConfig:
     title: str | None = None         # defaults to project.title
     description: str = ""
@@ -122,6 +185,7 @@ class YouTubeConfig:
     privacy: str = "private"         # private | unlisted | public (public needs an audited OAuth app)
     playlist_id: str | None = None
     caption_name: str | None = None
+    disclosure: Disclosure = field(default_factory=Disclosure)
 
 
 @dataclass
@@ -159,6 +223,7 @@ class Project:
     supersample: int | None = None   # zoompan supersampling; None = by quality (draft 1, final 2)
     transition: float = 0.0          # crossfade seconds between clips inside a segment (0 = hard cut)
     auto_title_cards: bool = False   # prepend a 3 s TitleCard to every segment that has a label (needs Remotion)
+    presenter: PresenterConfig = field(default_factory=PresenterConfig)
     normalize_audio: bool = True     # loudnorm the narration to -16 LUFS so every segment/provider sounds alike
     parallel: int = 0                # segments rendered at once; 0 = auto (cores / 2)
     out_dir: Path = Path("build")
@@ -322,6 +387,35 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         else:
             raise ProjectError(f"{ctx}: segment has no visual — add 'clips' or an image/video/remotion")
 
+        overlays: list[Overlay] = []
+        for j, o in enumerate(s.get("overlays") or []):
+            octx = f"{ctx}.overlays[{j}]"
+            ov = Overlay()
+            kinds = [k for k in ("image", "video", "avatar") if o.get(k)]
+            if len(kinds) != 1:
+                raise ProjectError(f"{octx}: an overlay needs exactly one of image / video / avatar")
+            if kinds[0] == "avatar":
+                ov.avatar = True
+            else:
+                local = resolve(str(o[kinds[0]]))
+                if not local.is_file():
+                    raise ProjectError(f"{octx}: {kinds[0]} is not a file: {o[kinds[0]]!r}")
+                setattr(ov, kinds[0], local)
+            ov.at = float(o.get("at", 0.0))
+            ov.duration = float(o["duration"]) if o.get("duration") is not None else None
+            ov.in_ = float(o["in"]) if "in" in o else None
+            ov.out = float(o["out"]) if "out" in o else None
+            ov.position = str(o.get("position", "bottom-right"))
+            if ov.position not in POSITIONS and not re.fullmatch(r"\s*[0-9.]+\s*,\s*[0-9.]+\s*", ov.position):
+                raise ProjectError(f"{octx}: position must be one of {POSITIONS} or 'x,y' fractions")
+            ov.size = float(o.get("size", 0.3))
+            if not 0.05 <= ov.size <= 1.0:
+                raise ProjectError(f"{octx}: size must be between 0.05 and 1.0 (fraction of frame width)")
+            ov.border = bool(o.get("border", True))
+            ov.animate = str(o.get("animate", "slide"))
+            ov.credit = o.get("credit")
+            overlays.append(ov)
+
         fit = s.get("fit", "stretch")
         if fit not in FITS:
             raise ProjectError(f"{ctx}: fit '{fit}' not in {FITS}")
@@ -330,7 +424,8 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         segments.append(Segment(
             id=sid, text=text, clips=clips, fit=fit,
             pause_after=float(s.get("pause_after", 0.5)), voice=s.get("voice"),
-            label=s.get(label_key) or s.get("label"),
+            label=s.get(label_key) or s.get("label"), overlays=overlays,
+            presenter=(bool(s["presenter"]) if "presenter" in s else None),
         ))
     if not segments:
         raise ProjectError("project has no segments")
@@ -361,7 +456,16 @@ def load(path: str | Path, lang: str | None = None) -> Project:
     if tts.provider not in ("edge", "elevenlabs", "silent"):
         raise ProjectError(f"tts.provider '{tts.provider}' not in ('edge', 'elevenlabs', 'silent')")
 
-    yt = YouTubeConfig(**{k: v for k, v in data.get("youtube", {}).items() if k in YouTubeConfig.__dataclass_fields__})
+    pres = PresenterConfig(**{k: v for k, v in (data.get("presenter") or {}).items() if k in PresenterConfig.__dataclass_fields__})
+    if pres.provider not in ("host", "heygen", "none") or pres.where not in ("none", "first_last", "all"):
+        raise ProjectError("presenter.provider must be host|heygen|none and presenter.where none|first_last|all")
+
+    yt_raw = dict(data.get("youtube", {}))
+    disc_raw = yt_raw.pop("disclosure", {}) or {}
+    yt = YouTubeConfig(**{k: v for k, v in yt_raw.items() if k in YouTubeConfig.__dataclass_fields__})
+    yt.disclosure = Disclosure(**{k: v for k, v in disc_raw.items() if k in Disclosure.__dataclass_fields__})
+    if pres.provider == "heygen":
+        yt.disclosure.realistic_presenter = True                 # photoreal twin always discloses
     if yt.privacy not in ("private", "unlisted", "public"):
         raise ProjectError(f"youtube.privacy '{yt.privacy}' not in (private, unlisted, public)")
 
@@ -384,6 +488,7 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         supersample=int(data["supersample"]) if data.get("supersample") else None,
         transition=float(data.get("transition", 0.0)),
         auto_title_cards=bool(data.get("auto_title_cards", False)),
+        presenter=pres,
         normalize_audio=bool(data.get("normalize_audio", True)),
         parallel=int(data.get("parallel", 0)),
         out_dir=Path(data.get("out_dir", "build")),

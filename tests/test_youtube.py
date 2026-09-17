@@ -50,7 +50,8 @@ class Upload(unittest.TestCase):
             d = build_description(p, p.build_dir)
             self.assertTrue(d.startswith("About."))
             self.assertIn("Chapters:\n00:00 A\n00:20 B\n00:50 C", d)
-            self.assertTrue(d.endswith("A — u"))
+            self.assertIn("A — u", d)
+            self.assertTrue(d.endswith("AI-synthesised narration."), "default disclosure (AI voice) closes the description")
 
     def test_upload_then_rerun_updates_instead_of_reuploading(self):
         from vidforge.upload import youtube
@@ -66,6 +67,7 @@ class Upload(unittest.TestCase):
             body = yt.videos().insert.call_args.kwargs["body"]
             self.assertEqual(body["status"]["privacyStatus"], "private")
             self.assertEqual(body["snippet"]["categoryId"], "27")
+            self.assertFalse(body["status"]["containsSyntheticMedia"], "AI voice alone does not set YouTube's synthetic flag")
             yt.thumbnails().set.assert_called_once()
             yt.playlistItems().insert.assert_called_once()
             self.assertEqual(state["caption_id"], "CAP1")

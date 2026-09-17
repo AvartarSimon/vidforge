@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from . import env, ffmpeg, render, subtitles, thumbnail
-from .project import Project
+from .project import Project, Segment
 from .tts import get_provider, synthesize_cached
 
 _sink = None          # set_log() lets a host (the web UI) capture build output
@@ -91,6 +91,17 @@ def preview_segment(project: Project, seg_id: str) -> tuple[Path, float]:
                 pc.clip.video = remotion.render(pc.clip.remotion.composition, pc.clip.remotion.props, duration=pc.seconds,
                                                 fps=project.fps, width=project.width, height=project.height,
                                                 out_dir=bd / "remotion", log=lambda *_: None)
+    idx = next(i for i, s in enumerate(project.segments) if s.id == seg_id)
+    if project.presenter.provider != "none" and (any(o.avatar for o in seg.overlays) or _wants_presenter(project, seg, idx)):
+        from . import avatar
+        from .project import Overlay
+        layers = [o for o in seg.overlays if o.avatar]
+        if not layers:
+            ov = Overlay(avatar=True, position=project.presenter.position, size=project.presenter.size, border=False, animate="fade")
+            seg.overlays.append(ov); layers = [ov]
+        video = avatar.render_presenter(project, seg, audio, narration + seg.pause_after, bd / "presenter", log=lambda *_: None)
+        for ov in layers:
+            ov.video = video; ov.avatar = False
     out = bd / "preview" / f"{_safe(seg_id)}.mp4"
     dur = render.render_segment(draft, seg, audio, out, cache_dir=bd / "preview")
     return out, dur
@@ -193,6 +204,43 @@ def _stage_remotion(ctx: _Ctx) -> None:
         _set_progress("remotion", i + 1, len(todo))
 
 
+def _wants_presenter(project: Project, seg: Segment, index: int) -> bool:
+    if project.presenter.provider == "none":
+        return False
+    if seg.presenter is not None:
+        return seg.presenter
+    where = project.presenter.where
+    return where == "all" or (where == "first_last" and index in (0, len(project.segments) - 1))
+
+
+def _stage_presenter(ctx: _Ctx) -> None:
+    """Digital host videos -> overlay layers (segments that want the presenter, plus explicit
+    {"avatar": true} overlays)."""
+    from .project import Overlay
+    p = ctx.project
+    todo: list[tuple[Segment, list[Overlay]]] = []
+    for i, seg in enumerate(p.segments):
+        avatar_layers = [o for o in seg.overlays if o.avatar]
+        if not avatar_layers and _wants_presenter(p, seg, i):
+            ov = Overlay(avatar=True, position=p.presenter.position, size=p.presenter.size, border=False, animate="fade")
+            seg.overlays.append(ov)
+            avatar_layers = [ov]
+        if avatar_layers:
+            todo.append((seg, avatar_layers))
+    if not todo:
+        return
+    from . import avatar
+    _set_progress("remotion", 0, len(todo))
+    for k, (seg, layers) in enumerate(todo):
+        _check_cancel()
+        video = avatar.render_presenter(p, seg, ctx.audio[seg.id], ctx.narration[seg.id], ctx.bd / "presenter", log=_log)
+        for ov in layers:
+            ov.video = video
+            ov.avatar = False
+        _set_progress("remotion", k + 1, len(todo))
+        _log(f"  host {seg.id:<12} {p.presenter.provider}")
+
+
 def _stage_render(ctx: _Ctx) -> None:
     """Segments in parallel (CPU/GPU-bound)."""
     p = ctx.project
@@ -280,6 +328,7 @@ def build(project: Project, *, only_tts: bool = False, burn: bool | None = None)
         _stage_title_cards(ctx)
         _stage_assets(ctx)
         _stage_remotion(ctx)
+        _stage_presenter(ctx)
         _stage_render(ctx)
         final, timeline, total = _stage_assemble(ctx)
         _set_progress("done", 1, 1)

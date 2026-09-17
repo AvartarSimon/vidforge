@@ -92,7 +92,8 @@ def upload(project: Project, *, privacy: str | None = None, publish_at: str | No
         "defaultLanguage": project.language,
         "defaultAudioLanguage": project.language,
     }
-    status = {"privacyStatus": privacy, "selfDeclaredMadeForKids": False}
+    status = {"privacyStatus": privacy, "selfDeclaredMadeForKids": False,
+              "containsSyntheticMedia": bool(cfg.disclosure.youtube_synthetic_flag)}
     if publish_at:
         status["privacyStatus"] = "private"          # YouTube requires private + publishAt
         status["publishAt"] = publish_at

@@ -285,6 +285,10 @@ def render_segment(project: Project, seg: Segment, audio: Path, out: Path, *, en
         else:
             concat(parts, visual)
 
+    overlays = [o for o in seg.overlays if o.image or o.video]
+    if overlays:
+        visual = apply_overlays(project, overlays, visual, target, work / "overlaid.mp4", encoder)
+
     norm = "loudnorm=I=-16:TP=-1.5:LRA=11," if project.normalize_audio and not audio_is_silent(audio) else ""
     ffmpeg.run(["-y", "-i", str(visual), "-i", str(audio),
                 "-filter_complex", f"[1:a]{norm}apad=pad_dur={seg.pause_after}[a]",
@@ -293,6 +297,61 @@ def render_segment(project: Project, seg: Segment, audio: Path, out: Path, *, en
     # the container's real length (AAC frames are 21 ms; over 40 segments the planned lengths
     # would drift subtitles by up to a second) — the timeline must use this
     return ffmpeg.duration(out)
+
+
+def _position_expr(position: str, margin: int) -> tuple[str, str]:
+    """overlay x/y expressions (W,H = frame; w,h = layer)."""
+    if "," in position:
+        fx, fy = (float(v) for v in position.split(","))
+        return f"(W-w)*{fx}", f"(H-h)*{fy}"
+    col = "left" if "left" in position else "right" if "right" in position else "center"
+    row = "top" if "top" in position else "bottom" if "bottom" in position else "center"
+    x = {"left": f"{margin}", "right": f"W-w-{margin}", "center": "(W-w)/2"}[col]
+    y = {"top": f"{margin}", "bottom": f"H-h-{margin}", "center": "(H-h)/2"}[row]
+    return x, y
+
+
+def apply_overlays(project: Project, overlays: list, visual: Path, total: float, out: Path, encoder: str) -> Path:
+    """Composite picture-in-picture layers onto the segment's visual. Layers are muted; a video
+    layer shorter than its window loops; `animate` slides the layer in from its nearest edge or
+    fades it in; `border` draws a thin light frame."""
+    w, h = project.width, project.height
+    margin = max(24, round(w * 0.02))
+    args: list[str] = ["-y", "-i", str(visual)]
+    filters: list[str] = []
+    prev = "[0:v]"
+    for i, o in enumerate(overlays, start=1):
+        dur = o.duration if o.duration is not None else max(0.1, total - o.at)
+        dur = min(dur, max(0.1, total - o.at))
+        if o.image is not None:
+            args += ["-loop", "1", "-t", f"{dur:.3f}", "-i", str(o.image)]
+        else:
+            args += ["-stream_loop", "-1"]
+            if o.in_:
+                args += ["-ss", f"{o.in_:.3f}"]
+            slice_len = (o.out - (o.in_ or 0)) if o.out is not None else None
+            args += ["-t", f"{min(dur, slice_len) if slice_len else dur:.3f}", "-i", str(o.video)]
+        lw = max(16, round(w * o.size))
+        chain = f"[{i}:v]scale={lw}:-2:flags=lanczos,fps={project.fps},format=rgba"
+        if o.border:
+            b = max(2, round(w / 640))
+            chain += f",pad=iw+{2 * b}:ih+{2 * b}:{b}:{b}:color=white@0.9"
+        if o.animate == "fade":
+            chain += ",fade=t=in:st=0:d=0.4:alpha=1"
+        chain += f",setpts=PTS+{o.at:.3f}/TB[ov{i}]"
+        filters.append(chain)
+        x, y = _position_expr(o.position, margin)
+        if o.animate == "slide":
+            # slide in over 0.45 s from the edge the layer is anchored to (default: from the right)
+            direction = "-" if "left" in o.position else "+"
+            x = f"({x}){direction}(w*max(0,1-(t-{o.at:.3f})/0.45))"
+        label = f"[v{i}]" if i < len(overlays) else "[vout]"
+        filters.append(f"{prev}[ov{i}]overlay=x='{x}':y='{y}':enable='between(t,{o.at:.3f},{o.at + dur:.3f})':eof_action=pass{label}")
+        prev = label
+    args += ["-filter_complex", ";".join(filters), "-map", "[vout]", "-an", "-t", f"{total:.3f}",
+             *video_codec_args(project, encoder), str(out)]
+    ffmpeg.run(args)
+    return out
 
 
 def audio_is_silent(path: Path, floor_db: float = -60.0) -> bool:
