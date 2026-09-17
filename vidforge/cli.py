@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 from . import __version__, env, ffmpeg, project as proj
@@ -192,16 +193,38 @@ def cmd_category(args: argparse.Namespace) -> int:
 
 
 def cmd_start(args: argparse.Namespace) -> int:
-    """Open the last project (or the project picker) in the browser — the one-command start."""
+    """Open the last project (or the project picker) in the browser — the one-command start.
+
+    This is the desktop-shortcut entry point, launched with `pythonw.exe` (no console window),
+    so an unhandled exception here would otherwise just vanish — double-click, nothing visibly
+    happens, no way to tell why. Any failure gets written to a log file and shown in a native
+    message box instead of disappearing silently."""
     from . import ui
     from .ui import recent_projects
-    target = args.project
-    if not target and not args.picker:
-        rec = recent_projects()
-        if rec:
-            target = rec[0]["path"]
-    ui.serve(target, port=args.port, open_browser=True)
-    return 0
+    try:
+        target = args.project
+        if not target and not args.picker:
+            rec = recent_projects()
+            if rec:
+                target = rec[0]["path"]
+        ui.serve(target, port=args.port, open_browser=True)
+        return 0
+    except BaseException as e:  # noqa: BLE001
+        import traceback
+        log_dir = Path.home() / ".vidforge" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / f"start-error-{int(time.time())}.log"
+        log_file.write_text(traceback.format_exc(), encoding="utf-8")
+        msg = f"vidforge 启动失败：\n\n{e}\n\n详情见：\n{log_file}"
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.user32.MessageBoxW(0, msg, "vidforge", 0x10)  # MB_ICONERROR
+            except Exception:  # noqa: BLE001
+                pass
+        else:
+            print(msg, file=sys.stderr)
+        return 1
 
 
 def cmd_shortcut(_: argparse.Namespace) -> int:

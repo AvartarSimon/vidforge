@@ -821,6 +821,28 @@ def make_handler(state: State):
     return Handler
 
 
+class _Server(ThreadingHTTPServer):
+    # HTTPServer sets allow_reuse_address = True; on Windows that lets a second process bind the
+    # *same* address:port without erroring — so two `vidforge start` launches (e.g. the desktop
+    # icon double-clicked twice, or a stale process from hours earlier that never exited) can end
+    # up both "LISTENING" on 8765 at once, with requests routed unpredictably between an old
+    # process serving stale code and the new one. Disabling it makes a real conflict fail loudly
+    # (a normal, expected OSError we handle right below) instead of silently double-binding.
+    allow_reuse_address = False
+
+
+def _port_is_ours(port: int, timeout: float = 1.5) -> bool:
+    """Is something that looks like vidforge already answering on this port?"""
+    import urllib.error
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=timeout) as r:
+            data = json.loads(r.read())
+        return "ffmpeg" in data
+    except (urllib.error.URLError, OSError, ValueError, TimeoutError):
+        return False
+
+
 def serve(project: str | Path | None, port: int = 8765, open_browser: bool = True) -> None:
     project_path = None
     if project:
@@ -830,7 +852,28 @@ def serve(project: str | Path | None, port: int = 8765, open_browser: bool = Tru
         if not project_path.exists():
             raise SystemExit(f"project file not found: {project_path}")
     state = State(project_path)
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(state))
+    requested_port = port
+    try:
+        httpd = _Server(("127.0.0.1", port), make_handler(state))
+    except OSError:
+        if _port_is_ours(port):
+            # Another vidforge is already up and healthy — just point the browser at it instead
+            # of erroring or silently spawning a second server that will never get requests.
+            url = f"http://127.0.0.1:{port}/"
+            print(f"vidforge is already running at {url} — opening that instead of starting another copy.")
+            if open_browser:
+                webbrowser.open(url)
+            return
+        for p in range(port + 1, port + 21):        # something else (or a hung/unhealthy process) has the port
+            try:
+                httpd = _Server(("127.0.0.1", p), make_handler(state))
+                port = p
+                break
+            except OSError:
+                continue
+        else:
+            raise SystemExit(f"could not find a free port near {requested_port}")
+        print(f"port {requested_port} busy (not vidforge); using {port} instead.")
     httpd.daemon_threads = True
     url = f"http://127.0.0.1:{port}/"
     print(f"vidforge ui · {project_path or 'project picker'}\n  {url}   (Ctrl+C to stop)")
