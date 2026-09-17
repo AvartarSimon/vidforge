@@ -50,9 +50,11 @@ class ScriptParser(unittest.TestCase):
         segs = parse(text)
         self.assertEqual([s["label"] for s in segs if s["label"]], ["The Year Without a Summer", "The Volcano"])
         self.assertEqual(segs[0]["visual_hint"], "Mount Tambora volcano, 1815")
-        # the second chapter's visual must NOT have leaked onto the first chapter's segments
-        self.assertIsNone(segs[1]["visual_hint"])
+        # a chapter's one Visual: line carries forward to its other paragraphs (a real script
+        # usually gives one Visual: per chapter, not one per paragraph — see test_forward_fill_*)
+        self.assertEqual(segs[1]["visual_hint"], "Mount Tambora volcano, 1815")
         third = next(s for s in segs if s["text"].startswith("The story began"))
+        # ...but must NOT leak across a chapter boundary into the next one's own Visual:
         self.assertEqual(third["visual_hint"], "Mount Tambora eruption, ash")
 
     def test_bold_title_is_recognised_as_a_heading(self):
@@ -76,6 +78,22 @@ class ScriptParser(unittest.TestCase):
     def test_each_visual_line_attaches_to_its_own_paragraph_not_the_whole_block(self):
         segs = parse("## Chapter\nVisual: first shot\n\nFirst paragraph.\n\nVisual: second shot\n\nSecond paragraph.")
         self.assertEqual([s["visual_hint"] for s in segs], ["first shot", "second shot"])
+
+    def test_forward_fill_one_visual_per_chapter_covers_all_its_paragraphs(self):
+        """The dominant real-world pattern (confirmed against actual GPT output for a 37-chapter
+        script): one Visual: line right after the chapter title, then 2-4 short paragraphs with
+        no Visual: of their own. Without forward-fill, 61% of the resulting segments had no image
+        hint at all — this is the concrete "拆分逻辑不太好使" the user hit, not a crash."""
+        text = ("Chapter 1: Intro\n\nVisual: a\n\nFirst.\n\nSecond.\n\nThird.\n\n"
+                "Chapter 2: Next\n\nVisual: b\n\nFourth.\n\nFifth.")
+        segs = parse(text)
+        self.assertEqual([s["visual_hint"] for s in segs], ["a", "a", "a", "b", "b"])
+        self.assertEqual([s["label"] for s in segs], ["Intro", None, None, "Next", None])
+
+    def test_forward_fill_stops_at_a_fresh_visual_line_within_the_same_chapter(self):
+        text = "Chapter 1: Intro\n\nVisual: a\n\nFirst.\n\nVisual: b\n\nSecond.\n\nThird."
+        segs = parse(text)
+        self.assertEqual([s["visual_hint"] for s in segs], ["a", "b", "b"])
 
     def test_empty(self):
         self.assertEqual(parse("  \n "), [])

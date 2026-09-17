@@ -181,10 +181,13 @@ def parse(text: str) -> list[dict]:
         # each paragraph is one idea = one segment; under a heading we tolerate longer paragraphs
         limits = (90, 220) if structured and b.label is not None else (60, 140)
         first_of_block = True
-        for para in b.paras:
+        last_visual: str | None = None    # a chapter's Visual: line usually appears once, before
+        for para in b.paras:              # its first paragraph — carry it forward to the rest of
+            if para.visual:                # the chapter's paragraphs instead of leaving them with
+                last_visual = para.visual  # no image hint at all, until a fresher Visual: overrides it
             body = " ".join(para.lines)
             for i, piece in enumerate(_split_long(body, *limits)):
                 segments.append({"label": b.label if first_of_block else None, "text": piece,
-                                 "visual_hint": para.visual if i == 0 else None})
+                                 "visual_hint": last_visual if i == 0 else None})
                 first_of_block = False
     return segments
