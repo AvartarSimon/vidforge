@@ -6,25 +6,29 @@ const fmt = (s) => s == null ? '–' : (s >= 60 ? `${Math.floor(s / 60)}:${Strin
 const fileUrl = (rel, bust) => rel ? `/files/${rel.split('/').map(encodeURIComponent).join('/')}${bust ? '?t=' + bust : ''}` : null;
 // The reusable "how to write a script for vidforge" spec — paste-ready for any AI chat, so
 // scripts written elsewhere still split into segments correctly when pasted back into step 1.
-// Word count scales with the project's target length (raw.target_minutes) instead of being fixed,
-// and "##" before each chapter is now REQUIRED wording, not optional: a title line with no "##"
-// only splits correctly when the AI also wrote a "Visual:"/"画面:" line right after it (vidforge
-// falls back to treating a short, unpunctuated line followed by one of those as a chapter title) —
-// asking for "##" up front avoids relying on that fallback at all.
+// Word count scales with the project's target length (raw.target_minutes) instead of being fixed.
+//
+// Chapter markers use a plain numbered word ("第1段"/"Chapter 1:"), not Markdown ("##"/"**bold**")
+// — copying a reply out of a chat website almost always copies the RENDERED text, not the raw
+// source: bold becomes plain text with the "**" gone entirely, and "#" never survived either.
+// A literal word+number is just page content, so it comes through copy/paste intact regardless
+// of the chat site's renderer. (The parser still recognises "##" and **bold** too, for the rarer
+// case of pasting actual markdown source — e.g. a "copy as markdown" button — but that's no
+// longer what this spec asks for, since it's the one part of the format that kept getting lost.)
 function scriptFormatSpec(mins, zh) {
   const words = Math.round(mins * (zh ? 240 : 150));
   return zh
     ? `写一条约 ${mins} 分钟（正文约 ${words} 字）的视频解说脚本，请遵守这个格式（这样能直接粘贴进 vidforge 自动拆成段）：
 1. 每段讲一个意思，2–4 句，口语化、短句、标点齐全——标点决定字幕断行和停顿，不要用省略号或破折号代替句号。
 2. 段与段之间空一行分隔（不要用列表符号）。
-3. 每个段落前必须加一个 Markdown 二级标题作章节名，格式固定是"## 章节名"——用 ## 这个符号本身，不要只把标题加粗（**标题**）代替，那样识别不出来；这一步不要省略。
+3. 每个段落前单独一行写"第N段 标题"（N 从 1 开始递增），例如"第1段 火山喷发"——**只用这几个字，不要用 Markdown 的 # 或加粗**：从聊天网页复制粘贴时，加粗、# 这些格式符号几乎总会丢失（复制到的是渲染后的纯文字），但"第N段"这几个字是正文内容，不会丢。这一步不要省略。
 4. 每段正文前可以单独写一行"画面：xxx"，给出这一段适合的画面/素材描述（2–4 个具体名词，中英均可），vidforge 会据此自动配图；一段最多算一条，可选。
 5. 数字、年份按口语读法写清楚；不确定的史实标注 [待核实]。
 6. 正文总字数约 ${words} 字（对应约 ${mins} 分钟旁白）。只输出脚本正文本身，不要前言、解释或总结这段格式要求。`
     : `Write a ~${mins}-minute (~${words}-word) narration script following this format (so it pastes straight into vidforge and splits into segments correctly):
 1. One idea per segment, 2-4 sentences, spoken style, short sentences, full punctuation — punctuation drives subtitle breaks and pauses.
 2. Separate segments with a blank line (no bullet/numbered list markers).
-3. Put a Markdown level-2 heading before EVERY segment as its chapter name, using the literal "## " marker — e.g. "## Chapter title". Don't just **bold** the title instead; that doesn't get recognised. Don't skip this.
+3. Put "Chapter N:" before each segment's title on its own line (N counting up from 1), e.g. "Chapter 1: The Eruption" — **plain text, not Markdown "##" or **bold**.** Copying a reply out of a chat website almost always copies the rendered text, not the raw source, so "##" and "**" get silently dropped; "Chapter N:" is just page content, so it survives. Don't skip this.
 4. Optionally put one line "Visual: ..." before a segment's narration with 2-4 concrete search keywords for stock footage; vidforge uses it to auto-pick images. At most one per segment.
 5. Spell out numbers and years the way they should be read aloud; mark uncertain facts [verify].
 6. Total length about ${words} words for ~${mins} minutes of narration. Output only the script itself — no preamble, no explanation of this format.`;
@@ -403,7 +407,7 @@ function viewScript(v) {
 要求：
 1. 总字数约 ${words} 字，口语化、短句、标点齐全（标点决定字幕断行和停顿）。
 2. 前 30 秒是钩子：用一个反差、问题或具体数字抓住观众。
-3. 按内容分成 8–15 个段落，每个段落一个意思、2–4 句；每个段落前用 ## 这个 Markdown 二级标题符号写章节名（格式：## 章节名，用 ## 本身，不要只加粗标题代替）。
+3. 按内容分成 8–15 个段落，每个段落一个意思、2–4 句；每个段落前单独一行写"第N段 章节名"（N 从 1 开始递增，纯文字，不要用 # 或加粗——网页里读出来的回答是渲染后的纯文字，格式符号会丢）。
 4. 每个段落标题下面先写一行 "画面：" 给出适合的画面/素材描述（英文关键词 2–4 个，便于搜图），再写旁白正文。
 5. 数字和年份用汉字读法或明确写法；涉及具体史实处如不确定请标注 [核实]。
 6. 结尾一段是简短总结 + 引出下一集。只输出脚本本身，不要前言和解释。`
@@ -411,7 +415,7 @@ function viewScript(v) {
 Requirements:
 1. About ${words} words, spoken style, short sentences, full punctuation (it drives subtitle breaks and pauses).
 2. The first 30 seconds are a hook: a contrast, a question or a concrete number.
-3. Split into 8-15 segments, one idea each, 2-4 sentences; put the literal "## " marker before each as a Markdown level-2 heading (format: ## Chapter title) — don't just **bold** the title instead.
+3. Split into 8-15 segments, one idea each, 2-4 sentences; put "Chapter N:" before each title on its own line (N counting up from 1), plain text — not "##" or **bold**, since the answer gets read back as rendered text and formatting characters don't survive that.
 4. Under each heading first write one line "Visual: <2-4 English search keywords for stock footage>", then the narration.
 5. Spell out numbers the way they should be read aloud; mark uncertain facts with [verify].
 6. End with a short recap and a teaser for the next episode. Output only the script, no preamble.`) + categoryNote();
