@@ -241,14 +241,53 @@ def _stage_presenter(ctx: _Ctx) -> None:
         _log(f"  host {seg.id:<12} {p.presenter.provider}")
 
 
+def _segment_key(project: Project, seg: Segment, audio: Path, encoder: str) -> str:
+    """Everything that changes a segment's rendered clip: its definition (clips, overlays, pause),
+    the narration file, and the render settings. Same key => reuse the cached clip."""
+    import dataclasses
+    import hashlib
+
+    def enc(o):
+        if dataclasses.is_dataclass(o):
+            return {k: enc(v) for k, v in dataclasses.asdict(o).items()}
+        if isinstance(o, Path):
+            try:
+                return f"{o.name}:{o.stat().st_size}:{int(o.stat().st_mtime)}"
+            except OSError:
+                return str(o)
+        if isinstance(o, (list, tuple)):
+            return [enc(v) for v in o]
+        if isinstance(o, dict):
+            return {k: enc(v) for k, v in o.items()}
+        return o
+    settings = [project.width, project.height, project.fps, project.quality, encoder, project.motion_amount,
+                project.effective_supersample, project.transition, project.normalize_audio, project.presenter.provider]
+    blob = json.dumps([enc(seg), enc(audio), settings], sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:10]
+
+
 def _stage_render(ctx: _Ctx) -> None:
-    """Segments in parallel (CPU/GPU-bound)."""
+    """Segments in parallel (CPU/GPU-bound). A segment whose key is unchanged is reused from
+    clips/<id>.<key>.mp4 — editing one segment re-renders only that one. The last 5 versions
+    of each segment's clip are kept so reverting a segment is instant."""
     p = ctx.project
 
     def one(seg):
         _check_cancel()
-        clip = ctx.bd / "clips" / f"{_safe(seg.id)}.mp4"
-        return seg.id, clip, render.render_segment(p, seg, ctx.audio[seg.id], clip, encoder=ctx.encoder)
+        key = _segment_key(p, seg, ctx.audio[seg.id], ctx.encoder)
+        clip = ctx.bd / "clips" / f"{_safe(seg.id)}.{key}.mp4"
+        if clip.exists() and clip.stat().st_size > 0:
+            try:
+                return seg.id, clip, ffmpeg.duration(clip), True
+            except ffmpeg.FfmpegError:
+                clip.unlink(missing_ok=True)
+        dur = render.render_segment(p, seg, ctx.audio[seg.id], clip, encoder=ctx.encoder)
+        siblings = sorted((ctx.bd / "clips").glob(f"{_safe(seg.id)}.*.mp4"), key=lambda f: f.stat().st_mtime)
+        for old in siblings[:-5]:
+            old.unlink(missing_ok=True)
+            import shutil
+            shutil.rmtree(old.with_name(old.stem + "_parts"), ignore_errors=True)
+        return seg.id, clip, dur, False
 
     n = _workers(p)
     _log(f"rendering {len(p.segments)} segments with {n} worker(s)")
@@ -256,12 +295,12 @@ def _stage_render(ctx: _Ctx) -> None:
     with ThreadPoolExecutor(max_workers=n) as pool:
         futures = {pool.submit(one, seg): seg for seg in p.segments}
         for k, fut in enumerate(as_completed(futures)):
-            sid, clip, dur = fut.result()
+            sid, clip, dur, cached = fut.result()
             ctx.clips[sid], ctx.durations[sid] = clip, dur
             seg = futures[fut]
             kinds = ",".join(c.remotion.composition if c.remotion else ("video" if c.video else c.motion) for c in seg.clips)
             _set_progress("render", k + 1, len(p.segments))
-            _log(f"  clip {sid:<12} {dur:6.2f}s  ({len(seg.clips)} clip{'s' if len(seg.clips) > 1 else ''}: {kinds})")
+            _log(f"  clip {sid:<12} {dur:6.2f}s  ({len(seg.clips)} clip{'s' if len(seg.clips) > 1 else ''}: {kinds}){'  · cached' if cached else ''}")
     _check_cancel()
 
 

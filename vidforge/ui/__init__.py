@@ -45,20 +45,135 @@ from ..tts.silent import estimate_seconds
 STATIC = Path(__file__).resolve().parent / "static"
 
 
+CONFIG_DIR = Path.home() / ".vidforge"
+RECENT = CONFIG_DIR / "recent.json"
+HISTORY_KEEP = 30
+HISTORY_MIN_GAP = 60          # seconds between automatic snapshots (an explicit Save always snapshots)
+
+
+def recent_projects() -> list[dict]:
+    try:
+        items = json.loads(RECENT.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        items = []
+    out = []
+    for it in items:
+        p = Path(it.get("path", ""))
+        if (p / "project.json").is_file():
+            try:
+                title = json.loads((p / "project.json").read_text(encoding="utf-8")).get("title", p.name)
+            except Exception:  # noqa: BLE001
+                title = p.name
+            out.append({"path": str(p), "title": title, "opened": it.get("opened", 0), "final": (p / "build" / "final.mp4").exists()})
+    return sorted(out, key=lambda x: -x["opened"])
+
+
+def remember_project(root: Path) -> None:
+    CONFIG_DIR.mkdir(exist_ok=True)
+    items = [it for it in recent_projects() if Path(it["path"]) != root.resolve()]
+    items.insert(0, {"path": str(root.resolve()), "opened": time.time()})
+    RECENT.write_text(json.dumps(items[:20], ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def workspace_dir() -> Path:
+    ws = Path(os.environ.get("VIDFORGE_WORKSPACE", "") or (Path.home() / "vidforge-projects"))
+    ws.mkdir(parents=True, exist_ok=True)
+    return ws
+
+
 class State:
-    def __init__(self, project_path: Path):
-        self.project_path = project_path
-        self.root = project_path.parent
+    def __init__(self, project_path: Path | None):
+        self.project_path: Path | None = None
+        self.root: Path = workspace_dir()
         self.lock = threading.Lock()
         self.build = {"state": "idle", "lines": [], "lang": None, "started": None, "finished": None, "error": None}
+        self._last_snapshot = 0.0
+        if project_path is not None:
+            self.open(project_path)
+
+    def open(self, project_path: Path) -> None:
+        project_path = Path(project_path).resolve()
+        if project_path.is_dir():
+            project_path = project_path / "project.json"
+        if not project_path.is_file():
+            raise FileNotFoundError(f"project file not found: {project_path}")
+        self.project_path = project_path
+        self.root = project_path.parent
+        remember_project(self.root)
+
+    @property
+    def has_project(self) -> bool:
+        return self.project_path is not None
 
     def read_raw(self) -> dict:
+        if self.project_path is None:
+            raise proj.ProjectError("no project open")
         return json.loads(self.project_path.read_text(encoding="utf-8"))
 
-    def write_raw(self, data: dict) -> None:
+    def write_raw(self, data: dict, *, snapshot: bool = False) -> None:
+        if self.project_path is None:
+            raise proj.ProjectError("no project open")
+        new_text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+        if self.project_path.exists():
+            old = self.project_path.read_text(encoding="utf-8")
+            if old != new_text and (snapshot or time.time() - self._last_snapshot > HISTORY_MIN_GAP):
+                hist = self.root / ".history"
+                hist.mkdir(exist_ok=True)
+                (hist / f"project-{time.strftime('%Y%m%d-%H%M%S')}.json").write_text(old, encoding="utf-8")
+                self._last_snapshot = time.time()
+                for stale in sorted(hist.glob("project-*.json"))[:-HISTORY_KEEP]:
+                    stale.unlink(missing_ok=True)
+        self._snapshot_segments(data)
         tmp = self.project_path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        tmp.write_text(new_text, encoding="utf-8")
         tmp.replace(self.project_path)
+
+    def _snapshot_segments(self, data: dict) -> None:
+        """Every segment whose content changed gets a version file: .history/segments/<id>/<ts>.json.
+        Reverting one segment never touches the others."""
+        base = self.root / ".history" / "segments"
+        for s in data.get("segments") or []:
+            sid = pipeline._safe(str(s.get("id", "")))
+            if not sid:
+                continue
+            folder = base / sid
+            folder.mkdir(parents=True, exist_ok=True)
+            body = json.dumps(s, ensure_ascii=False, sort_keys=True)
+            versions = sorted(folder.glob("*.json"))
+            if versions:
+                try:
+                    last = json.loads(versions[-1].read_text(encoding="utf-8"))
+                    if json.dumps(last.get("segment"), ensure_ascii=False, sort_keys=True) == body:
+                        continue
+                except json.JSONDecodeError:
+                    pass
+            ts = time.strftime("%Y%m%d-%H%M%S")
+            name = f"{ts}.json"
+            if (folder / name).exists():
+                name = f"{ts}-{int(time.time() * 1000) % 1000:03d}.json"
+            (folder / name).write_text(json.dumps({"time": ts, "segment": s}, ensure_ascii=False, indent=1), encoding="utf-8")
+            for stale in sorted(folder.glob("*.json"))[:-HISTORY_KEEP]:
+                stale.unlink(missing_ok=True)
+
+    def segment_history(self, seg_id: str) -> list[dict]:
+        folder = self.root / ".history" / "segments" / pipeline._safe(seg_id)
+        out = []
+        for f in sorted(folder.glob("*.json"), reverse=True) if folder.exists() else []:
+            try:
+                d = json.loads(f.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            seg = d.get("segment", {})
+            text = seg.get("text", "")
+            clips = seg.get("clips") or [k for k in ("image", "video", "remotion") if k in seg]
+            out.append({"name": f.name, "time": d.get("time", f.stem), "preview": text[:60], "clips": len(clips),
+                        "label": seg.get("label")})
+        return out
+
+    def history(self) -> list[dict]:
+        hist = self.root / ".history"
+        return [{"name": f.name, "time": f.stem.replace("project-", ""), "size": f.stat().st_size}
+                for f in sorted(hist.glob("project-*.json"), reverse=True)] if hist.exists() else []
 
     def load(self, lang: str | None) -> proj.Project:
         return proj.load(self.project_path, lang=lang or None)
@@ -181,7 +296,18 @@ def make_handler(state: State):
                     p = self._safe_path(path[len("/files/"):])
                     return self._file(p) if p else self._error("forbidden", HTTPStatus.FORBIDDEN)
                 if path == "/api/project":
+                    if not state.has_project:
+                        return self._json({"home": True, "projects": recent_projects(), "workspace": str(workspace_dir())})
                     return self._json(self.project_view(q.get("lang")))
+                if path == "/api/projects":
+                    return self._json({"projects": recent_projects(), "workspace": str(workspace_dir())})
+                if path == "/api/history":
+                    return self._json({"history": state.history()})
+                if path == "/api/segment/history":
+                    return self._json({"versions": state.segment_history(q.get("id", ""))})
+                if path == "/api/llm/status":
+                    from .. import llm
+                    return self._json({"available": llm.available()})
                 if path == "/api/build/status":
                     return self._json(self.status_view())
                 if path == "/api/health":
@@ -225,7 +351,61 @@ def make_handler(state: State):
             try:
                 body = self._body()
                 if path == "/api/project":
-                    return self.save_project(body)
+                    return self.save_project(body, snapshot=bool(body.get("snapshot")))
+                if path == "/api/open":
+                    try:
+                        state.open(Path(body["path"]))
+                    except (FileNotFoundError, KeyError) as e:
+                        return self._error(f"打不开：{e}")
+                    return self._json({"opened": str(state.project_path)})
+                if path == "/api/new":
+                    name = re.sub(r"[^\w\-\u4e00-\u9fff ]+", "", body.get("name", "")).strip() or time.strftime("video-%Y%m%d-%H%M")
+                    root = Path(body.get("dir") or workspace_dir()) / name
+                    if (root / "project.json").exists():
+                        return self._error("同名项目已存在")
+                    (root / "assets").mkdir(parents=True, exist_ok=True)
+                    tpl = json.loads(json.dumps(proj.TEMPLATE, ensure_ascii=False))
+                    tpl["title"] = body.get("title") or name
+                    tpl["language"] = body.get("language", "en")
+                    tpl["segments"] = []
+                    (root / "project.json").write_text(json.dumps(tpl, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                    state.open(root)
+                    return self._json({"opened": str(state.project_path)})
+                if path == "/api/segment/restore":
+                    sid, name = body.get("id", ""), Path(body.get("name", "")).name
+                    f = state.root / ".history" / "segments" / pipeline._safe(sid) / name
+                    if not f.is_file():
+                        return self._error("版本不存在")
+                    seg = json.loads(f.read_text(encoding="utf-8"))["segment"]
+                    raw = state.read_raw()
+                    for i, s in enumerate(raw["segments"]):
+                        if s.get("id") == sid:
+                            seg["id"] = sid
+                            raw["segments"][i] = seg
+                            break
+                    else:
+                        return self._error("段不存在")
+                    state.write_raw(raw, snapshot=True)
+                    return self._json({"restored": name})
+                if path == "/api/history/restore":
+                    f = state.root / ".history" / Path(body.get("name", "")).name
+                    if not f.is_file():
+                        return self._error("历史版本不存在")
+                    data = json.loads(f.read_text(encoding="utf-8"))
+                    state.write_raw(data, snapshot=True)
+                    return self._json({"restored": f.name})
+                if path == "/api/llm":
+                    from .. import llm
+                    try:
+                        if body.get("task") == "keywords":
+                            return self._json({"keywords": llm.keywords(body.get("text", ""))})
+                        if body.get("task") == "translate":
+                            return self._json({"text": llm.translate_query(body.get("text", ""))})
+                        if body.get("task") == "label":
+                            return self._json({"text": llm.chapter_label(body.get("text", ""), q.get("lang") or "en")})
+                        return self._json({"text": llm.chat(body.get("prompt", ""), system=body.get("system", ""))})
+                    except llm.LlmError as e:
+                        return self._error(str(e))
                 if path == "/api/tts":
                     return self.tts(body.get("id"), q.get("lang"))
                 if path == "/api/research/analyze":
@@ -422,6 +602,7 @@ def make_handler(state: State):
                 "youtube_secret": (Path.home() / ".vidforge" / "client_secret.json").exists()
                                   or bool(os.environ.get("YOUTUBE_CLIENT_SECRET")),
                 "cpus": os.cpu_count(),
+                "llm": __import__("vidforge.llm", fromlist=["available"]).available(),
             }
 
         def autofill(self, lang: str | None, source: str | None):
@@ -441,7 +622,7 @@ def make_handler(state: State):
             state.write_raw(raw)
             return self._json({"filled": n, "source": source})
 
-        def save_project(self, body: dict):
+        def save_project(self, body: dict, snapshot: bool = False):
             data = body.get("raw")
             if not isinstance(data, dict):
                 return self._error("raw must be an object")
@@ -451,8 +632,8 @@ def make_handler(state: State):
                 proj.load(tmp)
             finally:
                 tmp.unlink(missing_ok=True)
-            state.write_raw(data)
-            return self._json({"saved": True})
+            state.write_raw(data, snapshot=snapshot)
+            return self._json({"saved": True, "at": time.time()})
 
         def voices(self, provider: str, lang: str | None) -> list[dict]:
             """Structured voice list; edge gives locale/gender/personality, others only names."""
@@ -560,17 +741,19 @@ def make_handler(state: State):
     return Handler
 
 
-def serve(project: str | Path, port: int = 8765, open_browser: bool = True) -> None:
-    project_path = Path(project).resolve()
-    if project_path.is_dir():
-        project_path = project_path / "project.json"
-    if not project_path.exists():
-        raise SystemExit(f"project file not found: {project_path}")
+def serve(project: str | Path | None, port: int = 8765, open_browser: bool = True) -> None:
+    project_path = None
+    if project:
+        project_path = Path(project).resolve()
+        if project_path.is_dir():
+            project_path = project_path / "project.json"
+        if not project_path.exists():
+            raise SystemExit(f"project file not found: {project_path}")
     state = State(project_path)
     httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(state))
     httpd.daemon_threads = True
     url = f"http://127.0.0.1:{port}/"
-    print(f"vidforge ui · {project_path}\n  {url}   (Ctrl+C to stop)")
+    print(f"vidforge ui · {project_path or 'project picker'}\n  {url}   (Ctrl+C to stop)")
     if open_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     try:

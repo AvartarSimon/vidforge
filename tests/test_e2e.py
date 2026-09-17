@@ -75,7 +75,7 @@ class Wizard(unittest.TestCase):
             page.wait_for_selector("#modal #ok")            # split preview -> accept
             page.click("#modal #ok")
             page.wait_for_selector("#seglist .seg-row[data-i='1']")
-            page.wait_for_function("document.querySelector('#saveState').textContent === '已保存'")
+            page.wait_for_function("document.querySelector('#saveState').textContent.startsWith('已保存')")
             raw = json.loads((self.td / "project.json").read_text(encoding="utf-8"))
             self.assertEqual([s["id"] for s in raw["segments"]], ["seg1", "seg2"])
             self.assertEqual(raw["segments"][0]["label"], "Opening")
@@ -99,7 +99,7 @@ class Wizard(unittest.TestCase):
             page.wait_for_selector(".sb-card[data-id='seg2'] img", timeout=15000)
             page.fill(".clip[data-i='0'] input[data-act='duration']", "2")
             page.dispatch_event(".clip[data-i='0'] input[data-act='duration']", "change")
-            page.wait_for_function("document.querySelector('#saveState').textContent === '已保存'")
+            page.wait_for_function("document.querySelector('#saveState').textContent.startsWith('已保存')")
             raw = json.loads((self.td / "project.json").read_text(encoding="utf-8"))
             self.assertEqual(raw["segments"][1]["clips"][0]["duration"], 2)
 

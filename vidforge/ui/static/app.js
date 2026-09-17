@@ -40,14 +40,54 @@ const normalizeSeg = (s) => { // migrate legacy single-visual to clips in place
 /* ---------------- load / save ---------------- */
 async function load() {
   P = await api(`/api/project?lang=${encodeURIComponent(lang || '')}`);
+  if (P.home) { raw = null; renderHome(P); return; }
   raw = P.raw; lang = P.lang;
-  $('#path').textContent = P.root;
+  $('#pcTitle').textContent = raw.title || P.root.split(/[\\/]/).pop();
+  $('#pcPath').textContent = P.root;
   $('#lang').innerHTML = P.langs.map(l => `<option ${l === lang ? 'selected' : ''}>${l}</option>`).join('');
   $('#issues').innerHTML = P.issues ? `<div class="banner err">⚠ ${esc(P.issues)}</div>` : '';
   if (!H) await refreshHealth();
   if (!step) { const d = stepStatus(); step = (d.findIndex(x => !x) + 1) || 4; }   // first open: land on the first unfinished step
   render();
+  loadHistory();
 }
+
+/* ---------------- home: project picker ---------------- */
+function renderHome(h) {
+  $('#pcTitle').textContent = '未打开项目'; $('#pcPath').textContent = h.workspace;
+  $$('#steps button').forEach(b => b.classList.remove('active', 'done'));
+  $('.footer-nav').hidden = true; $('#crumbs').innerHTML = '<b>项目</b>';
+  $('#view').innerHTML = `<div class="home">
+    <div class="card"><h3 style="margin:0 0 6px">新建视频项目</h3>
+      <div class="row"><input id="np_name" class="grow" placeholder="项目文件夹名，例：year-without-a-summer"><input id="np_title" class="grow" placeholder="视频标题（可后改）">
+        <select id="np_lang"><option value="en">英文频道</option><option value="zh">中文频道</option></select><button class="primary" id="np_go">创建并打开</button></div>
+      <p class="hint">项目保存在 <code>${esc(h.workspace)}</code>（设 VIDFORGE_WORKSPACE 可换）。每个项目一个文件夹：project.json + assets/ + build/，随时可以整个拷走或放进 git。</p></div>
+    <div class="card"><h3 style="margin:0 0 10px">最近的项目</h3>
+      <div class="proj-grid">${(h.projects || []).map(pr => `<div class="proj" data-path="${esc(pr.path)}"><b>${esc(pr.title)}</b><span class="muted">${esc(pr.path)}</span><div class="row" style="margin:6px 0 0"><span class="pill ${pr.final ? 'ok' : ''}">${pr.final ? '已有成片' : '进行中'}</span><span class="muted">${new Date(pr.opened * 1000).toLocaleString()}</span></div></div>`).join('') || '<span class="muted">还没有项目。</span>'}</div>
+      <div class="row" style="margin-top:10px"><input id="op_path" class="grow" placeholder="或输入任意项目文件夹路径…"><button id="op_go">打开</button></div></div></div>`;
+  $('#np_go').onclick = async () => { try { await api('/api/new', { name: $('#np_name').value, title: $('#np_title').value, language: $('#np_lang').value }); step = 1; $('.footer-nav').hidden = false; await load(); } catch (e) { alert(e.message); } };
+  const open = async path => { try { await api('/api/open', { path }); step = 0; $('.footer-nav').hidden = false; await load(); } catch (e) { alert(e.message); } };
+  $$('.proj').forEach(el => el.onclick = () => open(el.dataset.path));
+  $('#op_go').onclick = () => open($('#op_path').value.trim());
+}
+$('#projectCard').onclick = async () => { P = { home: true, ...(await api('/api/projects')) }; renderHome(P); };
+
+/* ---------------- theme ---------------- */
+$('#theme').value = localStorage.getItem('vf.theme') || 'system';
+$('#theme').onchange = e => { document.documentElement.dataset.theme = e.target.value; localStorage.setItem('vf.theme', e.target.value); };
+
+/* ---------------- explicit save + history ---------------- */
+$('#saveBtn').onclick = () => save(true);
+document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(true); } });
+async function loadHistory() {
+  try { const j = await api('/api/history'); const sel = $('#history');
+    sel.innerHTML = '<option value="">历史版本…</option>' + j.history.map(h => `<option value="${esc(h.name)}">${h.time.replace(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2}).*/, '$2-$3 $4:$5:$6')}</option>`).join(''); } catch {}
+}
+$('#history').onchange = async e => {
+  const name = e.target.value; if (!name) return; e.target.value = '';
+  if (!confirm(`回到 ${name.replace('project-', '').replace('.json', '')} 的整份项目？当前状态会先存一份历史。`)) return;
+  await api('/api/history/restore', { name }); await load();
+};
 async function refreshHealth() {
   try {
     const h = await api('/api/health'); H = h;
@@ -56,18 +96,19 @@ async function refreshHealth() {
     $('#health').innerHTML = dot(h.ffmpeg.ok, `ffmpeg · ${h.encoder}`, h.ffmpeg.path) + dot(h.keys.PEXELS_API_KEY, 'Pexels', 'PEXELS_API_KEY') +
       dot(h.keys.PIXABAY_API_KEY, 'Pixabay', 'PIXABAY_API_KEY') + dot(true, 'Commons', '无需 key') +
       dot(h.node && h.remotion, '动画', h.node ? (h.remotion ? 'Remotion 已安装' : '需 vidforge remotion setup') : '需要 Node.js') +
-      dot(h.youtube_secret, 'YouTube', 'client_secret.json');
+      dot(h.youtube_secret, 'YouTube', 'client_secret.json') + dot(!!h.llm, h.llm ? `本地模型 ${h.llm.model}` : '本地模型', h.llm ? 'Ollama 已就绪' : '装 Ollama + ollama pull qwen2.5:3b 可离线用');
   } catch { }
 }
 function markDirty(rerender = false) {
-  $('#saveState').textContent = '未保存…'; $('#saveState').className = 'pill';
-  clearTimeout(saveTimer); saveTimer = setTimeout(save, 700);
+  $('#saveState').textContent = '有改动，稍后自动保存…'; $('#saveState').className = 'savestate dirty';
+  clearTimeout(saveTimer); saveTimer = setTimeout(() => save(false), 700);
   if (rerender) render();
 }
-async function save() {
+async function save(snapshot = false) {
   clearTimeout(saveTimer);
-  try { await api('/api/project', { raw }); $('#saveState').textContent = '已保存'; $('#saveState').className = 'pill ok'; $('#issues').innerHTML = ''; return true; }
-  catch (e) { $('#saveState').textContent = '未保存'; $('#saveState').className = 'pill err'; $('#issues').innerHTML = `<div class="banner err">⚠ 未保存：${esc(e.message)}</div>`; return false; }
+  if (!raw) return true;
+  try { const j = await api('/api/project', { raw, snapshot }); $('#saveState').textContent = `已保存 ${new Date((j.at || Date.now() / 1000) * 1000).toLocaleTimeString()}`; $('#saveState').className = 'savestate'; if ($('#issues').innerHTML.includes('未保存')) $('#issues').innerHTML = ''; if (snapshot) loadHistory(); return true; }
+  catch (e) { $('#saveState').textContent = '未保存'; $('#saveState').className = 'savestate err'; $('#issues').innerHTML = `<div class="banner err">⚠ 未保存：${esc(e.message)}</div>`; return false; }
 }
 async function saveAndReload() { if (await save()) await load(); }
 
@@ -87,7 +128,11 @@ function stepStatus() {
   const rendered = !!P.outputs.final;
   return [scripted, voiced, visual, rendered, !!P.outputs.youtube];
 }
+const STEP_NAMES = { 1: '脚本', 2: '配音', 3: '画面', 4: '渲染', 5: '发布' };
 function render() {
+  if (!raw) return;
+  $('.footer-nav').hidden = false;
+  $('#crumbs').innerHTML = `${esc(raw.title || '')} <span class="muted">/</span> <b>第 ${step} 步 · ${STEP_NAMES[step]}</b>`;
   const done = stepStatus();
   $$('#steps button').forEach((b, i) => { b.classList.toggle('active', i + 1 === step); b.classList.toggle('done', done[i] && i + 1 !== step); });
   $('#prev').disabled = step === 1; $('#next').style.visibility = step === 5 ? 'hidden' : 'visible';
@@ -192,7 +237,7 @@ function viewScript(v) {
         <input data-k="id" value="${esc(s.id)}">
         <input data-k="${labelKey()}" value="${esc(s[labelKey()] || '')}" placeholder="${isBase() ? '' : esc(s.label || '')}">
         <textarea data-k="${textKey()}" style="${(s[textKey()] || '').trim() ? '' : 'border-color:var(--err)'}" placeholder="${isBase() ? '这一段的旁白' : esc(s.text)}">${esc(s[textKey()] || '')}</textarea>
-        <div class="ops"><button class="small" data-act="up" ${i === 0 ? 'disabled' : ''}>↑</button><button class="small" data-act="down" ${i === segs.length - 1 ? 'disabled' : ''}>↓</button><button class="small" data-act="del">✕</button></div>
+        <div class="ops"><button class="small" data-act="up" ${i === 0 ? 'disabled' : ''}>↑</button><button class="small" data-act="down" ${i === segs.length - 1 ? 'disabled' : ''}>↓</button><button class="small" data-act="del">✕</button><button class="small" data-act="ver" title="这一段的历史版本（只回退这一段）">版本</button></div>
       </div>`).join('')}
     </div>
   </div>`;
@@ -313,6 +358,7 @@ Requirements:
   $('#seglist').onclick = e => {
     const b = e.target.closest('button[data-act]'); if (!b) return;
     const i = +b.closest('.seg-row').dataset.i, a = b.dataset.act;
+    if (a === 'ver') return openSegmentHistory(raw.segments[i].id);
     if (a === 'del') { if (!confirm(`删除段「${raw.segments[i].id}」？`)) return; raw.segments.splice(i, 1); }
     if (a === 'up') raw.segments.splice(i - 1, 0, raw.segments.splice(i, 1)[0]);
     if (a === 'down') raw.segments.splice(i + 1, 0, raw.segments.splice(i, 1)[0]);
@@ -502,7 +548,7 @@ function viewVisuals(v) {
           ${(seg.overlays || []).map((o, i) => `<span class="pill" data-ov="${i}">${o.avatar ? '主持人' : o.video ? '视频' : '图片'} · ${o.position || 'bottom-right'} · ${Math.round((o.size || 0.3) * 100)}% · ${o.at || 0}s${o.duration ? '→' + (o.at + o.duration) + 's' : '→末'} <button class="small ghost" data-ovdel="${i}">✕</button></span>`).join('')}
           <button class="small" id="ovAdd">＋ 图片/视频</button><button class="small" id="ovAvatar" title="这一段加数字主持人（第 4 步可设外观）">＋ 主持人</button>
           <span class="muted">说到某处时叠一张图或一段无声视频；主持人在第 4 步统一设置</span></div>
-        <div class="row"><button id="previewBtn">▶ 预览这一段（草稿质量）</button><button class="small" id="dupBtn" title="复制这一段到后面">复制一段</button><span class="muted" id="previewInfo"></span></div>
+        <div class="row"><button id="previewBtn">▶ 预览这一段（草稿质量）</button><button class="small" id="dupBtn" title="复制这一段到后面">复制一段</button><button class="small" id="verBtn" title="这一段的历史版本">版本 ▾</button><span class="muted" id="previewInfo"></span></div>
         <div id="previewBox"></div>
         <div class="row"><label>片段不够长时 <select id="fit"><option value="stretch" ${seg.fit !== 'trim' ? 'selected' : ''}>延长/循环最后一个片段</option><option value="trim" ${seg.fit === 'trim' ? 'selected' : ''}>同上（保留字段）</option></select></label>
           <label>说完停顿 <input id="pause" type="number" step="0.1" min="0" style="width:64px" value="${seg.pause_after ?? 0.5}"> s</label></div>
@@ -538,6 +584,7 @@ function viewVisuals(v) {
     catch (e) { $('#previewInfo').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
     b.disabled = false;
   };
+  $('#verBtn').onclick = () => openSegmentHistory(seg.id);
   $('#dupBtn').onclick = () => { const i = raw.segments.indexOf(seg); const copy = JSON.parse(JSON.stringify(seg)); copy.id = newId(); raw.segments.splice(i + 1, 0, copy); selSeg = copy.id; markDirty(true); };
   $('#pause').onchange = e => { seg.pause_after = parseFloat(e.target.value) || 0; markDirty(); };
   $('#clipstrip').onclick = async e => {
@@ -593,7 +640,7 @@ function renderPicker(seg, r) {
       <input id="q" class="grow" value="${esc(picker.q)}" placeholder="英文关键词效果最好">
       <button class="primary" id="go">搜索</button>
     </div>
-    <div class="row"><span class="muted">建议：</span>${kws.map(k => `<span class="kw" data-kw="${esc(k)}">${esc(k)}</span>`).join('')}</div>
+    <div class="row"><span class="muted">建议：</span>${kws.map(k => `<span class="kw" data-kw="${esc(k)}">${esc(k)}</span>`).join('')}${H?.llm ? `<button class="small" id="kwAi" title="用本地模型从旁白提取更好的英文搜索词">✦ AI 建议</button>` : ''}</div>
     <div id="cands" class="cands">${picker.loading ? '<span class="muted">搜索中…</span>' : picker.err ? `<div class="banner err">${esc(picker.err)}</div>` : picker.cands.map((c, i) => `
       <div class="cand" data-i="${i}" title="${esc(c.title || '')} · ${esc(c.author)} · ${esc(c.license)}">
         <div class="thumb">${c.kind === 'video' ? `<video muted loop preload="none" poster="${esc(c.thumb_url)}" src="${esc(c.preview_url)}"></video>` : `<img loading="lazy" src="${esc(c.thumb_url)}" alt="">`}</div>
@@ -602,6 +649,9 @@ function renderPicker(seg, r) {
     ${picker.cands.length ? `<div class="row" style="justify-content:center"><button class="small" id="more">更多结果</button></div>` : ''}`;
   const doSearch = async (page = 1) => {
     picker.q = $('#q').value.trim(); picker.source = $('#src').value; picker.kind = $('#kind').value; picker.page = page; picker.loading = true; picker.err = null; renderPicker(seg, r);
+    if (/[\u4e00-\u9fff]/.test(picker.q) && !['commons', 'baidu'].includes(picker.source) && H?.llm) {
+      try { const t = await api('/api/llm', { task: 'translate', text: picker.q }); if (t.text) { picker.q = t.text; } } catch {}
+    }
     try {
       if (['commons', 'google', 'google_all', 'baidu'].includes(picker.source) && picker.kind === 'video') throw new Error('这个来源只提供图片；视频请用 Pexels / Pixabay');
       const j = await api(`/api/search?source=${picker.source}&kind=${picker.kind}&q=${encodeURIComponent(picker.q)}&page=${page}`);
@@ -614,6 +664,7 @@ function renderPicker(seg, r) {
   $('#q').onkeydown = e => { if (e.key === 'Enter') doSearch(1); };
   $('#src').onchange = $('#kind').onchange = () => { picker.cands = []; doSearch(1); };
   $$('.kw', box).forEach(k => k.onclick = () => { $('#q').value = k.dataset.kw; doSearch(1); });
+  if ($('#kwAi')) $('#kwAi').onclick = async () => { $('#kwAi').disabled = true; try { const j = await api('/api/llm', { task: 'keywords', text: seg[textKey()] || seg.text }); r.keywords = [...j.keywords, ...(r.keywords || [])].slice(0, 6); renderPicker(seg, r); } catch (e) { alert(e.message); } };
   if ($('#more')) $('#more').onclick = () => doSearch(picker.page + 1);
   const cands = $('#cands');
   cands.onmouseover = e => { const v = e.target.closest('.cand')?.querySelector('video'); if (v) v.play().catch(() => { }); };
@@ -730,6 +781,47 @@ function openOverlayDialog(seg, existing) {
     m.innerHTML = ''; markDirty(true);
   };
 }
+
+/* per-segment version history: A1 … A5, restore any one without touching other segments */
+async function openSegmentHistory(id) {
+  await save(true);
+  const j = await api(`/api/segment/history?id=${encodeURIComponent(id)}`);
+  const m = $('#modal');
+  m.innerHTML = `<div class="modal"><div class="box" style="max-height:88vh;overflow:auto">
+    <div class="row" style="justify-content:space-between"><b>「${esc(id)}」的版本（${j.versions.length}）</b><button class="ghost" id="close">✕</button></div>
+    <p class="hint">每次保存时这一段有变化就会留一份；回到某一版只改这一段，其他段不动。曾渲染过的版本成片有缓存，重渲几乎不花时间。</p>
+    ${j.versions.map((v, i) => `<div class="seg-row" style="grid-template-columns:130px 1fr 60px 80px;align-items:center"><span class="muted">${i === 0 ? '当前 · ' : ''}${v.time.replace(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2}).*/, '$2-$3 $4:$5:$6')}</span><span>${v.label ? `<b>${esc(v.label)}</b> · ` : ''}${esc(v.preview)}…</span><span class="muted">${v.clips} 画面</span><span>${i === 0 ? '' : `<button class="small primary" data-restore="${esc(v.name)}">回到此版</button>`}</span></div>`).join('') || '<span class="muted">还没有历史。</span>'}
+  </div></div>`;
+  $('#close').onclick = () => { m.innerHTML = ''; };
+  m.onclick = async e => { const b = e.target.closest('button[data-restore]'); if (!b) return; b.disabled = true; await api('/api/segment/restore', { id, name: b.dataset.restore }); m.innerHTML = ''; await load(); };
+}
+
+/* ---------------- AI drawer ---------------- */
+$('#aiToggle').onclick = async () => {
+  const d = $('#drawer'); d.hidden = !d.hidden;
+  if (!d.hidden && !$('#ai_site').children.length) {
+    const sites = await api('/api/chat/sites').catch(() => ({ sites: [] }));
+    const opts = sites.sites.map(x => `<option value="${x.id}">${esc(x.label)}（我的浏览器）</option>`);
+    if (H?.llm) opts.unshift(`<option value="__local">本地模型 ${esc(H.llm.model)}（离线，快）</option>`);
+    $('#ai_site').innerHTML = opts.join('');
+    $('#ai_site').value = localStorage.getItem('vf.ai_site') || (H?.llm ? '__local' : 'deepseek');
+  }
+};
+$('#drawerClose').onclick = () => { $('#drawer').hidden = true; };
+$('#ai_ctx').onclick = () => { const s = raw?.segments?.find(x => x.id === selSeg) || raw?.segments?.[0]; if (s) $('#ai_q').value += `\n\n当前段旁白：${s[textKey()] || s.text}`; };
+$('#ai_send').onclick = async () => {
+  const qv = $('#ai_q').value.trim(); if (!qv) return;
+  const site = $('#ai_site').value; localStorage.setItem('vf.ai_site', site);
+  $('#ai_send').disabled = true; $('#ai_status').textContent = site === '__local' ? '本地模型思考中…' : '在浏览器里提问，等待回答…';
+  try {
+    const j = site === '__local' ? await api('/api/llm', { prompt: qv }) : await api('/api/chat', { site, prompt: qv });
+    $('#ai_answer').textContent = j.text; $('#ai_actions').hidden = false; $('#ai_status').textContent = '';
+  } catch (e) { $('#ai_answer').innerHTML = `<span class="err">${esc(e.message)}</span>`; $('#ai_status').textContent = ''; }
+  $('#ai_send').disabled = false;
+};
+$('#ai_insert').onclick = () => { const t = $('#script'); if (t) { t.value = (t.value ? t.value + '\n\n' : '') + $('#ai_answer').textContent; $('#paste').hidden = false; t.scrollIntoView({ behavior: 'smooth' }); } else alert('先到第 1 步，脚本框在那里'); };
+$('#ai_copy').onclick = () => navigator.clipboard.writeText($('#ai_answer').textContent);
+$('#ai_clear').onclick = () => { $('#ai_answer').textContent = ''; $('#ai_q').value = ''; $('#ai_actions').hidden = true; };
 
 function openProps(c) {
   const m = $('#modal');

@@ -5,4 +5,4 @@ Pipeline: project.json -> TTS per segment (edge-tts, word timings) -> SRT
 -> optional burned-in subtitles -> thumbnail.
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

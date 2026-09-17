@@ -1,34 +1,70 @@
 <!doctype html>
-<html lang="zh">
+<html lang="zh" data-theme="system">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>vidforge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap">
 <link rel="stylesheet" href="/static/style.css">
+<script>
+  // apply the saved theme before first paint (no flash)
+  try { document.documentElement.dataset.theme = localStorage.getItem('vf.theme') || 'system'; } catch (e) {}
+</script>
 </head>
 <body>
-<header>
-  <h1>vidforge</h1>
-  <span class="path" id="path"></span>
-  <span class="health" id="health"></span>
-  <label class="muted">语言 <select id="lang"></select></label>
-  <span class="pill" id="saveState">已保存</span>
-</header>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><span class="logo">▶</span><span class="brand-name">vidforge</span><span class="ver" id="ver"></span></div>
+    <div class="project-card" id="projectCard" title="点击切换项目">
+      <div class="pc-title" id="pcTitle">—</div>
+      <div class="pc-path" id="pcPath"></div>
+    </div>
+    <nav class="steps" id="steps">
+      <button data-step="1"><span class="n">1</span><span class="lbl">脚本</span><span class="sub">写或生成旁白</span></button>
+      <button data-step="2"><span class="n">2</span><span class="lbl">配音</span><span class="sub">声音与试听</span></button>
+      <button data-step="3"><span class="n">3</span><span class="lbl">画面</span><span class="sub">每段挑素材</span></button>
+      <button data-step="4"><span class="n">4</span><span class="lbl">渲染</span><span class="sub">出片与主持人</span></button>
+      <button data-step="5"><span class="n">5</span><span class="lbl">发布</span><span class="sub">上传与声明</span></button>
+    </nav>
+    <div class="side-bottom">
+      <div class="health" id="health"></div>
+      <div class="row" style="gap:6px;margin:8px 0 0">
+        <select id="theme" title="主题">
+          <option value="system">跟随系统</option><option value="light">亮色</option><option value="dark">暗色</option><option value="eye">护眼</option>
+        </select>
+        <select id="lang" title="项目语言"></select>
+      </div>
+    </div>
+  </aside>
 
-<nav class="steps" id="steps">
-  <button data-step="1"><span class="n">1</span>脚本</button>
-  <button data-step="2"><span class="n">2</span>配音</button>
-  <button data-step="3"><span class="n">3</span>画面</button>
-  <button data-step="4"><span class="n">4</span>渲染</button>
-  <button data-step="5"><span class="n">5</span>发布</button>
-</nav>
+  <div class="main">
+    <header class="topbar">
+      <div class="crumbs" id="crumbs"></div>
+      <div class="actions">
+        <span class="savestate" id="saveState">已保存</span>
+        <button class="small" id="saveBtn" title="Ctrl+S">保存</button>
+        <select id="history" class="small" title="历史版本（每次保存自动留存，最多 30 份）"><option value="">历史版本…</option></select>
+        <button class="small" id="aiToggle" title="AI 助手：在侧栏向你浏览器里的 AI 提问">✦ AI 助手</button>
+      </div>
+    </header>
+    <main>
+      <div id="issues"></div>
+      <div id="tour"></div>
+      <section id="view"></section>
+      <div class="footer-nav"><button id="prev">← 上一步</button><button class="primary" id="next">下一步 →</button></div>
+    </main>
+  </div>
 
-<main>
-  <div id="issues"></div>
-  <div id="tour"></div>
-  <section id="view"></section>
-  <div class="footer-nav"><button id="prev">← 上一步</button><button class="primary" id="next">下一步 →</button></div>
-</main>
+  <aside class="drawer" id="drawer" hidden>
+    <div class="drawer-head"><b>✦ AI 助手</b><button class="ghost small" id="drawerClose">✕</button></div>
+    <div class="row"><select id="ai_site" class="grow"></select></div>
+    <textarea id="ai_q" rows="4" placeholder="向 AI 提问……回答会显示在下面。例如：给这一段写三个更有画面感的开场句。"></textarea>
+    <div class="row"><button class="primary small" id="ai_send">发送</button><button class="small" id="ai_ctx" title="把当前段的旁白附在问题后面">附上当前段</button><span class="muted" id="ai_status"></span></div>
+    <div class="ai_answer" id="ai_answer"></div>
+    <div class="row" id="ai_actions" hidden><button class="small" id="ai_insert">插入脚本框</button><button class="small" id="ai_copy">复制</button><button class="small" id="ai_clear">清空</button></div>
+  </aside>
+</div>
 
 <div id="modal"></div>
 <script src="/static/app.js"></script>

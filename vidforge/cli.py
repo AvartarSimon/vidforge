@@ -127,6 +127,57 @@ def cmd_voice(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_start(args: argparse.Namespace) -> int:
+    """Open the last project (or the project picker) in the browser — the one-command start."""
+    from . import ui
+    from .ui import recent_projects
+    target = args.project
+    if not target and not args.picker:
+        rec = recent_projects()
+        if rec:
+            target = rec[0]["path"]
+    ui.serve(target, port=args.port, open_browser=True)
+    return 0
+
+
+def cmd_shortcut(_: argparse.Namespace) -> int:
+    """Desktop shortcut that runs `vidforge start` (Windows .lnk / macOS .command / Linux .desktop)."""
+    import platform
+    import subprocess
+    desktop = Path.home() / "Desktop"
+    if platform.system() == "Windows":
+        try:   # the real Desktop may live under OneDrive
+            out = subprocess.run(["powershell", "-NoProfile", "-Command", "[Environment]::GetFolderPath('Desktop')"],
+                                 capture_output=True, text=True, timeout=20).stdout.strip()
+            if out:
+                desktop = Path(out)
+        except Exception:  # noqa: BLE001
+            pass
+    if not desktop.exists():
+        desktop = Path.home()
+    py = sys.executable
+    if platform.system() == "Windows":
+        pyw = Path(py).with_name("pythonw.exe")
+        exe = str(pyw if pyw.exists() else py)
+        lnk = desktop / "vidforge.lnk"
+        ps = (f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{lnk}');"
+              f"$s.TargetPath='{exe}';$s.Arguments='-m vidforge.cli start';$s.WorkingDirectory='{Path.home()}';"
+              f"$s.IconLocation='{Path(sys.executable).parent / 'python.exe'},0';$s.Description='vidforge';$s.Save()")
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps], check=True)
+        print(f"created {lnk}  (double-click to start; it opens your last project)")
+    elif platform.system() == "Darwin":
+        f = desktop / "vidforge.command"
+        f.write_text(f"#!/bin/bash\n'{py}' -m vidforge.cli start\n", encoding="utf-8")
+        f.chmod(0o755)
+        print(f"created {f}  (first time: right-click → Open)")
+    else:
+        f = desktop / "vidforge.desktop"
+        f.write_text(f"[Desktop Entry]\nType=Application\nName=vidforge\nExec={py} -m vidforge.cli start\nTerminal=false\n", encoding="utf-8")
+        f.chmod(0o755)
+        print(f"created {f}")
+    return 0
+
+
 def cmd_ui(args: argparse.Namespace) -> int:
     from . import ui
     ui.serve(args.project, port=args.port, open_browser=not args.no_browser)
@@ -229,6 +280,15 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--text", default="", help="sample text (>= 100 chars; default: a narration sample)")
     s.add_argument("--name", default="vidforge narrator")
     s.set_defaults(fn=cmd_voice)
+
+    s = sub.add_parser("start", help="open vidforge: last project, or the project picker")
+    s.add_argument("project", nargs="?")
+    s.add_argument("--picker", action="store_true", help="always show the project picker")
+    s.add_argument("--port", type=int, default=8765)
+    s.set_defaults(fn=cmd_start)
+
+    s = sub.add_parser("shortcut", help="create a desktop shortcut that runs `vidforge start`")
+    s.set_defaults(fn=cmd_shortcut)
 
     s = sub.add_parser("ui", help="local web UI for a project (edit, proof-listen, build)")
     s.add_argument("project")
