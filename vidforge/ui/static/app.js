@@ -4,6 +4,16 @@ const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = (s) => s == null ? '–' : (s >= 60 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : `${s.toFixed(1)} s`);
 const fileUrl = (rel, bust) => rel ? `/files/${rel.split('/').map(encodeURIComponent).join('/')}${bust ? '?t=' + bust : ''}` : null;
+// A consistent-per-name colour + first letter/character, so a list of projects/categories reads
+// at a glance instead of every row starting with the same generic bullet.
+const AVATAR_HUES = [12, 28, 340, 265, 200, 165, 45, 320];
+function avatarHtml(name) {
+  const s = String(name || '?').trim();
+  let hash = 0; for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+  const hue = AVATAR_HUES[hash % AVATAR_HUES.length];
+  const ch = [...s][0]?.toUpperCase() || '?';
+  return `<span class="avatar" style="background:hsl(${hue} 62% 46%)">${esc(ch)}</span>`;
+}
 // The reusable "how to write a script for vidforge" spec — paste-ready for any AI chat, so
 // scripts written elsewhere still split into segments correctly when pasted back into step 1.
 // Word count scales with the project's target length (raw.target_minutes) instead of being fixed.
@@ -104,7 +114,7 @@ async function renderHome(h) {
         <select id="np_cat"><option value="">不用分类</option>${CATS.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>
         <button class="small" id="np_cat_manage">管理分类…</button><button class="primary" id="np_go">创建并打开</button></div></div>
     <div class="card"><h3 style="margin:0 0 10px">最近的项目</h3>
-      <div class="proj-grid">${(h.projects || []).map(pr => `<div class="proj" data-path="${esc(pr.path)}"><b>${esc(pr.title)}</b><span class="muted">${esc(pr.path)}</span><div class="row" style="margin:6px 0 0"><span class="pill ${pr.final ? 'ok' : ''}">${pr.final ? '已有成片' : '进行中'}</span><span class="muted">${new Date(pr.opened * 1000).toLocaleString()}</span></div></div>`).join('') || '<span class="muted">还没有项目。</span>'}</div>
+      <div class="proj-grid">${(h.projects || []).map(pr => `<div class="proj" data-path="${esc(pr.path)}">${avatarHtml(pr.title)}<div class="proj-body"><b>${esc(pr.title)}</b><span class="muted">${esc(pr.path)}</span><div class="row" style="margin:6px 0 0"><span class="pill ${pr.final ? 'ok' : ''}">${pr.final ? '已有成片' : '进行中'}</span><span class="muted">${new Date(pr.opened * 1000).toLocaleString()}</span></div></div></div>`).join('') || '<span class="muted">还没有项目。</span>'}</div>
       <div class="row" style="margin-top:10px"><input id="op_path" class="grow" placeholder="或输入任意项目文件夹路径…"><button id="op_go">打开</button></div></div></div>`;
   $('#np_go').onclick = async () => { try { await api('/api/new', { name: $('#np_name').value, title: $('#np_title').value, language: $('#np_lang').value, category: $('#np_cat').value || null }); step = 1; $('.footer-nav').hidden = false; await load(); } catch (e) { alert(e.message); } };
   $('#np_cat_manage').onclick = () => openCategoryManager(() => { CATS = null; renderHome(h); });
@@ -122,12 +132,12 @@ function openCategoryManager(onChange) {
       <div class="row" style="justify-content:space-between"><b>分类管理</b><button class="ghost" id="close">✕</button></div>
       <p class="hint">一个分类 = 一套写脚本/发布的设置和参考资料，跨项目复用。存成普通 JSON 文件（<code>~/.vidforge/categories/</code>），不是数据库——所以可以直接拷文件备份，或用下面的导出/导入在两台机器间同步、合并。</p>
       <div class="row"><button class="primary small" id="cat_new">＋ 新建分类</button><button class="small" id="cat_export">导出全部…</button><label class="small" style="border:1px solid var(--line);border-radius:var(--radius-sm);padding:4px 10px;cursor:pointer">导入…<input type="file" id="cat_import" hidden accept="application/json"></label></div>
-      <div class="seglist" style="margin-top:8px">${(CATS || []).map(c => `<div class="seg-row" data-id="${esc(c.id)}" style="grid-template-columns:1fr 90px 90px"><span><b>${esc(c.name)}</b><br><span class="muted" style="font-size:11px">${esc(c.id)} · 更新于 ${esc(c.updated || '')}</span></span><button class="small" data-edit="${esc(c.id)}">编辑</button><button class="small" data-del="${esc(c.id)}">删除</button></div>`).join('') || '<p class="muted">还没有分类。</p>'}</div>
+      <div style="margin-top:6px">${(CATS || []).map(c => `<div class="mgmt-row" data-id="${esc(c.id)}">${avatarHtml(c.name)}<div class="mgmt-body"><div class="mgmt-title">${esc(c.name)}</div><div class="mgmt-sub">${esc(c.id)} · 更新于 ${esc(c.updated || '')}</div></div><div class="mgmt-actions"><button class="icon-btn" data-edit="${esc(c.id)}" title="编辑">✎</button><button class="icon-btn" data-del="${esc(c.id)}" title="删除">🗑</button></div></div>`).join('') || '<p class="muted">还没有分类。</p>'}</div>
       </div></div>`;
     $('#close').onclick = () => { m.innerHTML = ''; onChange?.(); };
     $('#cat_new').onclick = () => openCategoryEditor(null, render);
     m.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openCategoryEditor(CATS.find(c => c.id === b.dataset.edit), render));
-    m.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (!confirm(`删除分类「${b.closest('.seg-row').querySelector('b').textContent}」？（不影响已经用它建过的项目）`)) return; const j = await api('/api/categories/delete', { id: b.dataset.del }); CATS = j.categories; render(); });
+    m.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (!confirm(`删除分类「${b.closest('.mgmt-row').querySelector('.mgmt-title').textContent}」？（不影响已经用它建过的项目）`)) return; const j = await api('/api/categories/delete', { id: b.dataset.del }); CATS = j.categories; render(); });
     $('#cat_export').onclick = async () => { const j = await api('/api/categories/export'); await navigator.clipboard.writeText(JSON.stringify(j, null, 2)); alert('已复制到剪贴板（JSON），粘贴到一个 .json 文件保存即可；导入时选择这个文件。'); };
     $('#cat_import').onchange = async e => {
       const f = e.target.files[0]; if (!f) return;
@@ -177,10 +187,12 @@ $('#navToggle').onclick = async () => {
     <div class="row" style="justify-content:space-between"><b>项目</b><button class="ghost" id="close">✕</button></div>
     <div class="row"><button class="small primary" id="nav_new">＋ 新建项目</button><button class="small" id="nav_cat">🏷 管理分类…</button></div>
     <p class="hint" style="margin-top:10px">最近的项目——"切换"在当前窗口打开（会替换现在这个项目）；"⧉ 新窗口"另起一个独立进程并行工作，两边可以同时渲染互不影响。</p>
-    <div class="seglist">${projects.map(pr => `<div class="seg-row" data-path="${esc(pr.path)}" style="grid-template-columns:1fr 70px 90px">
-      <span><b>${esc(pr.title)}</b>${pr.path === current ? ' <span class="pill ok">当前</span>' : ''}<br><span class="muted" style="font-size:11px">${esc(pr.path)}</span></span>
-      <button class="small" data-switch="${esc(pr.path)}" ${pr.path === current ? 'disabled' : ''}>切换</button>
-      <button class="small" data-spawn="${esc(pr.path)}">⧉ 新窗口</button>
+    <div>${projects.map(pr => `<div class="mgmt-row" data-path="${esc(pr.path)}">${avatarHtml(pr.title)}
+      <div class="mgmt-body"><div class="mgmt-title">${esc(pr.title)}${pr.path === current ? ' <span class="pill ok">当前</span>' : ''}</div><div class="mgmt-sub">${esc(pr.path)}</div></div>
+      <div class="mgmt-actions">
+        <button class="small" data-switch="${esc(pr.path)}" ${pr.path === current ? 'disabled' : ''}>切换</button>
+        <button class="small" data-spawn="${esc(pr.path)}">⧉ 新窗口</button>
+      </div>
     </div>`).join('') || '<p class="muted">还没有项目。</p>'}</div>
     <div id="nav_status" class="muted" style="margin-top:6px"></div>
   </div></div>`;
