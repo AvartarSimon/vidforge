@@ -49,6 +49,13 @@ export function SplitPreviewDialog({
   const existingCount = raw?.segments.length || 0
 
   const accept = () => {
+    if (existingCount > 0) {
+      const hasWork = (raw?.segments || []).some((s) => s.clips.length || s.overlays?.length || s.voice)
+      const msg = hasWork
+        ? `现有 ${existingCount} 段里已经有配好的画面/声音了，替换成新拆的 ${rows.length} 段会全部丢掉。确定替换吗？`
+        : `确定用这 ${rows.length} 段替换现有的 ${existingCount} 段吗？`
+      if (!window.confirm(msg)) return
+    }
     const cleaned = rows.filter((p) => p.text.trim())
     patch((r) => {
       r.segments = cleaned.map((pc, i): Segment => {
@@ -65,7 +72,7 @@ export function SplitPreviewDialog({
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         拆分预览：{rows.length} 段 · 预计 {fmtSeconds(total)}
-        <IconButton onClick={onClose} size="small">
+        <IconButton onClick={onClose} size="small" aria-label="关闭">
           <CloseIcon fontSize="small" />
         </IconButton>
       </DialogTitle>
