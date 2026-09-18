@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Accordion,
   AccordionDetails,
@@ -12,8 +12,9 @@ import {
 } from '@mui/material'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { apiGet, apiPost } from '../../../api/client'
-import type { Category, ChatLoginStatus, ChatSite, SplitSegment } from '../../../api/types'
+import type { Category, ChatSite, SplitSegment } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
+import { pollLoginStatus } from '../../../utils'
 import { SplitPreviewDialog } from './SplitPreviewDialog'
 
 function categoryNote(categories: Category[], categoryId?: string | null) {
@@ -59,28 +60,6 @@ Requirements:
   return body + note
 }
 
-async function pollLoginStatus(setStatus: (s: string) => void) {
-  for (let i = 0; i < 150; i++) {
-    await new Promise((r) => setTimeout(r, 2000))
-    let j: ChatLoginStatus
-    try {
-      j = await apiGet<ChatLoginStatus>('/api/chat/login/status')
-    } catch {
-      continue
-    }
-    if (!j.running) {
-      const entries = Object.entries(j.status || {})
-      setStatus(
-        entries.length
-          ? '窗口已关闭：' + entries.map(([k, ok]) => `${ok ? '✓' : '✗'} ${k}`).join(' ')
-          : '窗口已关闭。',
-      )
-      return
-    }
-  }
-  setStatus('登录窗口还开着（5 分钟已到，继续登录不影响，关闭窗口后刷新页面看结果）。')
-}
-
 export function AiGeneratePanel({
   categories,
   points,
@@ -101,11 +80,15 @@ export function AiGeneratePanel({
   const [busy, setBusy] = useState(false)
   const [loginWall, setLoginWall] = useState(false)
   const [splitPieces, setSplitPieces] = useState<SplitSegment[] | null>(null)
+  const cancelledRef = useRef(false)
 
   useEffect(() => {
     apiGet<{ sites: ChatSite[] }>('/api/chat/sites')
       .then((j) => setSites(j.sites))
       .catch(() => setSites([]))
+    return () => {
+      cancelledRef.current = true
+    }
   }, [])
 
   if (!raw) return null
@@ -150,7 +133,7 @@ export function AiGeneratePanel({
       setStatus(e instanceof Error ? e.message : String(e))
       return
     }
-    await pollLoginStatus(setStatus)
+    await pollLoginStatus(setStatus, () => cancelledRef.current)
   }
 
   const retryAfterLogin = async () => {

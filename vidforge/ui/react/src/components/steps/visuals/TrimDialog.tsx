@@ -67,7 +67,9 @@ export function TrimDialog({
 
   const delRange = (i: number) => {
     setRanges((rs) => rs.filter((_, idx) => idx !== i))
-    setCur((c) => Math.min(c, ranges.length - 2))
+    // keep pointing at the same logical range: shift left by one if the deleted range was
+    // before (or was) the selected one, then clamp to the new (shorter) list.
+    setCur((c) => Math.max(0, Math.min(i <= c ? c - 1 : c, ranges.length - 2)))
   }
 
   const playSelected = () => {
@@ -93,7 +95,7 @@ export function TrimDialog({
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         选择片段范围
-        <IconButton size="small" onClick={onClose}>
+        <IconButton size="small" onClick={onClose} aria-label="关闭">
           <CloseIcon fontSize="small" />
         </IconButton>
       </DialogTitle>

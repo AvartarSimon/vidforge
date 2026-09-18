@@ -88,7 +88,7 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         {editing === undefined ? '分类管理' : editing === null ? '新建分类' : '编辑分类'}
-        <IconButton onClick={onClose} size="small">
+        <IconButton onClick={onClose} size="small" aria-label="关闭">
           <CloseIcon fontSize="small" />
         </IconButton>
       </DialogTitle>

@@ -92,7 +92,7 @@ export function VoiceBrowserDialog({
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         选择声音
-        <IconButton onClick={onClose} size="small">
+        <IconButton onClick={onClose} size="small" aria-label="关闭">
           <CloseIcon fontSize="small" />
         </IconButton>
       </DialogTitle>

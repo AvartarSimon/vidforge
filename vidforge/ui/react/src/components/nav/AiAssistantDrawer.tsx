@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Box,
   Button,
@@ -13,27 +13,17 @@ import CloseIcon from '@mui/icons-material/Close'
 import { apiGet, apiPost } from '../../api/client'
 import type { ChatLoginStatus, ChatSite } from '../../api/types'
 import { useProject } from '../../state/ProjectContext'
-
-async function pollLoginStatus(setStatus: (s: string) => void) {
-  for (let i = 0; i < 150; i++) {
-    await new Promise((r) => setTimeout(r, 2000))
-    let j: ChatLoginStatus
-    try {
-      j = await apiGet<ChatLoginStatus>('/api/chat/login/status')
-    } catch {
-      continue
-    }
-    if (!j.running) {
-      const entries = Object.entries(j.status || {})
-      setStatus(entries.length ? '窗口已关闭：' + entries.map(([k, ok]) => `${ok ? '✓' : '✗'} ${k}`).join(' ') : '窗口已关闭。')
-      return
-    }
-  }
-  setStatus('登录窗口还开着（5 分钟已到，继续登录不影响，关闭窗口后刷新页面看结果）。')
-}
+import { pollLoginStatus } from '../../utils'
 
 export function AiAssistantDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { raw } = useProject()
+  const cancelledRef = useRef(false)
+  useEffect(() => {
+    cancelledRef.current = false
+    return () => {
+      cancelledRef.current = true
+    }
+  }, [open])
   const [sites, setSites] = useState<ChatSite[]>([])
   const [hasLocalLlm, setHasLocalLlm] = useState(false)
   const [site, setSite] = useState(() => localStorage.getItem('vf.ai_site') || '__local')
@@ -78,7 +68,7 @@ export function AiAssistantDrawer({ open, onClose }: { open: boolean; onClose: (
       setLoginHint(e instanceof Error ? e.message : String(e))
       return
     }
-    await pollLoginStatus(setLoginHint)
+    await pollLoginStatus(setLoginHint, () => cancelledRef.current)
   }
 
   const ask = async (retry = false) => {
@@ -111,7 +101,7 @@ export function AiAssistantDrawer({ open, onClose }: { open: boolean; onClose: (
       <Box sx={{ width: 420, p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center">
           <Typography variant="h6">✦ AI 助手</Typography>
-          <IconButton size="small" onClick={onClose}>
+          <IconButton size="small" onClick={onClose} aria-label="关闭">
             <CloseIcon fontSize="small" />
           </IconButton>
         </Stack>
