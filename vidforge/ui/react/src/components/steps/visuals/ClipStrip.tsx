@@ -18,6 +18,7 @@ import { apiPost } from '../../../api/client'
 import type { Clip, ResolvedClip, ResolvedSegment, Segment } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
 import { fileUrl, fmtDuration } from '../../../utils'
+import { SegmentHistoryDialog } from '../../shared/SegmentHistoryDialog'
 
 const MOTIONS = ['zoom_in', 'zoom_out', 'pan_left', 'pan_right', 'none']
 
@@ -40,6 +41,7 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
   const [previewing, setPreviewing] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewInfo, setPreviewInfo] = useState('')
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   const r: Partial<ResolvedSegment> = view?.resolved[segId] || {}
   const need = r.need || 0
@@ -231,6 +233,9 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
           <Button size="small" onClick={duplicate} title="复制这一段到后面">
             复制一段
           </Button>
+          <Button size="small" title="这一段的历史版本" onClick={() => setHistoryOpen(true)}>
+            版本
+          </Button>
           <Typography variant="caption" color="text.secondary">
             {previewInfo}
           </Typography>
@@ -240,6 +245,7 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
             <video controls autoPlay style={{ maxWidth: 480 }} src={previewUrl} />
           </Box>
         )}
+        <SegmentHistoryDialog segId={segId} open={historyOpen} onClose={() => setHistoryOpen(false)} />
       </CardContent>
     </Card>
   )

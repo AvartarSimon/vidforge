@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   Box,
   Button,
@@ -11,8 +12,10 @@ import {
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import DeleteIcon from '@mui/icons-material/Delete'
+import HistoryIcon from '@mui/icons-material/History'
 import { useProject } from '../../../state/ProjectContext'
 import type { Segment } from '../../../api/types'
+import { SegmentHistoryDialog } from '../../shared/SegmentHistoryDialog'
 
 function newId(segments: Segment[]) {
   let n = segments.length + 1
@@ -23,6 +26,7 @@ function newId(segments: Segment[]) {
 
 export function ScriptEditorPanel() {
   const { raw, patch } = useProject()
+  const [historyFor, setHistoryFor] = useState<string | null>(null)
   if (!raw) return null
   const segments = raw.segments || []
 
@@ -115,6 +119,9 @@ export function ScriptEditorPanel() {
                 <IconButton size="small" onClick={() => remove(i)}>
                   <DeleteIcon fontSize="small" />
                 </IconButton>
+                <IconButton size="small" title="历史版本" onClick={() => setHistoryFor(s.id)}>
+                  <HistoryIcon fontSize="small" />
+                </IconButton>
               </Stack>
             </Stack>
           ))}
@@ -127,6 +134,7 @@ export function ScriptEditorPanel() {
           )}
         </Stack>
       </CardContent>
+      <SegmentHistoryDialog segId={historyFor} open={!!historyFor} onClose={() => setHistoryFor(null)} />
     </Card>
   )
 }

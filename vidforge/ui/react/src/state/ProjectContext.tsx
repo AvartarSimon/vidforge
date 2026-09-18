@@ -15,7 +15,7 @@ interface ProjectContextValue {
   reload: () => Promise<void>
   markDirty: () => void
   patch: (fn: (raw: RawProject) => void) => void
-  saveNow: () => Promise<boolean>
+  saveNow: (snapshot?: boolean) => Promise<boolean>
 }
 
 const ProjectContext = createContext<ProjectContextValue | null>(null)
@@ -59,12 +59,12 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     reload()
   }, [reload])
 
-  const save = useCallback(async (): Promise<boolean> => {
+  const save = useCallback(async (snapshot = false): Promise<boolean> => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
     if (!rawRef.current) return true
     setSaveState('saving')
     try {
-      await apiPost('/api/project', { raw: rawRef.current })
+      await apiPost('/api/project', { raw: rawRef.current, snapshot })
       setSaveState('saved')
       setSavedAt(new Date())
       return true
