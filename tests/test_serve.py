@@ -88,5 +88,52 @@ class PortIsOurs(unittest.TestCase):
         self.assertFalse(ui._Server.allow_reuse_address)
 
 
+class SpawnInstance(unittest.TestCase):
+    """spawn_instance() launches a genuinely separate `vidforge ui` process so two projects can
+    render/edit in parallel — this server has exactly one build slot and one current project by
+    design (see ReuseExistingInstance above), so real concurrency means a second process."""
+
+    def setUp(self):
+        self.td = Path(tempfile.mkdtemp())
+        (self.td / "assets").mkdir()
+        (self.td / "project.json").write_text(json.dumps({"title": "spawned", "segments": []}), encoding="utf-8")
+        self.url: str | None = None
+
+    def tearDown(self):
+        if self.url:
+            port = int(self.url.rstrip("/").rsplit(":", 1)[1])
+            self._kill_by_port(port)   # spawn_instance() starts a real detached process — clean it up
+        shutil.rmtree(self.td, ignore_errors=True)
+
+    @staticmethod
+    def _kill_by_port(port: int) -> None:
+        try:
+            import subprocess
+            out = subprocess.run(["netstat", "-ano"], capture_output=True, text=True, timeout=5).stdout
+            for line in out.splitlines():
+                if f":{port} " in line and "LISTENING" in line:
+                    pid = line.split()[-1]
+                    subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True, timeout=5)
+        except Exception:  # noqa: BLE001 — best-effort cleanup, never fail the test over it
+            pass
+
+    def test_spawns_a_real_independent_process_serving_the_given_project(self):
+        self.url = ui.spawn_instance(self.td, timeout=30.0)
+        self.assertTrue(self.url.startswith("http://127.0.0.1:"))
+        with urllib.request.urlopen(self.url + "api/health", timeout=3) as r:
+            health = json.loads(r.read())
+        self.assertIn("ffmpeg", health)
+        with urllib.request.urlopen(self.url + "api/project", timeout=3) as r:
+            proj = json.loads(r.read())
+        self.assertEqual(proj["raw"]["title"], "spawned")
+
+    def test_raises_a_clear_error_for_a_nonexistent_project(self):
+        # the spawned process exits almost immediately (SystemExit: project file not found), so
+        # it never answers /api/health — a short timeout is enough to prove spawn_instance()
+        # surfaces that as an error instead of hanging or returning a dead URL.
+        with self.assertRaises(RuntimeError):
+            ui.spawn_instance(self.td / "does-not-exist", timeout=5.0)
+
+
 if __name__ == "__main__":
     unittest.main()

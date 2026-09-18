@@ -29,6 +29,9 @@ import mimetypes
 import os
 import re
 import shutil
+import socket
+import subprocess
+import sys
 import threading
 import time
 import traceback
@@ -384,6 +387,15 @@ def make_handler(state: State):
                     except (FileNotFoundError, KeyError) as e:
                         return self._error(f"打不开：{e}")
                     return self._json({"opened": str(state.project_path)})
+                if path == "/api/instances/spawn":
+                    proj_path = Path(body.get("path", ""))
+                    if not proj_path.is_file() and not (proj_path / "project.json").is_file():
+                        return self._error("项目不存在")
+                    try:
+                        url = spawn_instance(proj_path)
+                    except RuntimeError as e:
+                        return self._error(str(e))
+                    return self._json({"url": url})
                 if path == "/api/new":
                     name = re.sub(r"[^\w\-\u4e00-\u9fff ]+", "", body.get("name", "")).strip() or time.strftime("video-%Y%m%d-%H%M")
                     root = Path(body.get("dir") or workspace_dir()) / name
@@ -835,6 +847,45 @@ class _Server(ThreadingHTTPServer):
     # process serving stale code and the new one. Disabling it makes a real conflict fail loudly
     # (a normal, expected OSError we handle right below) instead of silently double-binding.
     allow_reuse_address = False
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+_spawned: list[subprocess.Popen] = []   # keep Popen handles alive — letting one get garbage
+                                         # collected while its process is still running emits a
+                                         # ResourceWarning on every spawn; we deliberately never
+                                         # wait() on these (they're meant to outlive this call)
+
+
+def spawn_instance(project_path: Path, timeout: float = 20.0) -> str:
+    """Launch a second, independent `vidforge ui` process for `project_path` on a free port, so
+    it can render/edit fully in parallel with whatever this instance is doing — the single
+    server process here has one build slot and one "current project", by design (see _Server /
+    start_build), so real concurrency means a second process, not a second tab of this one.
+    Waits for it to actually answer before returning, so the caller can open the URL immediately."""
+    import urllib.error
+    import urllib.request
+    port = _free_port()
+    creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+    proc = subprocess.Popen([sys.executable, "-m", "vidforge.cli", "ui", str(project_path), "--port", str(port), "--no-browser"],
+                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            creationflags=creationflags, close_fds=True)
+    _spawned.append(proc)
+    url = f"http://127.0.0.1:{port}/"
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(f"{url}api/health", timeout=1.5)
+            return url
+        except (urllib.error.URLError, OSError):
+            time.sleep(0.3)
+    if proc.poll() is None:   # still alive but never answered — don't leave it running unreachable
+        proc.terminate()
+    raise RuntimeError(f"新实例在 {timeout:.0f} 秒内没有响应（端口 {port}）")
 
 
 def _port_is_ours(port: int, timeout: float = 1.5) -> bool:

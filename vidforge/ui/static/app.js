@@ -162,6 +162,43 @@ function openCategoryEditor(existing, back) {
 }
 $('#projectCard').onclick = async () => { P = { home: true, ...(await api('/api/projects')) }; renderHome(P); };
 
+/* ---------------- nav panel: switch/open projects and jump to global settings from anywhere ----
+   The 5-step sidebar is per-project workflow; this is the "everything else" entry point — recent
+   projects (switch here, or open a genuinely separate window so it can render in parallel — this
+   server process has exactly one current project and one build slot, see spawn_instance() on the
+   backend), + quick links to cross-project resources (categories) that used to be reachable only
+   from the home screen. */
+$('#navToggle').onclick = async () => {
+  const m = $('#modal');
+  let projects = [];
+  try { projects = (await api('/api/projects')).projects; } catch { /* still show the panel */ }
+  const current = raw ? P?.root : null;
+  m.innerHTML = `<div class="modal"><div class="box" style="width:520px">
+    <div class="row" style="justify-content:space-between"><b>项目</b><button class="ghost" id="close">✕</button></div>
+    <div class="row"><button class="small primary" id="nav_new">＋ 新建项目</button><button class="small" id="nav_cat">🏷 管理分类…</button></div>
+    <p class="hint" style="margin-top:10px">最近的项目——"切换"在当前窗口打开（会替换现在这个项目）；"⧉ 新窗口"另起一个独立进程并行工作，两边可以同时渲染互不影响。</p>
+    <div class="seglist">${projects.map(pr => `<div class="seg-row" data-path="${esc(pr.path)}" style="grid-template-columns:1fr 70px 90px">
+      <span><b>${esc(pr.title)}</b>${pr.path === current ? ' <span class="pill ok">当前</span>' : ''}<br><span class="muted" style="font-size:11px">${esc(pr.path)}</span></span>
+      <button class="small" data-switch="${esc(pr.path)}" ${pr.path === current ? 'disabled' : ''}>切换</button>
+      <button class="small" data-spawn="${esc(pr.path)}">⧉ 新窗口</button>
+    </div>`).join('') || '<p class="muted">还没有项目。</p>'}</div>
+    <div id="nav_status" class="muted" style="margin-top:6px"></div>
+  </div></div>`;
+  $('#close').onclick = () => { m.innerHTML = ''; };
+  $('#nav_new').onclick = async () => { m.innerHTML = ''; P = { home: true, ...(await api('/api/projects')) }; renderHome(P); };
+  $('#nav_cat').onclick = () => openCategoryManager(() => {});
+  m.querySelectorAll('[data-switch]').forEach(b => b.onclick = async () => {
+    if (raw && !(await save())) { if (!confirm('当前项目有改动没保存成功，切换会丢失，确定继续？')) return; }
+    try { await api('/api/open', { path: b.dataset.switch }); m.innerHTML = ''; step = 0; $('.footer-nav').hidden = false; await load(); }
+    catch (e) { alert(e.message); }
+  });
+  m.querySelectorAll('[data-spawn]').forEach(b => b.onclick = async () => {
+    b.disabled = true; $('#nav_status').textContent = '正在开一个新的 vidforge 实例（几秒钟）…';
+    try { const j = await api('/api/instances/spawn', { path: b.dataset.spawn }); window.open(j.url, '_blank'); m.innerHTML = ''; }
+    catch (e) { $('#nav_status').innerHTML = `<span class="err">${esc(e.message)}</span>`; b.disabled = false; }
+  });
+};
+
 /* ---------------- theme ---------------- */
 $('#theme').value = localStorage.getItem('vf.theme') || 'system';
 $('#theme').onchange = e => { document.documentElement.dataset.theme = e.target.value; localStorage.setItem('vf.theme', e.target.value); };
