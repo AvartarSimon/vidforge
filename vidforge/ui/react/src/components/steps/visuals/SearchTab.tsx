@@ -4,6 +4,7 @@ import { apiGet, apiPost } from '../../../api/client'
 import type { Segment, SearchCandidate } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
 import { fmtDuration } from '../../../utils'
+import { TrimDialog, type TrimRange } from './TrimDialog'
 
 const SOURCES = [
   { value: 'pexels', label: 'Pexels' },
@@ -26,8 +27,15 @@ export function SearchTab({ seg, segId, onAdded }: { seg: Segment; segId: string
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  const [trimming, setTrimming] = useState<SearchCandidate | null>(null)
 
   const keywords = view?.resolved[segId]?.keywords || []
+  const resolvedClips = view?.resolved[segId]?.clips
+  const segFixed = seg.clips.reduce((a, c, i) => {
+    const rc = resolvedClips?.[i]
+    const secs = c.video && c.out != null ? c.out - (c.in || 0) : c.image && c.duration ? c.duration : rc?.natural || 0
+    return a + (secs || 0)
+  }, 0)
 
   // reset the search box (but not source/kind, those are sticky preferences) whenever the
   // selected segment changes — mirrors the old frontend's picker.cands = [] on storyboard click
@@ -58,24 +66,17 @@ export function SearchTab({ seg, segId, onAdded }: { seg: Segment; segId: string
     setLoading(false)
   }
 
-  const addCandidate = async (c: SearchCandidate) => {
-    if (c.kind === 'image' && /版权未知/.test(c.license || '')) {
-      if (!window.confirm(`这张图来自网页，版权未知：\n${c.page_url}\n\n用于变现视频可能收到版权投诉。确定加入？（来源会记入 credits.txt）`)) return
-    }
+  const addCandidate = async (c: SearchCandidate, ranges: TrimRange[] | null) => {
     setAdding(true)
     try {
       const j = await apiPost<{ path: string; credit: string; duration: number | null; kind: string }>('/api/assets/fetch', {
         candidate: c,
       })
-      // videos: no trim UI yet (deferred) — add the whole clip, capped to what this segment still
-      // needs, starting at 0; the user can still delete/re-add if the default range isn't right.
-      const need = view?.resolved[segId]?.need || 8
       patch((raw) => {
         const s = raw.segments.find((x) => x.id === segId)
         if (!s) return
-        if (j.kind === 'video') {
-          const out = Math.min(j.duration || need, Math.max(3, need))
-          s.clips.push({ video: j.path, in: 0, out: +out.toFixed(2), credit: j.credit })
+        if (j.kind === 'video' && ranges) {
+          for (const r of ranges) s.clips.push({ video: j.path, in: +r.in.toFixed(2), out: +(r.out ?? r.in).toFixed(2), credit: j.credit })
         } else {
           s.clips.push({ image: j.path, motion: 'zoom_in', credit: j.credit })
         }
@@ -85,6 +86,18 @@ export function SearchTab({ seg, segId, onAdded }: { seg: Segment; segId: string
       setError(e instanceof Error ? e.message : String(e))
     }
     setAdding(false)
+  }
+
+  const clickCandidate = (c: SearchCandidate) => {
+    if (adding) return
+    if (c.kind === 'video') {
+      setTrimming(c)
+      return
+    }
+    if (/版权未知/.test(c.license || '')) {
+      if (!window.confirm(`这张图来自网页，版权未知：\n${c.page_url}\n\n用于变现视频可能收到版权投诉。确定加入？（来源会记入 credits.txt）`)) return
+    }
+    addCandidate(c, null)
   }
 
   return (
@@ -161,7 +174,7 @@ export function SearchTab({ seg, segId, onAdded }: { seg: Segment; segId: string
         {cands.map((c, i) => (
           <Box
             key={`${c.provider}-${c.id}-${i}`}
-            onClick={() => !adding && addCandidate(c)}
+            onClick={() => clickCandidate(c)}
             title={`${c.title || ''} · ${c.author} · ${c.license}`}
             sx={{ cursor: adding ? 'default' : 'pointer', border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}
           >
@@ -188,6 +201,20 @@ export function SearchTab({ seg, segId, onAdded }: { seg: Segment; segId: string
         <Button size="small" onClick={() => doSearch(page + 1)} sx={{ alignSelf: 'center' }}>
           更多结果
         </Button>
+      )}
+      {trimming && (
+        <TrimDialog
+          open
+          url={trimming.preview_url}
+          duration={trimming.duration}
+          ranges={[{ in: 0, out: Math.min(trimming.duration || 10, Math.max(3, Math.ceil((view?.resolved[segId]?.need || 8) - segFixed))) }]}
+          onClose={() => setTrimming(null)}
+          onDone={(ranges) => {
+            const c = trimming
+            setTrimming(null)
+            addCandidate(c, ranges)
+          }}
+        />
       )}
     </Stack>
   )

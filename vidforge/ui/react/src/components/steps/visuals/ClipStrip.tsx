@@ -15,10 +15,12 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import DeleteIcon from '@mui/icons-material/Delete'
 import { apiPost } from '../../../api/client'
-import type { Clip, ResolvedClip, ResolvedSegment, Segment } from '../../../api/types'
+import type { Clip, Overlay, ResolvedClip, ResolvedSegment, Segment } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
 import { fileUrl, fmtDuration } from '../../../utils'
 import { SegmentHistoryDialog } from '../../shared/SegmentHistoryDialog'
+import { OverlayDialog } from './OverlayDialog'
+import { TrimDialog, type TrimRange } from './TrimDialog'
 
 const MOTIONS = ['zoom_in', 'zoom_out', 'pan_left', 'pan_right', 'none']
 
@@ -42,6 +44,8 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewInfo, setPreviewInfo] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [overlayEditor, setOverlayEditor] = useState<{ index: number | null } | null>(null) // index null = adding
+  const [trimTarget, setTrimTarget] = useState<{ index: number; mode: 'replace' | 'more' } | null>(null)
 
   const r: Partial<ResolvedSegment> = view?.resolved[segId] || {}
   const need = r.need || 0
@@ -79,6 +83,22 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
       else delete clips[i].duration
     })
 
+  const applyTrim = (ranges: TrimRange[]) => {
+    if (!trimTarget) return
+    const { index, mode } = trimTarget
+    mutateClips((clips) => {
+      const c = clips[index]
+      if (mode === 'replace') {
+        c.in = ranges[0].in
+        c.out = ranges[0].out
+        ranges.slice(1).forEach((r, k) => clips.splice(index + 1 + k, 0, { video: c.video, in: r.in, out: r.out, credit: c.credit }))
+      } else {
+        ranges.forEach((r, k) => clips.splice(index + 1 + k, 0, { video: c.video, in: r.in, out: r.out, credit: c.credit }))
+      }
+    })
+    setTrimTarget(null)
+  }
+
   const duplicate = () =>
     patch((raw) => {
       const i = raw.segments.findIndex((x) => x.id === segId)
@@ -97,6 +117,26 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
       const s = raw.segments.find((x) => x.id === segId)
       if (s) s.fit = v
     })
+
+  const mutateOverlays = (fn: (overlays: Overlay[]) => void) =>
+    patch((raw) => {
+      const s = raw.segments.find((x) => x.id === segId)
+      if (!s) return
+      s.overlays = s.overlays || []
+      fn(s.overlays)
+    })
+  const addAvatarOverlay = () =>
+    mutateOverlays((overlays) => overlays.push({ avatar: true, position: 'bottom-right', size: 0.28 }))
+  const removeOverlay = (i: number) => mutateOverlays((overlays) => overlays.splice(i, 1))
+  const saveOverlay = (o: Overlay) => {
+    mutateOverlays((overlays) => {
+      if (overlayEditor?.index != null) overlays[overlayEditor.index] = o
+      else overlays.push(o)
+    })
+    setOverlayEditor(null)
+  }
+  const overlayLabel = (o: Overlay) =>
+    `${o.avatar ? '主持人' : o.me ? '🎥 我' : o.video ? '视频' : '图片'} · ${o.position || 'bottom-right'} · ${Math.round((o.size || 0.3) * 100)}% · ${o.at || 0}s${o.duration ? `→${(o.at || 0) + o.duration}s` : '→末'}`
 
   const preview = async () => {
     if (!seg.clips.length) {
@@ -204,13 +244,43 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
                   </Stack>
                 )}
                 {c.video && (
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                    {c.out != null ? `${(c.in || 0).toFixed(1)}→${c.out.toFixed(1)}s` : '整段'}
-                  </Typography>
+                  <Stack spacing={0.25} sx={{ mt: 0.5 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      {c.out != null ? `${(c.in || 0).toFixed(1)}→${c.out.toFixed(1)}s` : '整段'}
+                    </Typography>
+                    <Stack direction="row" spacing={0.5}>
+                      <Button size="small" onClick={() => setTrimTarget({ index: i, mode: 'replace' })}>
+                        选段
+                      </Button>
+                      <Button size="small" title="用同一个视频再选几段" onClick={() => setTrimTarget({ index: i, mode: 'more' })}>
+                        再选
+                      </Button>
+                    </Stack>
+                  </Stack>
                 )}
               </Box>
             )
           })}
+        </Stack>
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
+          <Typography variant="caption" fontWeight={600}>
+            画中画
+          </Typography>
+          {(seg.overlays || []).map((o, i) => (
+            <Chip
+              key={i}
+              size="small"
+              label={overlayLabel(o)}
+              onClick={o.avatar || o.me ? undefined : () => setOverlayEditor({ index: i })}
+              onDelete={() => removeOverlay(i)}
+            />
+          ))}
+          <Button size="small" onClick={() => setOverlayEditor({ index: null })}>
+            ＋ 图片/视频
+          </Button>
+          <Button size="small" onClick={addAvatarOverlay} title="这一段加数字主持人（第 4 步可设外观）">
+            ＋ 主持人
+          </Button>
         </Stack>
         <Stack direction="row" spacing={2} alignItems="center" sx={{ mt: 1 }}>
           <TextField select size="small" label="片段不够长时" value={seg.fit === 'trim' ? 'trim' : 'stretch'} onChange={(e) => setFit(e.target.value)} sx={{ minWidth: 220 }}>
@@ -246,6 +316,30 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
           </Box>
         )}
         <SegmentHistoryDialog segId={segId} open={historyOpen} onClose={() => setHistoryOpen(false)} />
+        {overlayEditor && (
+          <OverlayDialog
+            open
+            seg={seg}
+            existing={overlayEditor.index != null ? seg.overlays?.[overlayEditor.index] || null : null}
+            need={need}
+            onClose={() => setOverlayEditor(null)}
+            onSave={saveOverlay}
+          />
+        )}
+        {trimTarget && (
+          <TrimDialog
+            open
+            url={fileUrl(r.clips?.[trimTarget.index]?.path) || ''}
+            duration={null}
+            ranges={
+              trimTarget.mode === 'replace'
+                ? [{ in: seg.clips[trimTarget.index].in || 0, out: seg.clips[trimTarget.index].out ?? 0 }]
+                : [{ in: seg.clips[trimTarget.index].out || 0, out: (seg.clips[trimTarget.index].out || 0) + 5 }]
+            }
+            onClose={() => setTrimTarget(null)}
+            onDone={applyTrim}
+          />
+        )}
       </CardContent>
     </Card>
   )
