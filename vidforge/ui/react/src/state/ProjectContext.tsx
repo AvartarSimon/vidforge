@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { apiGet, apiPost } from '../api/client'
 import type { ProjectView, RawProject } from '../api/types'
+import { normalizeSegments } from '../utils'
 
 type SaveState = 'saved' | 'dirty' | 'saving' | 'error'
 
@@ -32,18 +33,25 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const rawRef = useRef<RawProject | null>(null)
   rawRef.current = raw
 
+  // `loading` drives the full-page spinner in App.tsx, which unmounts the current step while it's
+  // true — fine for the very first load, but a refresh *after* an already-open project (e.g. a
+  // step re-fetching server-computed fields post-save) must not do that, or every such refresh
+  // would blow away in-progress UI state (open dialogs, a picker's selected source/tab, …) even
+  // though nothing about the currently-open project actually changed identity.
   const reload = useCallback(async () => {
-    setLoading(true)
+    const isInitialLoad = rawRef.current === null
+    if (isInitialLoad) setLoading(true)
     setError(null)
     try {
       const v = await apiGet<ProjectView>('/api/project')
+      if (!v.home) normalizeSegments(v.raw)
       setView(v)
       setRaw(v.home ? null : v.raw)
       setSaveState('saved')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
-      setLoading(false)
+      if (isInitialLoad) setLoading(false)
     }
   }, [])
 
