@@ -247,6 +247,14 @@ export interface AnalyzeResult {
   risks?: string[]
 }
 
+export interface MeItem {
+  name: string
+  tags?: string[]
+  talking?: boolean
+  duration?: number | null
+  uses?: number
+}
+
 export interface SearchCandidate {
   provider: string
   id: string

@@ -21,6 +21,7 @@ import { fileUrl, fmtDuration } from '../../../utils'
 import { SegmentHistoryDialog } from '../../shared/SegmentHistoryDialog'
 import { OverlayDialog } from './OverlayDialog'
 import { TrimDialog, type TrimRange } from './TrimDialog'
+import { PropsEditorDialog } from './PropsEditorDialog'
 
 const MOTIONS = ['zoom_in', 'zoom_out', 'pan_left', 'pan_right', 'none']
 
@@ -46,6 +47,7 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [overlayEditor, setOverlayEditor] = useState<{ index: number | null } | null>(null) // index null = adding
   const [trimTarget, setTrimTarget] = useState<{ index: number; mode: 'replace' | 'more' } | null>(null)
+  const [propsTarget, setPropsTarget] = useState<number | null>(null)
 
   const r: Partial<ResolvedSegment> = view?.resolved[segId] || {}
   const need = r.need || 0
@@ -243,6 +245,11 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
                     />
                   </Stack>
                 )}
+                {c.remotion && (
+                  <Button size="small" onClick={() => setPropsTarget(i)} sx={{ mt: 0.5 }}>
+                    编辑
+                  </Button>
+                )}
                 {c.video && (
                   <Stack spacing={0.25} sx={{ mt: 0.5 }}>
                     <Typography variant="caption" color="text.secondary">
@@ -338,6 +345,18 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
             }
             onClose={() => setTrimTarget(null)}
             onDone={applyTrim}
+          />
+        )}
+        {propsTarget != null && (
+          <PropsEditorDialog
+            clip={seg.clips[propsTarget]}
+            onClose={() => setPropsTarget(null)}
+            onSave={(props) => {
+              mutateClips((clips) => {
+                if (clips[propsTarget].remotion) clips[propsTarget].remotion!.props = props
+              })
+              setPropsTarget(null)
+            }}
           />
         )}
       </CardContent>
