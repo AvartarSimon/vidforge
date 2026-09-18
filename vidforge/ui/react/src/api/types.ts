@@ -157,6 +157,15 @@ export interface CategorySource {
   url?: string
 }
 
+export interface CategoryDefaults {
+  voice?: string
+  tts_provider?: string
+  language?: string
+  subtitles_bilingual?: boolean
+  outro_vocab?: number
+  [key: string]: unknown
+}
+
 export interface Category {
   id: string
   name: string
@@ -164,9 +173,12 @@ export interface Category {
   insights?: string
   sources?: CategorySource[]
   platforms?: string[]
+  tags?: string[]
   banned_keywords?: string[]
   platform_restrictions?: string
-  defaults?: Record<string, unknown>
+  defaults?: CategoryDefaults
+  updated?: string
+  [key: string]: unknown
 }
 
 export interface ChatSite {

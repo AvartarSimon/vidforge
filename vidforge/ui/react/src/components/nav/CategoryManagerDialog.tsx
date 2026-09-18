@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Avatar,
   Button,
@@ -11,12 +11,12 @@ import {
   ListItemAvatar,
   ListItemText,
   Stack,
-  TextField,
   Typography,
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import { apiGet, apiPost } from '../../api/client'
 import type { Category } from '../../api/types'
+import { CategoryEditorForm } from './CategoryEditorForm'
 
 function avatarLetter(name: string) {
   return [...(name || '?')][0]?.toUpperCase() || '?'
@@ -26,10 +26,8 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [editing, setEditing] = useState<Category | null>(null) // null = list view, {} = new, Category = edit existing
-  const [editName, setEditName] = useState('')
-  const [editJson, setEditJson] = useState('')
-  const [editError, setEditError] = useState<string | null>(null)
+  const [editing, setEditing] = useState<Category | null | undefined>(undefined) // undefined = list, null = new, Category = edit existing
+  const importRef = useRef<HTMLInputElement>(null)
 
   const load = () => {
     setLoading(true)
@@ -41,39 +39,15 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
 
   useEffect(() => {
     if (open) {
-      setEditing(null)
+      setEditing(undefined)
       load()
     }
   }, [open])
 
-  const startEdit = (c: Category | null) => {
-    const { name, id, ...rest } = c || ({} as Category)
-    void id
-    setEditName(name || '')
-    setEditJson(JSON.stringify(rest, null, 2))
-    setEditError(null)
-    setEditing(c || ({} as Category))
-  }
-
-  const saveEdit = async () => {
-    let rest: Record<string, unknown>
-    try {
-      rest = JSON.parse(editJson || '{}')
-    } catch (e) {
-      setEditError('JSON 有误：' + (e instanceof Error ? e.message : String(e)))
-      return
-    }
-    if (!editName.trim()) {
-      setEditError('需要一个名字')
-      return
-    }
-    try {
-      await apiPost('/api/categories', { ...rest, id: editing?.id, name: editName.trim() })
-      setEditing(null)
-      load()
-    } catch (e) {
-      setEditError(e instanceof Error ? e.message : String(e))
-    }
+  const saveEdit = async (rec: Category) => {
+    await apiPost('/api/categories', rec)
+    setEditing(undefined)
+    load()
   }
 
   const del = async (c: Category) => {
@@ -86,24 +60,63 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
     }
   }
 
+  const exportAll = async () => {
+    const j = await apiGet<unknown>('/api/categories/export')
+    await navigator.clipboard.writeText(JSON.stringify(j, null, 2))
+    window.alert('已复制到剪贴板（JSON），粘贴到一个 .json 文件保存即可；导入时选择这个文件。')
+  }
+
+  const importFile = async (f: File) => {
+    let data: unknown
+    try {
+      data = JSON.parse(await f.text())
+    } catch {
+      window.alert('不是有效的 JSON 文件')
+      return
+    }
+    const merge = window.confirm('合并到现有分类？（确定 = 合并/按 id 覆盖同名分类，取消 = 替换全部现有分类）')
+    try {
+      const j = await apiPost<{ categories: Category[]; imported: number }>('/api/categories/import', { data, merge })
+      window.alert(`导入了 ${j.imported} 个分类。`)
+      setCategories(j.categories)
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        {editing === null ? '分类管理' : editing.id ? '编辑分类' : '新建分类'}
+        {editing === undefined ? '分类管理' : editing === null ? '新建分类' : '编辑分类'}
         <IconButton onClick={onClose} size="small">
           <CloseIcon fontSize="small" />
         </IconButton>
       </DialogTitle>
       <DialogContent dividers>
-        {editing === null ? (
+        {editing === undefined ? (
           <>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
               一个分类 = 一套写脚本/发布的设置和参考资料，跨项目复用。存成普通 JSON 文件（
-              <code>~/.vidforge/categories/</code>），不是数据库。
+              <code>~/.vidforge/categories/</code>），不是数据库——所以可以直接拷文件备份，或用导出/导入在两台机器间同步。
             </Typography>
-            <Button variant="contained" size="small" onClick={() => startEdit(null)} sx={{ mb: 1.5 }}>
-              ＋ 新建分类
-            </Button>
+            <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
+              <Button variant="contained" size="small" onClick={() => setEditing(null)}>
+                ＋ 新建分类
+              </Button>
+              <Button size="small" onClick={exportAll}>
+                导出全部…
+              </Button>
+              <Button size="small" onClick={() => importRef.current?.click()}>
+                导入…
+              </Button>
+              <input
+                ref={importRef}
+                type="file"
+                hidden
+                accept="application/json"
+                onChange={(e) => e.target.files?.[0] && importFile(e.target.files[0])}
+              />
+            </Stack>
             {error && (
               <Typography color="error" variant="body2" sx={{ mb: 1 }}>
                 {error}
@@ -121,7 +134,7 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
                     sx={{ borderRadius: 2, mb: 0.5, border: '1px solid', borderColor: 'divider' }}
                     secondaryAction={
                       <Stack direction="row" spacing={0.5}>
-                        <IconButton size="small" title="编辑" onClick={() => startEdit(c)}>
+                        <IconButton size="small" title="编辑" onClick={() => setEditing(c)}>
                           ✎
                         </IconButton>
                         <IconButton size="small" title="删除" onClick={() => del(c)}>
@@ -133,7 +146,7 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
                     <ListItemAvatar>
                       <Avatar sx={{ bgcolor: 'secondary.main' }}>{avatarLetter(c.name)}</Avatar>
                     </ListItemAvatar>
-                    <ListItemText primary={c.name} secondary={c.id} />
+                    <ListItemText primary={c.name} secondary={`${c.id}${c.updated ? ' · 更新于 ' + c.updated : ''}`} />
                   </ListItem>
                 ))}
                 {!categories.length && (
@@ -145,36 +158,7 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
             )}
           </>
         ) : (
-          <Stack spacing={1.5}>
-            <TextField
-              label="名字"
-              size="small"
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              placeholder="例：中国古代历史人文 / FND"
-            />
-            <Typography variant="caption" color="text.secondary">
-              其余设置（JSON——平台、参考账号、资料源、标签、心得、禁用关键词/平台把关规则、默认声音等，字段自己按需增减）
-            </Typography>
-            <TextField
-              value={editJson}
-              onChange={(e) => setEditJson(e.target.value)}
-              multiline
-              minRows={12}
-              slotProps={{ htmlInput: { style: { fontFamily: 'ui-monospace,Consolas,monospace', fontSize: 12 } } }}
-            />
-            {editError && (
-              <Typography color="error" variant="body2">
-                {editError}
-              </Typography>
-            )}
-            <Stack direction="row" spacing={1} justifyContent="flex-end">
-              <Button onClick={() => setEditing(null)}>取消</Button>
-              <Button variant="contained" onClick={saveEdit}>
-                保存
-              </Button>
-            </Stack>
-          </Stack>
+          <CategoryEditorForm initial={editing} onCancel={() => setEditing(undefined)} onSave={saveEdit} />
         )}
       </DialogContent>
     </Dialog>

@@ -13,9 +13,13 @@ import {
   Divider,
 } from '@mui/material'
 import CategoryIcon from '@mui/icons-material/Category'
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
+import MonitorHeartIcon from '@mui/icons-material/MonitorHeart'
 import { useProject } from '../../state/ProjectContext'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { CategoryManagerDialog } from './CategoryManagerDialog'
+import { AiAssistantDrawer } from './AiAssistantDrawer'
+import { SystemStatusDialog } from './SystemStatusDialog'
 
 export const DRAWER_WIDTH = 272
 
@@ -31,6 +35,8 @@ export function NavRail({ activeStep, onStep }: { activeStep: number; onStep: (n
   const { view, raw } = useProject()
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [categoryOpen, setCategoryOpen] = useState(false)
+  const [aiOpen, setAiOpen] = useState(false)
+  const [statusOpen, setStatusOpen] = useState(false)
 
   const title = raw?.title || (view?.root ? view.root.split(/[\\/]/).pop() : null) || '未打开项目'
   const path = view?.root || ''
@@ -70,7 +76,7 @@ export function NavRail({ activeStep, onStep }: { activeStep: number; onStep: (n
           </ListItemButton>
         </Box>
         <Divider />
-        <List sx={{ flexGrow: 1 }}>
+        <List>
           {STEPS.map((s) => (
             <ListItemButton
               key={s.n}
@@ -96,15 +102,31 @@ export function NavRail({ activeStep, onStep }: { activeStep: number; onStep: (n
           ))}
         </List>
         <Divider />
-        <ListItemButton onClick={() => setCategoryOpen(true)} sx={{ m: 1, borderRadius: 2 }}>
-          <ListItemIcon>
-            <CategoryIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText primary="分类管理" />
-        </ListItemButton>
+        <List sx={{ flexGrow: 1 }}>
+          <ListItemButton onClick={() => setAiOpen(true)} sx={{ mx: 1, borderRadius: 2 }}>
+            <ListItemIcon>
+              <AutoAwesomeIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="AI 助手" />
+          </ListItemButton>
+          <ListItemButton onClick={() => setCategoryOpen(true)} sx={{ mx: 1, borderRadius: 2 }}>
+            <ListItemIcon>
+              <CategoryIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="分类管理" />
+          </ListItemButton>
+          <ListItemButton onClick={() => setStatusOpen(true)} sx={{ mx: 1, borderRadius: 2 }}>
+            <ListItemIcon>
+              <MonitorHeartIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="系统状态" />
+          </ListItemButton>
+        </List>
       </Drawer>
       <ProjectSwitcher open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
       <CategoryManagerDialog open={categoryOpen} onClose={() => setCategoryOpen(false)} />
+      <AiAssistantDrawer open={aiOpen} onClose={() => setAiOpen(false)} />
+      <SystemStatusDialog open={statusOpen} onClose={() => setStatusOpen(false)} />
     </>
   )
 }
