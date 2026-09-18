@@ -7,6 +7,8 @@ examples/*/assets/
 .env
 vidforge/remotion/app/node_modules/
 vidforge/remotion/app/out/
+vidforge/ui/react/node_modules/
+vidforge/ui/react/dist/
 examples/*/i18n_*.json
 examples/*/assets/
 examples/*/build*/
