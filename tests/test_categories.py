@@ -56,6 +56,24 @@ class Crud(unittest.TestCase):
     def test_load_missing_returns_none_not_error(self):
         self.assertIsNone(cat.load("nope"))
 
+    def test_first_ever_list_call_seeds_starter_categories(self):
+        cats = cat.list_categories()
+        self.assertGreater(len(cats), 0)
+        self.assertTrue(all(c.get("name") for c in cats))
+
+    def test_seeding_does_not_recur_after_deleting_down_to_zero(self):
+        cat.list_categories()  # first call: seeds
+        for c in cat.list_categories():
+            cat.delete(c["id"])
+        self.assertEqual(cat.list_categories(), [])  # deliberately emptied — stays empty
+
+    def test_creating_a_category_first_suppresses_the_seed(self):
+        # DIR gets created by save() itself before list_categories() ever runs — the directory
+        # already existing is what "not a fresh install" means, regardless of call order.
+        rec = cat.save({"name": "mine"})
+        cats = cat.list_categories()
+        self.assertEqual([c["id"] for c in cats], [rec["id"]])
+
     def test_export_then_import_merge_keeps_existing(self):
         cat.save({"name": "A"})
         bundle = cat.export_all()
@@ -109,15 +127,19 @@ class ServerIntegration(unittest.TestCase):
             return e.code, json.loads(e.read() or b"{}")
 
     def test_crud_over_http(self):
+        # first-ever call seeds the starter categories (see test_seed_defaults_* below) — CRUD
+        # on top of that seeded baseline, not against a pristine empty list.
         st, j = self.call("/api/categories")
-        self.assertEqual((st, j["categories"]), (200, []))
+        self.assertEqual(st, 200)
+        seeded = len(j["categories"])
+        self.assertGreater(seeded, 0)
         st, j = self.call("/api/categories", {"name": "中文历史", "defaults": {"voice": "zh-CN-YunxiNeural", "tts_provider": "edge"}})
         self.assertEqual(st, 200)
         cid = j["category"]["id"]
         st, j = self.call("/api/categories")
-        self.assertEqual(len(j["categories"]), 1)
+        self.assertEqual(len(j["categories"]), seeded + 1)
         st, j = self.call("/api/categories/delete", {"id": cid})
-        self.assertEqual(j["categories"], [])
+        self.assertEqual(len(j["categories"]), seeded)
 
     def test_new_project_applies_category_defaults_and_stamps_id(self):
         self.call("/api/categories", {"name": "中文历史", "defaults": {"voice": "zh-CN-YunxiNeural", "tts_provider": "edge", "outro_vocab": 4}})

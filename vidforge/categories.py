@@ -37,7 +37,68 @@ def _slug(name: str) -> str:
     return s or f"category-{int(time.time())}"
 
 
+# Shipped so a brand-new install has something to look at instead of an empty list — three
+# verticals chosen to show off the different fields a category can use (plain notes/sources,
+# a bilingual-learning default, and FND-style banned-keyword/platform gating). Purely a starting
+# point: edit or delete freely — the seed only ever runs on the very first list_categories()
+# call for a given DIR (tracked by a ".seeded" marker inside it), so deleting them later never
+# brings them back.
+_DEFAULT_CATEGORIES: list[dict] = [
+    {
+        "name": "历史科普",
+        "topic_notes": "面向大众的历史/科学解说，15 分钟左右，一个反差/悬念开场，中段按时间线或因果链展开，结尾留钩子引出下一集。",
+        "insights": "标题带具体数字或年份的完播率更高；避免堆砌人名年代，先给一个让人有画面感的场景。",
+        "platforms": ["YouTube"],
+        "sources": [{"name": "Wikimedia Commons", "url": "https://commons.wikimedia.org"},
+                     {"name": "Internet Archive", "url": "https://archive.org"}],
+        "tags": ["历史", "科普"],
+        "banned_keywords": [],
+        "platform_restrictions": "",
+        "defaults": {"voice": "en-US-AndrewNeural", "tts_provider": "edge", "language": "en"},
+    },
+    {
+        "name": "英语学习",
+        "topic_notes": "英文原声解说 + 中英双语字幕 + 片尾词汇卡，发在英语学习相关分区/标签下。",
+        "insights": "语速比主频道慢 5%，句子拆得更短；词汇卡选中高频但不算基础的词最受欢迎。",
+        "platforms": ["YouTube", "B站"],
+        "sources": [],
+        "tags": ["英语学习", "双语字幕"],
+        "banned_keywords": [],
+        "platform_restrictions": "",
+        "defaults": {"voice": "en-US-AndrewNeural", "tts_provider": "edge", "language": "en",
+                     "subtitles_bilingual": True},
+    },
+    {
+        "name": "时政资讯 FND",
+        "topic_notes": "时效性新闻/时政类解说，需要严格核实信源，只叙述已被多方证实的事实，不做立场性推断。",
+        "insights": "标题避免耸动词；描述里注明信源链接，减少争议投诉。",
+        "platforms": ["YouTube"],
+        "sources": [{"name": "Reuters", "url": "https://www.reuters.com"},
+                     {"name": "AP News", "url": "https://apnews.com"}],
+        "tags": ["时政", "新闻"],
+        "banned_keywords": ["未经证实", "据传", "小道消息"],
+        "platform_restrictions": "涉及在世政治人物的负面表述前必须有至少两个独立信源；不做选举结果预测。",
+        "defaults": {"voice": "en-US-AndrewNeural", "tts_provider": "edge", "language": "en"},
+    },
+]
+
+
+def seed_defaults() -> None:
+    """Create the starter categories the first time this DIR is ever touched (i.e. the
+    directory itself doesn't exist yet) — a genuinely fresh install, not just "currently has
+    zero categories" (which is also true right after deleting your last one, and shouldn't
+    bring the seed back). Reads `DIR` at call time (not a module-level constant) so tests that
+    mock.patch.object(cat, "DIR", ...) seed into their own temp directory, never the real
+    ~/.vidforge/categories/."""
+    if DIR.exists():
+        return
+    DIR.mkdir(parents=True)
+    for record in _DEFAULT_CATEGORIES:
+        save(dict(record))
+
+
 def list_categories() -> list[dict]:
+    seed_defaults()
     DIR.mkdir(parents=True, exist_ok=True)
     out = []
     for f in sorted(DIR.glob("*.json")):
