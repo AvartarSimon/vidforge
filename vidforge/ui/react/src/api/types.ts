@@ -50,6 +50,7 @@ export interface RawProject {
   voice?: string
   rate?: string
   tts?: { provider?: string; [key: string]: unknown }
+  lipsync?: string // none | synclabs | musetalk — for footage-library "me" takes with talking=true
   segments: Segment[]
   variants?: Record<string, Record<string, unknown>>
   quality?: 'draft' | 'final'

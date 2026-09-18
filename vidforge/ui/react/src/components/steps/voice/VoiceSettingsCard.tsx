@@ -3,12 +3,19 @@ import { Box, Button, Card, CardContent, MenuItem, Slider, Stack, TextField, Typ
 import { apiPost } from '../../../api/client'
 import { useProject } from '../../../state/ProjectContext'
 import { VoiceBrowserDialog } from './VoiceBrowserDialog'
+import { VoiceDesignDialog } from './VoiceDesignDialog'
 
 const PROVIDERS = [
   { value: 'edge', label: 'edge（免费，微软神经语音）' },
   { value: 'elevenlabs', label: 'ElevenLabs（付费，需 key）' },
   { value: 'voxcpm', label: 'VoxCPM2（免费开源，本地跑，需自己装）' },
   { value: 'silent', label: '静音占位（只看画面，不联网）' },
+]
+
+const LIPSYNC_PROVIDERS = [
+  { value: 'none', label: '不做口型同步' },
+  { value: 'synclabs', label: 'sync.so（云端，需 SYNC_API_KEY）' },
+  { value: 'musetalk', label: 'MuseTalk（本地开源）' },
 ]
 
 export function VoiceSettingsCard({
@@ -22,6 +29,7 @@ export function VoiceSettingsCard({
 }) {
   const { raw, patch, reload, saveNow } = useProject()
   const [browserOpen, setBrowserOpen] = useState(false)
+  const [designOpen, setDesignOpen] = useState(false)
   const [busyAll, setBusyAll] = useState(false)
 
   if (!raw) return null
@@ -29,6 +37,9 @@ export function VoiceSettingsCard({
   const voice = raw.voice || ''
   const rate = parseInt(raw.rate || '+0%', 10) || 0
   const segments = raw.segments || []
+  const lipsync = raw.lipsync || 'none'
+
+  const setLipsync = (v: string) => patch((r) => (r.lipsync = v))
 
   const setProvider = (v: string) =>
     patch((r) => {
@@ -100,8 +111,25 @@ export function VoiceSettingsCard({
               <Button size="small" onClick={() => setBrowserOpen(true)}>
                 浏览…
               </Button>
+              <Button size="small" title="用文字描述设计一个专属声音（不克隆任何真人）" onClick={() => setDesignOpen(true)}>
+                ✨ 设计品牌声音…
+              </Button>
             </Stack>
           </Box>
+          <TextField
+            size="small"
+            select
+            label="口型同步（我的镜头·说话）"
+            value={lipsync}
+            onChange={(e) => setLipsync(e.target.value)}
+            sx={{ minWidth: 260 }}
+          >
+            {LIPSYNC_PROVIDERS.map((p) => (
+              <MenuItem key={p.value} value={p.value}>
+                {p.label}
+              </MenuItem>
+            ))}
+          </TextField>
         </Stack>
         <Box sx={{ mt: 2, maxWidth: 320 }}>
           <Typography variant="caption" color="text.secondary">
@@ -132,6 +160,7 @@ export function VoiceSettingsCard({
           setBrowserOpen(false)
         }}
       />
+      <VoiceDesignDialog open={designOpen} onClose={() => setDesignOpen(false)} />
     </Card>
   )
 }
