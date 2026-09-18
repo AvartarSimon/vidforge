@@ -81,14 +81,21 @@ async function pollLoginStatus(setStatus: (s: string) => void) {
   setStatus('登录窗口还开着（5 分钟已到，继续登录不影响，关闭窗口后刷新页面看结果）。')
 }
 
-export function AiGeneratePanel({ categories }: { categories: Category[] }) {
+export function AiGeneratePanel({
+  categories,
+  points,
+  onPointsChange,
+}: {
+  categories: Category[]
+  points: string
+  onPointsChange: (v: string) => void
+}) {
   const { raw, patch } = useProject()
   const [sites, setSites] = useState<ChatSite[]>([])
   const [site, setSite] = useState(() => localStorage.getItem('vf.site') || 'deepseek')
   const [topic, setTopic] = useState(raw?.title || '')
   const [mins, setMins] = useState(raw?.target_minutes || 10)
   const [audience, setAudience] = useState('')
-  const [points, setPoints] = useState('')
   const [script, setScript] = useState('')
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
@@ -202,7 +209,7 @@ export function AiGeneratePanel({ categories }: { categories: Category[] }) {
           <TextField
             label="要点 / 参考资料（可选，越具体越好）"
             value={points}
-            onChange={(e) => setPoints(e.target.value)}
+            onChange={(e) => onPointsChange(e.target.value)}
             multiline
             minRows={3}
             placeholder={'- 1815 年 4 月坦博拉喷发\n- 1816 年欧洲北美夏季异常\n- 玛丽·雪莱与《弗兰肯斯坦》'}

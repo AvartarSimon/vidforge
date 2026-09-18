@@ -10,6 +10,7 @@ import { ScriptEditorPanel } from './script/ScriptEditorPanel'
 export function ScriptStep() {
   const { raw, patch } = useProject()
   const [categories, setCategories] = useState<Category[]>([])
+  const [points, setPoints] = useState('')
 
   useEffect(() => {
     apiGet<{ categories: Category[] }>('/api/categories')
@@ -59,8 +60,8 @@ export function ScriptStep() {
           )}
         </CardContent>
       </Card>
-      <ResearchPanel />
-      <AiGeneratePanel categories={categories} />
+      <ResearchPanel onUseAngle={(angle) => setPoints((p) => `视角：${angle}\n${p}`)} />
+      <AiGeneratePanel categories={categories} points={points} onPointsChange={setPoints} />
       <ScriptEditorPanel />
     </Stack>
   )

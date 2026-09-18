@@ -206,6 +206,47 @@ export interface VoiceOption {
   friendly: string
 }
 
+export interface YoutubeVideo {
+  video_id: string
+  title: string
+  channel: string
+  views: number
+  published: string
+  age_days: number | null
+  duration_s: number | null
+  likes: number | null
+  comments: number | null
+  source: string
+  url: string
+  views_per_day: number | null
+}
+
+export interface YoutubeSummary {
+  count: number
+  median_views?: number
+  max_views?: number
+  recent_12m?: number
+  recent_median_views?: number
+  long_form_share?: number
+  median_duration_min?: number
+  channels?: number
+  top_titles?: string[]
+}
+
+export interface AnalyzeResult {
+  raw?: boolean
+  why?: string
+  verdict?: 'do' | 'do_with_angle' | 'skip' | string
+  saturation?: string
+  angles?: ({ title: string; why?: string } | string)[]
+  titles?: string[]
+  hooks?: string[]
+  strengths_of_top?: string[]
+  gaps?: string[]
+  thumbnail_text?: string[]
+  risks?: string[]
+}
+
 export interface SearchCandidate {
   provider: string
   id: string
