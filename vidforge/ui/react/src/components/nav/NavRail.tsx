@@ -29,7 +29,7 @@ const STEPS = [
 ]
 
 // steps built out so far in this React frontend — the rest still show as "即将推出" placeholders
-const IMPLEMENTED = new Set([1, 2])
+const IMPLEMENTED = new Set([1, 2, 3])
 
 export function NavRail({ activeStep, onStep }: { activeStep: number; onStep: (n: number) => void }) {
   const { view, raw } = useProject()
