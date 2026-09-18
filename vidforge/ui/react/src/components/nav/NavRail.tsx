@@ -2,7 +2,6 @@ import { useState } from 'react'
 import {
   Avatar,
   Box,
-  Chip,
   Drawer,
   List,
   ListItemButton,
@@ -27,9 +26,6 @@ const STEPS = [
   { n: 4, label: '渲染', sub: '出片与主持人' },
   { n: 5, label: '发布', sub: '上传与声明' },
 ]
-
-// steps built out so far in this React frontend — the rest still show as "即将推出" placeholders
-const IMPLEMENTED = new Set([1, 2, 3])
 
 export function NavRail({ activeStep, onStep }: { activeStep: number; onStep: (n: number) => void }) {
   const { view, raw } = useProject()
@@ -79,7 +75,7 @@ export function NavRail({ activeStep, onStep }: { activeStep: number; onStep: (n
             <ListItemButton
               key={s.n}
               selected={activeStep === s.n}
-              disabled={!IMPLEMENTED.has(s.n) || !raw}
+              disabled={!raw}
               onClick={() => onStep(s.n)}
             >
               <ListItemAvatar>
@@ -96,7 +92,6 @@ export function NavRail({ activeStep, onStep }: { activeStep: number; onStep: (n
                 </Avatar>
               </ListItemAvatar>
               <ListItemText primary={s.label} secondary={s.sub} />
-              {!IMPLEMENTED.has(s.n) && <Chip label="即将推出" size="small" variant="outlined" />}
             </ListItemButton>
           ))}
         </List>

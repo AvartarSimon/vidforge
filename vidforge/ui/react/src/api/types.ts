@@ -52,7 +52,54 @@ export interface RawProject {
   tts?: { provider?: string; [key: string]: unknown }
   segments: Segment[]
   variants?: Record<string, Record<string, unknown>>
+  quality?: 'draft' | 'final'
+  subtitles?: { burn?: boolean; style?: string; bilingual?: boolean; bilingual_lang?: string; [key: string]: unknown }
+  transition?: number
+  bgm?: { file: string; volume_db?: number; fade_out?: number } | null
+  auto_title_cards?: boolean
+  normalize_audio?: boolean
+  encoder?: string
+  parallel?: number
+  supersample?: number
+  motion_amount?: number
+  width?: number
+  height?: number
+  fps?: number
+  youtube?: {
+    title?: string
+    tags?: string[]
+    privacy?: string
+    category_id?: number
+    description?: string
+    disclosure?: { ai_voice?: boolean; ai_visuals?: boolean; realistic_presenter?: boolean }
+    [key: string]: unknown
+  }
   [key: string]: unknown
+}
+
+export interface Outputs {
+  final: string | null
+  final_mtime: number | null
+  srt: string | null
+  thumbnail: string | null
+  credits: string | null
+  timeline: { start: number; end: number; label?: string; id: string }[] | null
+  youtube: { url?: string; [key: string]: unknown } | null
+}
+
+export interface BuildStatus {
+  state: 'idle' | 'running' | 'done' | 'error' | 'cancelled'
+  lines: string[]
+  lang: string | null
+  started: number | null
+  finished: number | null
+  error: string | null
+  elapsed: number
+  progress: number
+  phase: string
+  eta: number | null
+  segments_done: number | null
+  segments_total: number | null
 }
 
 export interface ResolvedClip {
@@ -93,6 +140,8 @@ export interface ProjectView {
   issues: string | null
   resolved: Record<string, ResolvedSegment>
   root: string
+  build_dir?: string
+  outputs?: Outputs
   [key: string]: unknown
 }
 
