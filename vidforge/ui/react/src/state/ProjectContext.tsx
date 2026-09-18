@@ -14,6 +14,7 @@ interface ProjectContextValue {
   reload: () => Promise<void>
   markDirty: () => void
   patch: (fn: (raw: RawProject) => void) => void
+  saveNow: () => Promise<boolean>
 }
 
 const ProjectContext = createContext<ProjectContextValue | null>(null)
@@ -50,17 +51,19 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     reload()
   }, [reload])
 
-  const save = useCallback(async () => {
+  const save = useCallback(async (): Promise<boolean> => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
-    if (!rawRef.current) return
+    if (!rawRef.current) return true
     setSaveState('saving')
     try {
       await apiPost('/api/project', { raw: rawRef.current })
       setSaveState('saved')
       setSavedAt(new Date())
+      return true
     } catch (e) {
       setSaveState('error')
       setError(e instanceof Error ? e.message : String(e))
+      return false
     }
   }, [])
 
@@ -82,7 +85,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   )
 
   return (
-    <ProjectContext.Provider value={{ view, raw, loading, error, saveState, savedAt, reload, markDirty, patch }}>
+    <ProjectContext.Provider
+      value={{ view, raw, loading, error, saveState, savedAt, reload, markDirty, patch, saveNow: save }}
+    >
       {children}
     </ProjectContext.Provider>
   )

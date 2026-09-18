@@ -28,6 +28,9 @@ const STEPS = [
   { n: 5, label: '发布', sub: '上传与声明' },
 ]
 
+// steps built out so far in this React frontend — the rest still show as "即将推出" placeholders
+const IMPLEMENTED = new Set([1, 2])
+
 export function NavRail({ activeStep, onStep }: { activeStep: number; onStep: (n: number) => void }) {
   const { view, raw } = useProject()
   const [switcherOpen, setSwitcherOpen] = useState(false)
@@ -76,7 +79,7 @@ export function NavRail({ activeStep, onStep }: { activeStep: number; onStep: (n
             <ListItemButton
               key={s.n}
               selected={activeStep === s.n}
-              disabled={s.n !== 1 || !raw}
+              disabled={!IMPLEMENTED.has(s.n) || !raw}
               onClick={() => onStep(s.n)}
             >
               <ListItemAvatar>
@@ -93,7 +96,7 @@ export function NavRail({ activeStep, onStep }: { activeStep: number; onStep: (n
                 </Avatar>
               </ListItemAvatar>
               <ListItemText primary={s.label} secondary={s.sub} />
-              {s.n !== 1 && <Chip label="即将推出" size="small" variant="outlined" />}
+              {!IMPLEMENTED.has(s.n) && <Chip label="即将推出" size="small" variant="outlined" />}
             </ListItemButton>
           ))}
         </List>

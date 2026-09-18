@@ -8,7 +8,9 @@ export interface Segment {
   label?: string | null
   visual_hint?: string | null
   clips?: unknown[]
+  overlays?: unknown[]
   pause_after?: number
+  voice?: string // per-segment override of the project's global voice
   [key: string]: unknown // text_<lang> / label_<lang> variant keys
 }
 
@@ -18,6 +20,9 @@ export interface RawProject {
   target_minutes?: number
   category?: string | null
   language?: string
+  voice?: string
+  rate?: string
+  tts?: { provider?: string; [key: string]: unknown }
   segments: Segment[]
   variants?: Record<string, Record<string, unknown>>
   [key: string]: unknown
@@ -29,6 +34,8 @@ export interface ResolvedSegment {
   duration: number | null
   need: number
   keywords: string[]
+  audio?: string | null
+  audio_fresh?: boolean
   [key: string]: unknown
 }
 
@@ -85,4 +92,12 @@ export interface SplitSegment {
 export interface ChatLoginStatus {
   status: Record<string, boolean>
   running: boolean
+}
+
+export interface VoiceOption {
+  name: string
+  locale: string
+  gender: string
+  personalities: string[]
+  friendly: string
 }

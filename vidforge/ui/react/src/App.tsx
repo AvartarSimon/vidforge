@@ -3,6 +3,7 @@ import { Box, CircularProgress, Stack, Toolbar, Typography } from '@mui/material
 import { NavRail, DRAWER_WIDTH } from './components/nav/NavRail'
 import { PlaceholderStep } from './components/steps/PlaceholderStep'
 import { ScriptStep } from './components/steps/ScriptStep'
+import { VoiceStep } from './components/steps/VoiceStep'
 import { ProjectProvider, useProject } from './state/ProjectContext'
 
 const STEP_LABELS: Record<number, string> = { 1: '脚本', 2: '配音', 3: '画面', 4: '渲染', 5: '发布' }
@@ -65,9 +66,8 @@ function Shell() {
             </Typography>
           )}
           {!loading && !error && raw && step === 1 && <ScriptStep />}
-          {!loading && !error && raw && step !== 1 && (
-            <PlaceholderStep n={step} label={STEP_LABELS[step]} />
-          )}
+          {!loading && !error && raw && step === 2 && <VoiceStep />}
+          {!loading && !error && raw && step > 2 && <PlaceholderStep n={step} label={STEP_LABELS[step]} />}
         </Box>
       </Box>
     </Box>
