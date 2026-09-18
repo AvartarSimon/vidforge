@@ -65,6 +65,24 @@ export interface RawProject {
   width?: number
   height?: number
   fps?: number
+  presenter?: {
+    provider?: 'host' | 'heygen' | 'none'
+    where?: 'none' | 'first_last' | 'all'
+    position?: string
+    size?: number
+    heygen_avatar_id?: string | null
+    style?: {
+      hairStyle?: string
+      skin?: string
+      hair?: string
+      shirt?: string
+      bg?: string
+      name?: string
+      glasses?: boolean
+      beard?: boolean
+    }
+  }
+  outro_vocab?: number
   youtube?: {
     title?: string
     tags?: string[]
