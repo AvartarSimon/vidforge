@@ -12,9 +12,12 @@ import {
   Typography,
   Divider,
 } from '@mui/material'
+import type { PaletteMode } from '@mui/material'
 import CategoryIcon from '@mui/icons-material/Category'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart'
+import DarkModeIcon from '@mui/icons-material/DarkMode'
+import LightModeIcon from '@mui/icons-material/LightMode'
 import { useProject } from '../../state/ProjectContext'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { CategoryManagerDialog } from './CategoryManagerDialog'
@@ -31,7 +34,17 @@ const STEPS = [
   { n: 5, label: '发布', sub: '上传与声明' },
 ]
 
-export function NavRail({ activeStep, onStep }: { activeStep: number; onStep: (n: number) => void }) {
+export function NavRail({
+  activeStep,
+  onStep,
+  mode,
+  onToggleMode,
+}: {
+  activeStep: number
+  onStep: (n: number) => void
+  mode: PaletteMode
+  onToggleMode: () => void
+}) {
   const { view, raw } = useProject()
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [categoryOpen, setCategoryOpen] = useState(false)
@@ -122,6 +135,11 @@ export function NavRail({ activeStep, onStep }: { activeStep: number; onStep: (n
             <ListItemText primary="系统状态" />
           </ListItemButton>
         </List>
+        <Divider />
+        <ListItemButton onClick={onToggleMode} sx={{ m: 1, borderRadius: 2 }}>
+          <ListItemIcon>{mode === 'dark' ? <LightModeIcon fontSize="small" /> : <DarkModeIcon fontSize="small" />}</ListItemIcon>
+          <ListItemText primary={mode === 'dark' ? '切换到浅色' : '切换到深色'} />
+        </ListItemButton>
       </Drawer>
       <ProjectSwitcher open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
       <CategoryManagerDialog open={categoryOpen} onClose={() => setCategoryOpen(false)} />

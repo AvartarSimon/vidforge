@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react'
-import { Box, CircularProgress, Stack, Toolbar, Typography } from '@mui/material'
+import { useEffect, useMemo, useState } from 'react'
+import { Box, CircularProgress, CssBaseline, Stack, ThemeProvider, Toolbar, Typography } from '@mui/material'
+import type { PaletteMode } from '@mui/material'
 import { NavRail, DRAWER_WIDTH } from './components/nav/NavRail'
 import { ScriptStep } from './components/steps/ScriptStep'
 import { VoiceStep } from './components/steps/VoiceStep'
 import { VisualsStep } from './components/steps/VisualsStep'
 import { RenderStep } from './components/steps/RenderStep'
 import { PublishStep } from './components/steps/PublishStep'
+import { getTheme } from './theme'
 import { ProjectProvider, useProject } from './state/ProjectContext'
 
 const STEP_LABELS: Record<number, string> = { 1: '脚本', 2: '配音', 3: '画面', 4: '渲染', 5: '发布' }
@@ -17,8 +19,23 @@ const SAVE_LABEL: Record<string, string> = {
   error: '未保存',
 }
 
-function Shell() {
-  const { raw, loading, error, saveState, savedAt } = useProject()
+function readStoredMode(): PaletteMode {
+  try {
+    const v = localStorage.getItem('vf.react.theme')
+    if (v === 'light' || v === 'dark') return v
+  } catch {
+    // ignore (private browsing etc.)
+  }
+  // video-editing tools default to dark; fall back to it unless the OS explicitly asks for light
+  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+}
+
+function Shell({ mode, onToggleMode }: { mode: PaletteMode; onToggleMode: () => void }) {
+  const { raw, view, loading, error, saveState, savedAt } = useProject()
+  // steps keep their own local UI state (draft text, picker filters, …) that must not survive a
+  // project switch — remounting the active step whenever the open project's path changes is
+  // simpler and more thorough than hunting down every piece of that state individually.
+  const stepKey = view?.root || 'none'
   const [step, setStep] = useState<number>(() => {
     try {
       return parseInt(localStorage.getItem('vf.react.step') || '1', 10) || 1
@@ -37,7 +54,7 @@ function Shell() {
 
   return (
     <Box sx={{ display: 'flex' }}>
-      <NavRail activeStep={step} onStep={setStep} />
+      <NavRail activeStep={step} onStep={setStep} mode={mode} onToggleMode={onToggleMode} />
       <Box component="main" sx={{ flexGrow: 1, minHeight: '100vh', bgcolor: 'background.default' }}>
         <Toolbar sx={{ justifyContent: 'space-between', borderBottom: '1px solid', borderColor: 'divider' }}>
           <Typography variant="subtitle1" fontWeight={600}>
@@ -67,11 +84,11 @@ function Shell() {
               还没有打开项目——点左上角的项目卡片，新建或打开一个。
             </Typography>
           )}
-          {!loading && !error && raw && step === 1 && <ScriptStep />}
-          {!loading && !error && raw && step === 2 && <VoiceStep />}
-          {!loading && !error && raw && step === 3 && <VisualsStep />}
-          {!loading && !error && raw && step === 4 && <RenderStep />}
-          {!loading && !error && raw && step === 5 && <PublishStep />}
+          {!loading && !error && raw && step === 1 && <ScriptStep key={stepKey} />}
+          {!loading && !error && raw && step === 2 && <VoiceStep key={stepKey} />}
+          {!loading && !error && raw && step === 3 && <VisualsStep key={stepKey} />}
+          {!loading && !error && raw && step === 4 && <RenderStep key={stepKey} />}
+          {!loading && !error && raw && step === 5 && <PublishStep key={stepKey} />}
         </Box>
       </Box>
     </Box>
@@ -79,10 +96,28 @@ function Shell() {
 }
 
 export default function App() {
+  const [mode, setMode] = useState<PaletteMode>(readStoredMode)
+  const theme = useMemo(() => getTheme(mode), [mode])
+
+  const toggleMode = () => {
+    setMode((m) => {
+      const next = m === 'dark' ? 'light' : 'dark'
+      try {
+        localStorage.setItem('vf.react.theme', next)
+      } catch {
+        // ignore (private browsing etc.)
+      }
+      return next
+    })
+  }
+
   return (
-    <ProjectProvider>
-      <Shell />
-    </ProjectProvider>
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <ProjectProvider>
+        <Shell mode={mode} onToggleMode={toggleMode} />
+      </ProjectProvider>
+    </ThemeProvider>
   )
 }
 
