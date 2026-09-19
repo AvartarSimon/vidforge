@@ -11,11 +11,13 @@ import {
   ListItemAvatar,
   ListItemText,
   Stack,
+  TextField,
   Typography,
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import { apiGet, apiPost } from '../../api/client'
 import type { Category } from '../../api/types'
+import { useProject } from '../../state/ProjectContext'
 import { CategoryEditorForm } from './CategoryEditorForm'
 
 function avatarLetter(name: string) {
@@ -23,10 +25,15 @@ function avatarLetter(name: string) {
 }
 
 export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { reload } = useProject()
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<Category | null | undefined>(undefined) // undefined = list, null = new, Category = edit existing
+  const [creatingFrom, setCreatingFrom] = useState<Category | null>(null) // "＋ 新建项目" from this category
+  const [newName, setNewName] = useState('')
+  const [newTitle, setNewTitle] = useState('')
+  const [creating, setCreating] = useState(false)
   const importRef = useRef<HTMLInputElement>(null)
 
   const load = () => {
@@ -40,6 +47,7 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
   useEffect(() => {
     if (open) {
       setEditing(undefined)
+      setCreatingFrom(null)
       load()
     }
   }, [open])
@@ -84,16 +92,49 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
     }
   }
 
+  const startCreate = (c: Category) => {
+    setCreatingFrom(c)
+    setNewName('')
+    setNewTitle('')
+  }
+
+  const submitCreate = async () => {
+    if (!creatingFrom) return
+    setCreating(true)
+    try {
+      await apiPost('/api/new', { name: newName, title: newTitle, category: creatingFrom.id })
+      await reload()
+      onClose()
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e))
+    }
+    setCreating(false)
+  }
+
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        {editing === undefined ? '分类管理' : editing === null ? '新建分类' : '编辑分类'}
+        {editing === undefined ? (creatingFrom ? `用「${creatingFrom.name}」新建项目` : '分类管理') : editing === null ? '新建分类' : '编辑分类'}
         <IconButton onClick={onClose} size="small" aria-label="关闭">
           <CloseIcon fontSize="small" />
         </IconButton>
       </DialogTitle>
       <DialogContent dividers>
-        {editing === undefined ? (
+        {creatingFrom ? (
+          <Stack spacing={1.5}>
+            <Typography variant="body2" color="text.secondary">
+              会带入这个分类的默认声音/语言/字幕等设置，写脚本时也会把分类的参考资料一起给 AI。
+            </Typography>
+            <TextField size="small" label="项目文件夹名" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="例：year-without-a-summer" />
+            <TextField size="small" label="视频标题（可后改）" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
+            <Stack direction="row" spacing={1} justifyContent="flex-end">
+              <Button onClick={() => setCreatingFrom(null)}>取消</Button>
+              <Button variant="contained" disabled={creating} onClick={submitCreate}>
+                创建并打开
+              </Button>
+            </Stack>
+          </Stack>
+        ) : editing === undefined ? (
           <>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
               一个分类 = 一套写脚本/发布的设置和参考资料，跨项目复用。存成普通 JSON 文件（
@@ -134,6 +175,9 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
                     sx={{ borderRadius: 2, mb: 0.5, border: '1px solid', borderColor: 'divider' }}
                     secondaryAction={
                       <Stack direction="row" spacing={0.5}>
+                        <Button size="small" variant="outlined" onClick={() => startCreate(c)}>
+                          ＋ 新建项目
+                        </Button>
                         <IconButton size="small" title="编辑" onClick={() => setEditing(c)}>
                           ✎
                         </IconButton>
