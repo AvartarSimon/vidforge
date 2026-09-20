@@ -1,31 +1,40 @@
 import { useEffect, useState } from 'react'
-import { Box, Button, Chip, MenuItem, Stack, TextField, Typography } from '@mui/material'
-import { apiGet, apiPost } from '../../../api/client'
+import { Box, Button, Chip, Link, MenuItem, Stack, TextField, Typography } from '@mui/material'
+import { apiGet, apiPost, ApiError } from '../../../api/client'
 import type { Segment, SearchCandidate } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
 import { fmtDuration } from '../../../utils'
 import { TrimDialog, type TrimRange } from './TrimDialog'
 
+// Commons/Openverse/Archive need no signup at all — default to one of those so a first search
+// just works. Pexels/Pixabay are still offered (usually better/more relevant results) but only
+// once the user has actually gone and gotten a free key; see the needs_key handling below.
 const SOURCES = [
-  { value: 'pexels', label: 'Pexels' },
-  { value: 'pixabay', label: 'Pixabay' },
-  { value: 'commons', label: 'Wikimedia Commons（公有领域/CC）' },
-  { value: 'openverse', label: 'Openverse（CC 聚合：Flickr/博物馆）' },
-  { value: 'archive', label: 'Internet Archive（公有领域老电影/照片）' },
+  { value: 'commons', label: 'Wikimedia Commons（公有领域/CC，无需 key）' },
+  { value: 'openverse', label: 'Openverse（CC 聚合：Flickr/博物馆，无需 key）' },
+  { value: 'archive', label: 'Internet Archive（公有领域老电影/照片，无需 key）' },
+  { value: 'pexels', label: 'Pexels（需免费 key）' },
+  { value: 'pixabay', label: 'Pixabay（需免费 key）' },
   { value: 'google', label: 'Google 图片 · 仅 CC 许可（用我的浏览器）' },
   { value: 'google_all', label: 'Google 图片 · 全部 ⚠ 版权未知' },
   { value: 'baidu', label: '百度图片 ⚠ 版权未知' },
 ]
 
+const KEY_SIGNUP_URL: Record<string, string> = {
+  PEXELS_API_KEY: 'https://www.pexels.com/api/',
+  PIXABAY_API_KEY: 'https://pixabay.com/api/docs/',
+}
+
 export function SearchTab({ seg, segId, onAdded }: { seg: Segment; segId: string; onAdded: () => void }) {
   const { view, patch, saveNow } = useProject()
-  const [source, setSource] = useState('pexels')
+  const [source, setSource] = useState('commons')
   const [kind, setKind] = useState<'image' | 'video'>('image')
   const [q, setQ] = useState('')
   const [cands, setCands] = useState<SearchCandidate[]>([])
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [needsKey, setNeedsKey] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [trimming, setTrimming] = useState<SearchCandidate | null>(null)
 
@@ -50,6 +59,7 @@ export function SearchTab({ seg, segId, onAdded }: { seg: Segment; segId: string
   const doSearch = async (p: number, query = q, src = source, k = kind) => {
     setLoading(true)
     setError(null)
+    setNeedsKey(null)
     try {
       if (['commons', 'google', 'google_all', 'baidu', 'openverse'].includes(src) && k === 'video') {
         throw new Error('这个来源只提供图片；视频请用 Pexels / Pixabay / Internet Archive')
@@ -61,9 +71,18 @@ export function SearchTab({ seg, segId, onAdded }: { seg: Segment; segId: string
       if (!j.candidates.length && p === 1) setError('没有结果，换个关键词（英文）试试。')
       setPage(p)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (e instanceof ApiError && typeof e.data.needs_key === 'string') {
+        setNeedsKey(e.data.needs_key)
+      } else {
+        setError(e instanceof Error ? e.message : String(e))
+      }
     }
     setLoading(false)
+  }
+
+  const switchToFreeSource = () => {
+    setSource('commons')
+    doSearch(1, q, 'commons', kind)
   }
 
   const addCandidate = async (c: SearchCandidate, ranges: TrimRange[] | null) => {
@@ -169,6 +188,21 @@ export function SearchTab({ seg, segId, onAdded }: { seg: Segment; segId: string
         <Typography variant="body2" color="error">
           {error}
         </Typography>
+      )}
+      {needsKey && (
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ p: 1, bgcolor: 'action.hover', borderRadius: 2 }}>
+          <Typography variant="body2" color="error">
+            缺 {needsKey}：项目文件夹里建个 .env 文件写一行 {needsKey}=你的key。
+          </Typography>
+          {KEY_SIGNUP_URL[needsKey] && (
+            <Link href={KEY_SIGNUP_URL[needsKey]} target="_blank" rel="noreferrer" variant="body2">
+              去免费申请…
+            </Link>
+          )}
+          <Button size="small" variant="outlined" onClick={switchToFreeSource}>
+            先换成 Wikimedia Commons（不需要 key）
+          </Button>
+        </Stack>
       )}
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 1 }}>
         {cands.map((c, i) => (

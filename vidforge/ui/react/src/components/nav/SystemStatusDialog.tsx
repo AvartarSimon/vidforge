@@ -1,7 +1,21 @@
 import { useEffect, useState } from 'react'
-import { Chip, Dialog, DialogContent, DialogTitle, IconButton, List, ListItem, ListItemText, Typography } from '@mui/material'
+import {
+  Button,
+  Chip,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  IconButton,
+  List,
+  ListItem,
+  ListItemText,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
-import { apiGet } from '../../api/client'
+import { apiGet, apiPost } from '../../api/client'
 
 interface Health {
   ffmpeg: { ok: boolean; path: string }
@@ -28,15 +42,75 @@ function InfoRow({ label, detail }: { label: string; detail: string }) {
   return <ListItem><ListItemText primary={label} secondary={detail} /></ListItem>
 }
 
+// lets a key be pasted in and written straight to the *open project's* .env, instead of the
+// user having to go find/create that file by hand — still never touches project.json or memory,
+// same storage vidforge always used for keys (vidforge/env.py), just a friendlier way to fill it.
+function ApiKeyRow({ name, description, set, onSaved }: { name: string; description: string; set: boolean; onSaved: () => void }) {
+  const [value, setValue] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const save = async () => {
+    if (!value.trim()) return
+    setSaving(true)
+    setErr(null)
+    try {
+      await apiPost('/api/env', { key: name, value: value.trim() })
+      setValue('')
+      onSaved()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    }
+    setSaving(false)
+  }
+
+  return (
+    <Stack spacing={0.5} sx={{ py: 0.75 }}>
+      <Stack direction="row" spacing={1} alignItems="center">
+        <Typography variant="body2" sx={{ minWidth: 160 }}>
+          {name}
+        </Typography>
+        <Chip size="small" label={set ? '已配置' : '未配置'} color={set ? 'success' : 'default'} variant={set ? 'filled' : 'outlined'} />
+      </Stack>
+      <Typography variant="caption" color="text.secondary">
+        {description}
+      </Typography>
+      <Stack direction="row" spacing={1}>
+        <TextField
+          size="small"
+          type="password"
+          placeholder={set ? '重新粘贴以覆盖…' : '粘贴 key…'}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          fullWidth
+        />
+        <Button size="small" variant="outlined" disabled={saving || !value.trim()} onClick={save}>
+          保存
+        </Button>
+      </Stack>
+      {err && (
+        <Typography variant="caption" color="error">
+          {err}
+        </Typography>
+      )}
+    </Stack>
+  )
+}
+
 export function SystemStatusDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [h, setH] = useState<Health | null>(null)
+  const [keyDescriptions, setKeyDescriptions] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
+
+  const loadHealth = () => apiGet<Health>('/api/health').then(setH).catch((e) => setError(e instanceof Error ? e.message : String(e)))
 
   useEffect(() => {
     if (!open) return
-    apiGet<Health>('/api/health')
-      .then(setH)
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+    loadHealth()
+    apiGet<{ keys: Record<string, string> }>('/api/env/keys')
+      .then((j) => setKeyDescriptions(j.keys))
+      .catch(() => setKeyDescriptions({}))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   return (
@@ -57,12 +131,23 @@ export function SystemStatusDialog({ open, onClose }: { open: boolean; onClose: 
             <StatusRow label="Node.js（Remotion 动画）" ok={h.node} />
             <StatusRow label="Remotion" ok={h.remotion} />
             <StatusRow label="本地大模型" ok={!!h.llm} detail={h.llm?.model} />
-            <StatusRow label="Pexels API key" ok={!!h.keys.PEXELS_API_KEY} />
-            <StatusRow label="Pixabay API key" ok={!!h.keys.PIXABAY_API_KEY} />
-            <StatusRow label="ElevenLabs API key" ok={!!h.keys.ELEVENLABS_API_KEY} />
             <StatusRow label="YouTube 上传授权" ok={h.youtube_secret} />
             <InfoRow label="CPU 核数" detail={String(h.cpus)} />
           </List>
+        )}
+        {h && (
+          <>
+            <Divider sx={{ my: 1.5 }} />
+            <Typography variant="subtitle2" gutterBottom>
+              API Keys（写入当前项目文件夹的 .env，不会进 project.json）
+            </Typography>
+            {Object.entries(keyDescriptions).map(([name, desc], i) => (
+              <div key={name}>
+                {i > 0 && <Divider />}
+                <ApiKeyRow name={name} description={desc} set={!!h.keys[name]} onSaved={loadHealth} />
+              </div>
+            ))}
+          </>
         )}
       </DialogContent>
     </Dialog>
