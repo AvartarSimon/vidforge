@@ -13,6 +13,9 @@ from pathlib import Path
 KEYS = {
     "ELEVENLABS_API_KEY": "ElevenLabs TTS (https://elevenlabs.io -> Profile -> API keys)",
     "PEXELS_API_KEY": "Pexels stock photos/videos (https://www.pexels.com/api/)",
+    "PIXABAY_API_KEY": "Pixabay stock photos/videos (https://pixabay.com/api/docs/)",
+    "YOUTUBE_API_KEY": "YouTube Data API v3, for exact competitor-video stats (https://console.cloud.google.com/apis/credentials)",
+    "SYNC_API_KEY": "sync.so lip-sync API (https://sync.so)",
 }
 
 
@@ -31,6 +34,24 @@ def load_dotenv(*dirs: Path) -> Path | None:
                     os.environ[k] = v
             return f
     return None
+
+
+def save(target_dir: Path, key: str, value: str) -> Path:
+    """Write/update one KEY=value line in <target_dir>/.env, preserving every other line, and
+    set it in os.environ immediately so it takes effect without restarting the server."""
+    f = Path(target_dir) / ".env"
+    lines = f.read_text(encoding="utf-8").splitlines() if f.is_file() else []
+    line = f"{key}={value}"
+    for i, existing in enumerate(lines):
+        k = existing.split("=", 1)[0].strip()
+        if k == key:
+            lines[i] = line
+            break
+    else:
+        lines.append(line)
+    f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    os.environ[key] = value
+    return f
 
 
 def require(name: str) -> str:

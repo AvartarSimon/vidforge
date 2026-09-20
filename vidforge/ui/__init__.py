@@ -338,6 +338,8 @@ def make_handler(state: State):
                     return self._json(self.status_view())
                 if path == "/api/health":
                     return self._json(self.health())
+                if path == "/api/env/keys":
+                    return self._json({"keys": env.KEYS})
                 if path == "/api/voices":
                     return self._json(self.voices(q.get("provider", "edge"), q.get("lang")))
                 if path == "/api/search":
@@ -381,6 +383,16 @@ def make_handler(state: State):
                 body = self._body()
                 if path == "/api/project":
                     return self.save_project(body, snapshot=bool(body.get("snapshot")))
+                if path == "/api/env":
+                    if not state.has_project:
+                        return self._error("先打开一个项目")
+                    key, value = body.get("key", ""), body.get("value", "")
+                    if key not in env.KEYS:
+                        return self._error(f"未知的 key：{key}")
+                    if not value.strip():
+                        return self._error("value 不能为空")
+                    f = env.save(state.root, key, value.strip())
+                    return self._json({"saved": str(f)})
                 if path == "/api/open":
                     try:
                         state.open(Path(body["path"]))
@@ -696,7 +708,7 @@ def make_handler(state: State):
             return {
                 "ffmpeg": {"ok": ff_ok, "path": ff}, "encoder": enc, "encoders": ["libx264", *hw],
                 "node": bool(shutil.which("node")), "remotion": (APP_DIR / "node_modules").exists(),
-                "keys": {k: bool(os.environ.get(k)) for k in ("PEXELS_API_KEY", "PIXABAY_API_KEY", "ELEVENLABS_API_KEY")},
+                "keys": {k: bool(os.environ.get(k)) for k in env.KEYS},
                 "youtube_secret": (Path.home() / ".vidforge" / "client_secret.json").exists()
                                   or bool(os.environ.get("YOUTUBE_CLIENT_SECRET")),
                 "cpus": os.cpu_count(),
