@@ -6,29 +6,32 @@ import { useProject } from '../../../state/ProjectContext'
 import { fmtDuration } from '../../../utils'
 import { TrimDialog, type TrimRange } from './TrimDialog'
 
-// Commons/Openverse/Archive need no signup at all — default to one of those so a first search
-// just works. Pexels/Pixabay are still offered (usually better/more relevant results) but only
-// once the user has actually gone and gotten a free key; see the needs_key handling below.
-const SOURCES = [
-  { value: 'commons', label: 'Wikimedia Commons（公有领域/CC，无需 key）' },
-  { value: 'openverse', label: 'Openverse（CC 聚合：Flickr/博物馆，无需 key）' },
-  { value: 'archive', label: 'Internet Archive（公有领域老电影/照片，无需 key）' },
-  { value: 'pexels', label: 'Pexels（需免费 key）' },
-  { value: 'pixabay', label: 'Pixabay（需免费 key）' },
-  { value: 'google', label: 'Google 图片 · 仅 CC 许可（用我的浏览器）' },
-  { value: 'google_all', label: 'Google 图片 · 全部 ⚠ 版权未知' },
-  { value: 'baidu', label: '百度图片 ⚠ 版权未知' },
+// Commons/Openverse/Google/Baidu are image-only — video search only ever offered those as a
+// confusing "0 results" dead end (worse, the default source used to be one of them, so video
+// search silently never worked at all unless you also knew to change source). Split each source
+// into the kind(s) it actually supports and only ever offer kind-appropriate ones.
+const SOURCES: { value: string; label: string; kinds: ('image' | 'video')[] }[] = [
+  { value: 'commons', label: 'Wikimedia Commons（公有领域/CC，无需 key）', kinds: ['image'] },
+  { value: 'openverse', label: 'Openverse（CC 聚合：Flickr/博物馆，无需 key）', kinds: ['image'] },
+  { value: 'archive', label: 'Internet Archive（公有领域老照片/影像，无需 key）', kinds: ['image', 'video'] },
+  { value: 'pexels', label: 'Pexels（需免费 key）', kinds: ['image', 'video'] },
+  { value: 'pixabay', label: 'Pixabay（需免费 key）', kinds: ['image', 'video'] },
+  { value: 'google', label: 'Google 图片 · 仅 CC 许可（用我的浏览器）', kinds: ['image'] },
+  { value: 'google_all', label: 'Google 图片 · 全部 ⚠ 版权未知', kinds: ['image'] },
+  { value: 'baidu', label: '百度图片 ⚠ 版权未知', kinds: ['image'] },
 ]
+
+const DEFAULT_SOURCE = { image: 'commons', video: 'archive' } as const
 
 const KEY_SIGNUP_URL: Record<string, string> = {
   PEXELS_API_KEY: 'https://www.pexels.com/api/',
   PIXABAY_API_KEY: 'https://pixabay.com/api/docs/',
 }
 
-export function SearchTab({ seg, segId, onAdded }: { seg: Segment; segId: string; onAdded: () => void }) {
+export function SearchTab({ seg, segId, kind, onAdded }: { seg: Segment; segId: string; kind: 'image' | 'video'; onAdded: () => void }) {
   const { view, patch, saveNow } = useProject()
-  const [source, setSource] = useState('commons')
-  const [kind, setKind] = useState<'image' | 'video'>('image')
+  const sources = SOURCES.filter((s) => s.kinds.includes(kind))
+  const [source, setSource] = useState<string>(DEFAULT_SOURCE[kind])
   const [q, setQ] = useState('')
   const [cands, setCands] = useState<SearchCandidate[]>([])
   const [page, setPage] = useState(1)
@@ -46,8 +49,8 @@ export function SearchTab({ seg, segId, onAdded }: { seg: Segment; segId: string
     return a + (secs || 0)
   }, 0)
 
-  // reset the search box (but not source/kind, those are sticky preferences) whenever the
-  // selected segment changes — mirrors the old frontend's picker.cands = [] on storyboard click
+  // reset the search box (but not source, that's a sticky preference) whenever the selected
+  // segment changes — mirrors the old frontend's picker.cands = [] on storyboard click
   useEffect(() => {
     setCands([])
     setError(null)
@@ -56,16 +59,13 @@ export function SearchTab({ seg, segId, onAdded }: { seg: Segment; segId: string
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segId])
 
-  const doSearch = async (p: number, query = q, src = source, k = kind) => {
+  const doSearch = async (p: number, query = q, src = source) => {
     setLoading(true)
     setError(null)
     setNeedsKey(null)
     try {
-      if (['commons', 'google', 'google_all', 'baidu', 'openverse'].includes(src) && k === 'video') {
-        throw new Error('这个来源只提供图片；视频请用 Pexels / Pixabay / Internet Archive')
-      }
       const j = await apiGet<{ candidates: SearchCandidate[] }>(
-        `/api/search?source=${src}&kind=${k}&q=${encodeURIComponent(query)}&page=${p}`,
+        `/api/search?source=${src}&kind=${kind}&q=${encodeURIComponent(query)}&page=${p}`,
       )
       setCands((prev) => (p > 1 ? [...prev, ...j.candidates] : j.candidates))
       if (!j.candidates.length && p === 1) setError('没有结果，换个关键词（英文）试试。')
@@ -81,8 +81,9 @@ export function SearchTab({ seg, segId, onAdded }: { seg: Segment; segId: string
   }
 
   const switchToFreeSource = () => {
-    setSource('commons')
-    doSearch(1, q, 'commons', kind)
+    const free = DEFAULT_SOURCE[kind]
+    setSource(free)
+    doSearch(1, q, free)
   }
 
   const addCandidate = async (c: SearchCandidate, ranges: TrimRange[] | null) => {
@@ -129,30 +130,15 @@ export function SearchTab({ seg, segId, onAdded }: { seg: Segment; segId: string
           value={source}
           onChange={(e) => {
             setSource(e.target.value)
-            doSearch(1, q, e.target.value, kind)
+            doSearch(1, q, e.target.value)
           }}
-          sx={{ minWidth: 220 }}
+          sx={{ minWidth: 260 }}
         >
-          {SOURCES.map((s) => (
+          {sources.map((s) => (
             <MenuItem key={s.value} value={s.value}>
               {s.label}
             </MenuItem>
           ))}
-        </TextField>
-        <TextField
-          select
-          size="small"
-          label="类型"
-          value={kind}
-          onChange={(e) => {
-            const k = e.target.value as 'image' | 'video'
-            setKind(k)
-            doSearch(1, q, source, k)
-          }}
-          sx={{ width: 110 }}
-        >
-          <MenuItem value="image">图片</MenuItem>
-          <MenuItem value="video">视频</MenuItem>
         </TextField>
         <TextField
           size="small"
@@ -192,7 +178,7 @@ export function SearchTab({ seg, segId, onAdded }: { seg: Segment; segId: string
       {needsKey && (
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ p: 1, bgcolor: 'action.hover', borderRadius: 2 }}>
           <Typography variant="body2" color="error">
-            缺 {needsKey}：项目文件夹里建个 .env 文件写一行 {needsKey}=你的key。
+            缺 {needsKey}：项目文件夹里建个 .env 文件写一行 {needsKey}=你的key（或去左侧"系统状态"里直接粘贴保存）。
           </Typography>
           {KEY_SIGNUP_URL[needsKey] && (
             <Link href={KEY_SIGNUP_URL[needsKey]} target="_blank" rel="noreferrer" variant="body2">
@@ -200,7 +186,7 @@ export function SearchTab({ seg, segId, onAdded }: { seg: Segment; segId: string
             </Link>
           )}
           <Button size="small" variant="outlined" onClick={switchToFreeSource}>
-            先换成 Wikimedia Commons（不需要 key）
+            先换成{kind === 'video' ? ' Internet Archive' : ' Wikimedia Commons'}（不需要 key）
           </Button>
         </Stack>
       )}
