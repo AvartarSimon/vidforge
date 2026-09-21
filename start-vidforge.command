@@ -8,6 +8,7 @@ if ! command -v python3 >/dev/null; then
   read -r -p "Press Enter to close"; exit 1
 fi
 python3 -c "import vidforge" 2>/dev/null || { echo "[vidforge] installing vidforge ..."; python3 -m pip install -e . || exit 1; }
+python3 -c "import playwright.sync_api" 2>/dev/null || { echo "[vidforge] installing playwright for browser features (no browser download, uses Edge/Chrome) ..."; python3 -m pip install "playwright>=1.45"; }
 if ! python3 -c "from vidforge import ffmpeg; ffmpeg.find_binary('ffmpeg')" 2>/dev/null; then
   if command -v brew >/dev/null; then
     echo "[vidforge] installing ffmpeg with Homebrew ..."; brew install ffmpeg

@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import html
 import re
+import time
 import urllib.parse
 from pathlib import Path
 
-from . import Candidate, download, http_json, slug
+from . import AssetError, Candidate, download, http_json, slug
 
 API = "https://commons.wikimedia.org/w/api.php"
 _ALLOWED = re.compile(r"public domain|\bpd\b|cc0|cc[- ]by(?!.*nc)(?!.*nd)|no restrictions", re.I)
@@ -85,4 +86,24 @@ class CommonsProvider:
 
     def fetch(self, cand: Candidate, folder: Path) -> Path:
         name = f"{slug(Path(cand.title).stem or 'commons')}-{cand.id}{cand.ext or '.jpg'}"
-        return download(cand.download_url, Path(folder) / name)
+        _pace()
+        try:
+            return download(cand.download_url, Path(folder) / name, retries=0)
+        except AssetError as e:
+            # originals are what Commons throttles ("use thumbnail images in sizes listed");
+            # the 1920 px rendition comes from the thumb cache and is plenty for 1080p
+            if "429" not in str(e) or "/thumb/" in cand.download_url or not cand.thumb_url:
+                raise
+            return download(thumb_at(cand.thumb_url, allowed_width(min(cand.width, DOWNLOAD_WIDTH + 1))), Path(folder) / name)
+
+
+_last_fetch = 0.0
+
+
+def _pace(gap: float = 1.0) -> None:
+    """Commons rate-limits bursts (autofill fetches one file per segment back to back)."""
+    global _last_fetch
+    wait = _last_fetch + gap - time.time()
+    if wait > 0:
+        time.sleep(wait)
+    _last_fetch = time.time()

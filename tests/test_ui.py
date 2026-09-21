@@ -105,6 +105,41 @@ class UiApi(unittest.TestCase):
         self.assertIn("Pexels License", j["credit"])
         self.assertTrue((Path(self.td) / "assets" / "index.json").exists())
 
+    def test_autofill_picks_a_picture_right_away(self):
+        """One click gives every clip-less segment a downloaded image (spec kept for re-pick),
+        remotion/existing segments untouched, and a segment nothing is found for is reported."""
+        raw = self.state.read_raw()
+        raw["segments"].append({"id": "s3", "text": "The Battle of Lexington began the war."})
+        raw["segments"].append({"id": "s4", "text": "Nothing matches this."})
+        self.state.write_raw(raw)
+        try:
+            cand = Candidate(provider="commons", id="9", kind="image", thumb_url="t", preview_url="p", download_url="http://x/lex.jpg",
+                             width=3000, height=2000, duration=None, author="A", license="Public domain", page_url="pg", title="Battle of Lexington.jpg")
+
+            def fake_search(root, provider, query, kind, page=1, relax=True):
+                return [cand] if "Lexington" in query else []
+            fake_dl = lambda url, dest, referer=None, retries=3: (dest.parent.mkdir(parents=True, exist_ok=True), dest.write_bytes(b"jpg"), dest)[2]
+            with mock.patch("vidforge.assets.search", fake_search), mock.patch("vidforge.assets.wikimedia.download", fake_dl), \
+                    mock.patch("vidforge.llm.available", return_value=None), mock.patch.dict("os.environ", {"PEXELS_API_KEY": "", "PIXABAY_API_KEY": ""}):
+                st, j = self.call("/api/autofill", {"source": "commons", "sync": True})
+            self.assertEqual(st, 200)
+            self.assertEqual((j["filled"], j["resolved"]), (2, 1))
+            self.assertEqual([f["id"] for f in j["failed"]], ["s4"])
+            raw = self.state.read_raw()
+            segs = {s["id"]: s for s in raw["segments"]}
+            self.assertEqual(segs["s3"]["clips"], [{"image": "commons:Battle Lexington", "motion": "zoom_in"}])
+            self.assertEqual(segs["s1"]["clips"], [{"image": "assets/a.jpg"}])      # untouched
+            self.assertNotIn("clips", segs["s2"])                                   # remotion segment untouched
+            st, j = self.call("/api/project")
+            self.assertEqual(j["resolved"]["s3"]["clips"][0]["path"], "assets/commons/battle-of-lexington-9.jpg")
+            self.assertIsNone(j["resolved"]["s4"]["clips"][0]["path"])             # spec only, picker shows 自动
+            st, j = self.call("/api/autofill")
+            self.assertEqual(j["state"], "done")
+        finally:
+            raw = self.state.read_raw()
+            raw["segments"] = [s for s in raw["segments"] if s["id"] not in ("s3", "s4")]
+            self.state.write_raw(raw)
+
     def test_upload_asset(self):
         import io
         from PIL import Image

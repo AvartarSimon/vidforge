@@ -746,10 +746,34 @@ function viewVisuals(v) {
       </div>
     </div>
   </div>`;
-  const autoBtn = document.createElement('button'); autoBtn.className = 'small'; autoBtn.style.marginBottom = '8px'; autoBtn.textContent = '✨ 没画面的段一键自动配图';
-  autoBtn.title = '按每段旁白的关键词生成搜索片段（渲染时自动取第一张），之后可逐段替换';
-  autoBtn.onclick = async () => { if (!await save()) return; autoBtn.disabled = true; try { const j = await api(`/api/autofill?lang=${lang}`, {}); await load(); $('#issues').innerHTML = `<div class="banner info">已为 ${j.filled} 段生成 ${j.source} 搜索片段，渲染时自动取第一张；不满意的段点开重选。</div>`; } catch (e) { alert(e.message); } };
-  $('#storyboard').prepend(autoBtn);
+  // one click: search + download a first picture for every segment without one (server thread, polled)
+  const autoBar = document.createElement('div'); autoBar.style.cssText = 'display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px';
+  autoBar.innerHTML = `<button class="small" id="autoBtn">✨ 一键配图</button>
+    <select id="autoSrc" class="small"><option value="commons">Commons（历史画/地图/老照片）</option><option value="pexels">Pexels（需 key）</option><option value="pixabay">Pixabay（需 key）</option></select>
+    <label class="small"><input type="checkbox" id="autoOver"> 已有画面的段也重配</label>
+    <span id="autoProg" class="muted"></span>`;
+  $('#storyboard').prepend(autoBar);
+  const autoBtn = $('#autoBtn');
+  autoBtn.title = '按每段旁白生成搜索词（本地模型或关键词提取），立刻搜图下载，之后可逐段替换';
+  autoBtn.onclick = async () => {
+    if (!await save()) return;
+    autoBtn.disabled = true;
+    try {
+      const st0 = await api(`/api/autofill?lang=${lang}`, { source: $('#autoSrc').value, overwrite: $('#autoOver').checked });
+      let st = { state: 'running', done: 0, total: st0.total };
+      while (st.state === 'running') {
+        $('#autoProg').textContent = `正在搜图并下载… ${st.done}/${st.total}`;
+        await new Promise(r => setTimeout(r, 800));
+        st = await api('/api/autofill');
+      }
+      $('#autoProg').textContent = '';
+      await load();
+      const r = st.result || {};
+      const failed = (r.failed || []).length ? `；${r.failed.length} 段没搜到（${r.failed.map(f => f.id).join('、')}），点开手动选` : '';
+      $('#issues').innerHTML = `<div class="banner info">已为 ${r.filled} 段配好 ${r.resolved} 张图（${r.source}${r.llm ? '，搜索词来自本地模型' : '，搜索词来自关键词提取'}）${failed}。不满意的段点开重选。</div>`;
+    } catch (e) { alert(e.message); }
+    autoBtn.disabled = false;
+  };
   $('#storyboard').onclick = e => { const c = e.target.closest('.sb-card'); if (c) { selSeg = c.dataset.id; picker.cands = []; picker.q = ''; render(); } };
   $('#fit').onchange = e => { seg.fit = e.target.value; markDirty(); };
   seg.overlays = seg.overlays || [];

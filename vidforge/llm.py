@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 
@@ -63,6 +64,38 @@ def keywords(text: str, n: int = 4) -> list[str]:
         return [str(k) for k in json.loads(out).get("keywords", [])][:n]
     except json.JSONDecodeError:
         return []
+
+
+def keywords_batch(items: dict[str, str], n_words: str = "2-4") -> dict[str, str]:
+    """One English search phrase per segment in a single call (autofill over a 60-segment script
+    must not take 60 round trips). Missing/garbled ids just fall back to the heuristic."""
+    if not items:
+        return {}
+    listing = "\n".join(f"{k}: {v[:400]}" for k, v in items.items())
+    out = chat("For each narration segment below give ONE English image-search phrase ({} words) naming the main "
+               "event, person, place or object as an encyclopedia picture caption would (proper nouns first, add the "
+               "year when it is a historical event, e.g. 'Battle of Lexington 1775', 'Independence Hall Philadelphia', "
+               "'Mayflower ship'). No months, adjectives or abstract words. Always English, even when the narration is "
+               "Chinese. Return JSON mapping segment id to phrase, nothing else.\n\n{}".format(n_words, listing), json_mode=True)
+    try:
+        data = json.loads(out)
+    except json.JSONDecodeError:
+        return {}
+    if isinstance(data, dict) and isinstance(data.get("keywords"), dict):
+        data = data["keywords"]
+    if not isinstance(data, dict):
+        return {}
+    phrases: dict[str, str] = {}
+    for k, v in data.items():
+        if not isinstance(v, str):
+            continue
+        v = v.strip().strip('"')
+        if re.search(r"[A-Za-z]{3}", v):           # small models sometimes leak a CJK char into an English phrase
+            v = re.sub(r"[一-鿿]+", " ", v)
+        v = " ".join(v.split())
+        if v:
+            phrases[str(k)] = v
+    return phrases
 
 
 def translate_query(text: str) -> str:

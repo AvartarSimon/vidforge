@@ -90,6 +90,7 @@ class State:
         self.root: Path = workspace_dir()
         self.lock = threading.Lock()
         self.build = {"state": "idle", "lines": [], "lang": None, "started": None, "finished": None, "error": None}
+        self.autofill = {"state": "idle", "done": 0, "total": 0, "lines": [], "result": None}
         self._last_snapshot = 0.0
         if project_path is not None:
             self.open(project_path)
@@ -361,6 +362,8 @@ def make_handler(state: State):
                 if path == "/api/chat/login/status":
                     from .. import browser
                     return self._json({"status": browser.LAST_LOGIN_STATUS, "running": browser._lock.locked()})
+                if path == "/api/autofill":
+                    return self._json(state.autofill)
                 if path == "/api/keywords":
                     p = state.load(q.get("lang"))
                     seg = next((s for s in p.segments if s.id == q.get("id")), None)
@@ -577,7 +580,7 @@ def make_handler(state: State):
                     out, dur = pipeline.preview_segment(p, body.get("id"))
                     return self._json({"video": state.rel(out), "duration": dur, "stamp": time.time()})
                 if path == "/api/autofill":
-                    return self.autofill(q.get("lang"), body.get("source"))
+                    return self.autofill(q.get("lang"), body)
                 if path == "/api/build/cancel":
                     pipeline.cancel()
                     return self._json({"cancelling": state.build["state"] == "running"})
@@ -715,22 +718,98 @@ def make_handler(state: State):
                 "llm": __import__("vidforge.llm", fromlist=["available"]).available(),
             }
 
-        def autofill(self, lang: str | None, source: str | None):
-            """Give every clip-less segment a search clip from its keywords (a first rough cut)."""
+        def autofill(self, lang: str | None, body: dict):
+            """Give segments a first picture right now, not at render time.
+
+            body: source (commons|pexels|pixabay; default = commons, the history archive, unless only a
+            stock key is set), overwrite (also redo segments that already have clips), resolve (default
+            True: search + download so the storyboard shows a real thumbnail; False = old behaviour,
+            just write "provider:query" specs), sync (run inline — tests).
+            Search phrases: one batched Ollama call when it is running, else the heuristic. Runs in a
+            thread; GET /api/autofill reports progress so a 60-segment script does not look frozen.
+            """
+            if state.autofill["state"] == "running":
+                return self._error("自动配图正在进行中")
             env.load_dotenv(state.root)
-            source = source or ("pexels" if os.environ.get("PEXELS_API_KEY") else "pixabay" if os.environ.get("PIXABAY_API_KEY") else "commons")
+            has_stock = os.environ.get("PEXELS_API_KEY") or os.environ.get("PIXABAY_API_KEY")
+            source = body.get("source") or ("commons" if not has_stock else "pexels" if os.environ.get("PEXELS_API_KEY") else "pixabay")
+            overwrite = bool(body.get("overwrite"))
+            resolve = body.get("resolve", True)
             raw = state.read_raw()
             base = raw.get("language", "en")
-            n = 0
-            for s in raw["segments"]:
-                if s.get("clips") or any(k in s for k in ("image", "video", "remotion")):
+            pending = []
+            for seg in raw["segments"]:
+                has_visual = seg.get("clips") or any(k in seg for k in ("image", "video", "remotion"))
+                if seg.get("remotion") or (has_visual and not overwrite):
                     continue
-                text = s.get("text" if not lang or lang == base else f"text_{lang}") or s.get("text") or ""
-                kws = keywords.suggest(text, 2) or [s["id"]]
-                s["clips"] = [{"image": f"{source}:{' '.join(kws[:2])}", "motion": "zoom_in"}]
-                n += 1
-            state.write_raw(raw)
-            return self._json({"filled": n, "source": source})
+                text = seg.get("text" if not lang or lang == base else f"text_{lang}") or seg.get("text") or ""
+                if text.strip():
+                    pending.append((seg, text))
+            state.autofill = {"state": "running", "done": 0, "total": len(pending), "lines": [], "result": None}
+            log = state.autofill["lines"].append
+
+            def run():
+                from .. import llm
+                from ..assets import AssetError, Library, pick_for_spec
+                phrases: dict[str, str] = {}
+                used_llm = False
+                if pending and llm.available():
+                    try:
+                        phrases = llm.keywords_batch({s["id"]: t for s, t in pending})
+                        used_llm = bool(phrases)
+                        log(f"本地模型给出 {len(phrases)} 段搜索词")
+                    except llm.LlmError as e:
+                        log(f"本地模型不可用，改用启发式关键词：{e}")
+                fallbacks = [p for p in (source, "commons", "pexels" if os.environ.get("PEXELS_API_KEY") else None,
+                                         "pixabay" if os.environ.get("PIXABAY_API_KEY") else None) if p]
+                providers = list(dict.fromkeys(fallbacks))
+                lib = Library(state.root)
+                failed: list[dict] = []
+                resolved = 0
+                for seg, text in pending:
+                    query = phrases.get(seg["id"]) or " ".join(keywords.suggest(text, 2)) or seg["id"]
+                    if used_llm and any("一" <= ch <= "鿿" for ch in query):   # stock/archive search wants English
+                        try:
+                            query = llm.translate_query(query) or query
+                        except llm.LlmError:
+                            pass
+                    clip = {"image": f"{source}:{query}", "motion": "zoom_in"}
+                    if resolve:
+                        for prov in providers:
+                            try:
+                                dest = pick_for_spec(state.root, lib, prov, "image", query)
+                                clip["image"] = f"{prov}:{query}"
+                                resolved += 1
+                                log(f"{seg['id']}: {prov} '{query}' -> {dest.name}")
+                                break
+                            except AssetError as e:
+                                log(f"{seg['id']}: {e}")
+                            except Exception as e:  # noqa: BLE001  (network, provider quirks) — keep going
+                                log(f"{seg['id']}: {prov} 出错 {e}")
+                        else:
+                            failed.append({"id": seg["id"], "query": query})
+                    seg["clips"] = [clip]
+                    for k in ("image", "video"):
+                        seg.pop(k, None)
+                    state.autofill["done"] += 1
+                # the user may have edited text meanwhile: re-read and apply only our clip changes
+                cur = state.read_raw()
+                by_id = {s["id"]: s for s, _ in pending}
+                for seg in cur["segments"]:
+                    if seg["id"] in by_id:
+                        seg["clips"] = by_id[seg["id"]]["clips"]
+                        for k in ("image", "video"):
+                            seg.pop(k, None)
+                state.write_raw(cur, snapshot=True)
+                state.autofill["result"] = {"filled": len(pending), "resolved": resolved, "failed": failed,
+                                            "source": source, "llm": used_llm}
+                state.autofill["state"] = "done"
+
+            if body.get("sync"):
+                run()
+                return self._json({"started": True, **state.autofill["result"]})
+            threading.Thread(target=run, daemon=True).start()
+            return self._json({"started": True, "total": len(pending)})
 
         def save_project(self, body: dict, snapshot: bool = False):
             data = body.get("raw")

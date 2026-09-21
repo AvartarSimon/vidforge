@@ -137,7 +137,7 @@ def http_json(url: str, headers: dict | None = None, timeout: int = 60) -> dict:
         raise AssetError(f"{url.split('/')[2]} unreachable: {e.reason}") from None
 
 
-def download(url: str, dest: Path, referer: str | None = None) -> Path:
+def download(url: str, dest: Path, referer: str | None = None, retries: int = 3) -> Path:
     if dest.exists() and dest.stat().st_size > 0:
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -146,13 +146,24 @@ def download(url: str, dest: Path, referer: str | None = None) -> Path:
     if referer:
         headers["Referer"] = referer
     req = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=300) as resp, open(tmp, "wb") as f:
-            while chunk := resp.read(1 << 20):
-                f.write(chunk)
-    except urllib.error.URLError as e:
-        tmp.unlink(missing_ok=True)
-        raise AssetError(f"download failed: {e}") from None
+    # Commons (and CDNs) answer 429/503 when several files are fetched back to back — the
+    # storyboard autofill does exactly that — so back off and retry before giving up.
+    for attempt, wait in enumerate((0, 3, 8, 15)[:retries + 1]):
+        if wait:
+            time.sleep(wait)
+        try:
+            with urllib.request.urlopen(req, timeout=300) as resp, open(tmp, "wb") as f:
+                while chunk := resp.read(1 << 20):
+                    f.write(chunk)
+            break
+        except urllib.error.HTTPError as e:
+            tmp.unlink(missing_ok=True)
+            if e.code in (429, 503) and attempt < retries:
+                continue
+            raise AssetError(f"download failed: {e}") from None
+        except urllib.error.URLError as e:
+            tmp.unlink(missing_ok=True)
+            raise AssetError(f"download failed: {e}") from None
     tmp.replace(dest)
     return dest
 
@@ -247,6 +258,30 @@ def fetch(root: Path, cand: Candidate, library: Library | None = None) -> Path:
     return dest
 
 
+def pick_for_spec(root: Path, lib: Library, prov_name: str, kind: str, query: str, need: float = 0.0) -> Path:
+    """Resolve one "provider:query" spec to a downloaded file: remembered pick, else the best
+    unused landscape result (long enough for `need` seconds when it is a video). Shared by the
+    build-time resolver and the storyboard's one-click autofill so both pick the same file."""
+    prov_name = {"wikimedia": "commons"}.get(prov_name, prov_name)
+    spec = f"{prov_name}:{kind}:{query}"
+    dest = lib.pick(spec)
+    if dest is not None:
+        return dest
+    cands = [c for c in rank(search(root, prov_name, query, kind), query) if c.landscape or kind == "image"]
+    used = lib.used_ids(prov_name)
+    fresh = [c for c in cands if c.id not in used]
+    pool = fresh or cands
+    if kind == "video":
+        long_enough = [c for c in pool if (c.duration or 0) >= need]
+        pool = long_enough or pool
+    if not pool:
+        raise AssetError(f"no {kind} found on {prov_name} for {query!r}")
+    dest = fetch(root, pool[0], lib)
+    lib.remember_pick(spec, dest.resolve().relative_to(root.resolve()).as_posix())
+    lib.save()
+    return dest
+
+
 def resolve_all(project: Project, needed_seconds: dict[str, float] | None = None, log=print) -> None:
     """Fill image/video for every clip that only has a `source` spec (auto-pick)."""
     pending = [(s, c) for s in project.segments for c in s.clips if c.needs_asset]
@@ -256,26 +291,13 @@ def resolve_all(project: Project, needed_seconds: dict[str, float] | None = None
     for seg, clip in pending:
         assert clip.source is not None
         prov_name, _, query = clip.source.partition(":")
-        prov_name = {"wikimedia": "commons"}.get(prov_name, prov_name)
         need = (needed_seconds or {}).get(seg.id, 0.0)
         if clip.slice_length:
             need = clip.slice_length
-        spec = f"{prov_name}:{clip.source_kind}:{query}"
-        dest = lib.pick(spec)
-        if dest is None:
-            cands = [c for c in rank(search(project.root, prov_name, query, clip.source_kind), query)
-                     if c.landscape or clip.source_kind == "image"]
-            used = lib.used_ids(prov_name)
-            fresh = [c for c in cands if c.id not in used]
-            pool = fresh or cands
-            if clip.source_kind == "video":
-                long_enough = [c for c in pool if (c.duration or 0) >= need]
-                pool = long_enough or pool
-            if not pool:
-                raise AssetError(f"segment {seg.id}: no {clip.source_kind} found on {prov_name} for {query!r}")
-            dest = fetch(project.root, pool[0], lib)
-            lib.remember_pick(spec, dest.resolve().relative_to(project.root.resolve()).as_posix())
-            lib.save()
+        try:
+            dest = pick_for_spec(project.root, lib, prov_name, clip.source_kind, query, need)
+        except AssetError as e:
+            raise AssetError(f"segment {seg.id}: {e}") from None
         if clip.source_kind == "video":
             clip.video = dest
         else:

@@ -12,6 +12,10 @@ python -c "import vidforge" 2>nul || (
   echo [vidforge] installing vidforge ...
   python -m pip install -e . || (pause & exit /b 1)
 )
+python -c "import playwright.sync_api" 2>nul || (
+  echo [vidforge] installing playwright for browser features ^(no browser download, uses Edge/Chrome^) ...
+  python -m pip install "playwright>=1.45"
+)
 python -c "from vidforge import ffmpeg; ffmpeg.find_binary('ffmpeg')" 2>nul || (
   echo [vidforge] ffmpeg not found. Installing with winget ...
   winget install --id Gyan.FFmpeg -e --accept-package-agreements --accept-source-agreements

@@ -16,6 +16,9 @@
 9. [Q8：注册 ABN 的目的是什么？](#q8)
 10. [Q9：接单做 AI 自动化，别人为什么找我？值得吗？](#q9)
 11. [Q10：做 FND（功能性神经障碍）科普账号——五个顾虑的逐条分析](#q10)
+12. [Q11：FND 账号具体在哪些平台、怎么做视频（出镜 vs vidforge）](#q11)
+13. [Q12：还有哪些方向值得做](#q12)
+14. [Q13：AI 使用技巧分享值不值得做？AI 创业怎么做？](#q13)
 
 ---
 
@@ -351,3 +354,101 @@
 - 建议她共同拥有这个账号（决定权），而不是"你讲她的病"。很多患者说被公开讲述是二次伤害，也有很多人说讲出来是康复的一部分——这只能她决定。
 
 **依据**：[FND 患病率系统综述](https://pubmed.ncbi.nlm.nih.gov/39663114/)；[InSight+ 2026：FND 在澳洲](https://insightplus.mja.com.au/2026/16/functional-neurological-disorder-in-australia-disabling-stigmatised-and-under-served)；[Frontiers 2026：YouTube 上的 FND 内容可靠性](https://www.frontiersin.org/journals/public-health/articles/10.3389/fpubh.2026.1802156/full)；[Physio4FMD RCT](https://pubmed.ncbi.nlm.nih.gov/38768621/)；[Monash 线上治疗项目](https://www.monash.edu/medicine/news/latest/2025-articles/collaborative-online-therapy-program-sees-functional-seizures-almost-halve-within-weeks)；[Alfred 功能性癫痫门诊](https://www.alfredhealth.org.au/news/new-clinic-helping-people-with-functional-seizures)；[FND Australia Support Services](https://fndaus.org.au/)；[neurosymptoms.org](https://neurosymptoms.org/en/)；[FND Hope](https://fndhope.org/resources/)；[四部门规范自媒体医疗科普通知](https://www.cac.gov.cn/2025-08/01/c_1755764425442686.htm)；[抖音医疗内容准入规则](https://www.donews.com/news/detail/1/3148075.html)；[YouTube 医疗虚假信息政策](https://support.google.com/youtube/answer/13813322?hl=en)；[中文资料：走出迷雾](https://zhuanlan.zhihu.com/p/559222943)；[台湾 FND 卫教系列](https://www.leepsyclinic.com/2026/09/fnd.html)；[仁济 JNNR FND 联盟](https://jnnr.renji.com/CN/column/item13.shtml)。
+
+---
+
+<a id="q11"></a>
+## Q11：FND 账号具体在哪些平台、怎么做视频（出镜 vs vidforge）
+
+**结论**：不是二选一，是**三种视频类型各用各的生产方式**。信任靠人（出镜 / 真声），产量靠流水线（vidforge）。
+
+### 平台（按优先级）
+
+| 优先级 | 平台 | 发什么 | 为什么 |
+|---|---|---|---|
+| 1 | YouTube | 10–15 分钟原片 + 章节 + 字幕 | 全球华语（台湾、北美、澳洲、大陆翻墙），搜索长尾，广告 / 会员 |
+| 2 | B 站 | 同一文件直传 | 大陆长视频主阵地，知识区受众接受"家属讲述 + 引用来源" |
+| 3 | 小红书 | 2–4 分钟精剪 + 一篇图文笔记（来源清单） | 患者社群活跃；"真实经历"允许，打好来源标 |
+| 4 | 微信公众号 | 视频文字稿 | 大陆患者搜索靠微信 / 百度，视频进不去 |
+| 5 | 知乎 | 在已有 FND 问题下答题，链接视频 | 现有中文 FND 内容就在这里，流量精准 |
+| ✗ | 抖音 / 头条 | 不做 | 医疗类非认证不能发；"家属 vlog"能发但没价值 |
+
+### 三种视频类型与生产方式
+
+| 类型 | 内容 | 生产方式 | 每条耗时 | 频率 |
+|---|---|---|---|---|
+| A 经历叙事 | "我们的诊断历程"、"发作那天我做了什么"、"跟国内父母怎么解释" | **你出镜或至少真声**，手机 + 补光 + 领夹麦，谈话式，一镜到底再剪 | ~3 h | 每月 1 |
+| B 资源导读 / 研究翻译 | neurosymptoms.org 导读、"Physio4FMD 到底说明了什么"、"澳洲就医路径" | **vidforge 流水线**：你读原文 → LLM 起草 → 你改成自己的话 → 真声录音（TTS 只做样片校节奏）→ 屏幕录制 + Remotion 图表 / 流程图 + 少量 Pexels → 出片 + 字幕 + 章节 | ~5 h | 每月 1 |
+| C 访谈 | 会中文的神经科医生 / 物理治疗师 / OT / 同行支持者 | Zoom 录制；vidforge 只做片头片尾 / 字幕 / 章节 | ~3 h + 约人 | 每季度 1 |
+
+依据：Frontiers 2026 对 YouTube 上 FND 内容的分析——"健康资讯型"（讲解类）互动最高，"患者视角"最稀缺（10%）。两者都做，互相导流。
+
+### 这个受众特有的制作规范
+
+- **字幕烧录、语速放慢、少闪烁 / 少快切、不用刺耳音效**——功能性发作、认知和视觉症状患者对这些敏感；这既是可及性，也是和"AI 内容农场"最直观的区别。
+- 每条视频固定"来源卡"（Remotion TitleCard 即可）+ 简介里固定免责声明 + 危机资源（Lifeline 13 11 14、Beyond Blue）。
+- 评论区置顶规则："这里不提供医疗建议"。
+- 不拍她的症状；她决定露不露脸、提不提名字。
+
+---
+
+<a id="q12"></a>
+## Q12：还有哪些方向值得做
+
+按"你独有的资产"排序（每条都能在你已有的东西里找到出处）：
+
+1. **FND 家属账号**（[Q10](#q10)/[Q11](#q11)）——心的项目，独占，慢。
+2. **澳洲家庭电池 / 太阳能数据**——钱的项目，**最推荐作为商业主线**：
+   - 事实：联邦 Cheaper Home Batteries Program（2025-07 起，约 30% 折扣）到 2026-08-14 已装 **50 万套**，政府把 2030 目标上调到 **约 200 万套**；认证安装商一年翻倍到 8,846 家；超过三分之一澳洲家庭有屋顶光伏；2026-05-01 规则有调整。
+   - 含义：未来 4 年 **150 万个家庭要做"装不装电池、装多大、哪家装"的决定**，而 8,800 家安装商在抢客户——这是"无聊、具体、痛、有商业意图"的典型市场。
+   - 你有的：solar 分析代码 + 自家数据 + 工程师算账能力。
+   - 形态：内容（"用你家的电费单算电池几年回本"，中英双语）+ 工具（上传电费 / 逆变器数据 → 回本估算 → 报告）+ 变现（安装商 affiliate / lead，太阳能行业单个合格 lead 常见 AUD 50–300 ⚠️；报告付费；安装商 B2B 订阅）。
+3. **vidforge 转 B2B**：给墨尔本华人地产经纪 / 中介做"房源 → 视频"的产品化服务（[Q9](#q9) 的产品化路径），不面向创作者（创作者没钱且流失快）。
+4. **"40 岁工程师用 Claude Code 造东西"英文 build-in-public**：只作为上面 1–3 的**副产品**（录过程即内容），不单独立项。
+5. **华人在澳医疗系统导航**（Medicare / NDIS / 专科等待 / 急诊）：FND 账号做起来后的自然外延，不要一开始就铺开。
+
+**不建议**：泛 AI 工具测评、历史 / 科普解说、澳洲生活 vlog、移民咨询。
+
+---
+
+<a id="q13"></a>
+## Q13：AI 使用技巧分享值不值得做？AI 创业怎么做？
+
+### 13.1 "AI 技巧 / 免费平台 / 开源平台 / AI 创业案例"类内容
+
+**结论：这是中英文两边都最饱和的赛道，不建议作为主线。**
+
+- 行业判断（澎湃 / 36 氪 2026-05）："AI 博主赛道已从技术红利期进入内容深耕期"。头部是 **秋芝 2046**（全网 245 万，前互联网产品经理，全职测评，B 站 AI 春晚总导演）、**跟李沐学 AI**（113 万，亚马逊首席科学家）、AIGC 创作类（荒蛋记录员 78 万）、虚拟博主。变现四条：品牌广告、卖课（文中原话："借'AI 造富神话'收割知识焦虑"）、自研产品、平台激励——文章**没有给出任何具体收入数字**，本身就说明问题。
+- 赢的条件只有两种：**资历**（李沐）或**全职速度**（秋芝）。你两者都不是，而且这类内容是 AI 搜索最先替代的——"哪些免费 AI 平台"问一句 ChatGPT 就有。
+- "AI 创业成功案例"更是二手信息，零壁垒。
+- 唯一能做的形态：**AI 用在一个具体场景**——"用 Claude Code 给澳洲家庭算电池回本"、"用 AI 翻译医学资料照顾家人"。技巧是副产品，场景是主体。这就是 [Q12](#q12) 第 4 条。
+
+### 13.2 AI 创业怎么做——数据
+
+- 独立开发者产品收入分布（2026）：**54% 收入为 0**（2023 年以来没变）；~25% < $1k MRR；~15% $1–10k；~5% $10–100k；~1% > $100k。前 5% 拿走 70%+ 的收入。
+- 什么在赢：**垂直、无聊、具体、痛**（"给会计的 SaaS"、"地产经纪的流程自动化"、"牙科诊所的合规工具"），24 个月时单人 B2B 收入是 B2C 的 4 倍以上。
+- 时间：有 AI 工具后到 $5k MRR 约 4–6 个月（此前 12–18 个月）；到 $10k MRR 中位数仍是 12–18 个月。
+- Marc Lou：3 年 25 个项目，12 个盈利，1 个大成功，年入 $103 万——**成功率 4%，靠的是量和快速放弃**。
+- 一人公司：仅约 20% 稳定盈利，深圳 OPC 圈一年留存不足 10%。"AI 降低了实现门槛，商业能力仍是核心变量"。
+- 最常见死法：先建后验证；市场选错（"失败源于选了不商业的市场，不是做得差"）。
+
+### 13.3 给你的创业方案
+
+**原则**：不辞职；不做"给所有人的 AI 工具"；不做给创作者的工具；做一个你**有入口**的垂直市场。
+
+**推荐主线：澳洲家庭电池 / 太阳能决策工具**（[Q12](#q12) 第 2 条）
+
+| 阶段 | 做什么 | 判据 |
+|---|---|---|
+| 第 1–4 周 验证 | 一页 landing（"上传电费单，3 分钟算出电池回本年限"）；在华人群 / 本地社群找 20 个有光伏的家庭免费算，记录他们真正问的问题；联系 5 家安装商问"合格 lead 你付多少" | ≥ 10 人愿意留邮箱 / 微信；≥ 1 家安装商给出 lead 价格 |
+| 第 5–8 周 建 | 用你的 solar 代码 + Claude Code 做最小版：输入电费单 / 用电曲线 → 回本估算 + 报告 PDF；中英双语 | 能给 20 个验证用户出报告 |
+| 第 9–12 周 卖 | 免费报告换邮箱；报告末尾"要报价？"→ 安装商 lead；同时发 3 条"用数据算电池"视频（vidforge） | 90 天内第一笔 affiliate / lead 收入，否则砍或转向 |
+| 之后 | B2B：给安装商的"客户预评估"白标工具（月费） | 3 家付费安装商 = 可持续 |
+
+- 成本：域名 + 托管 < AUD 30/月；LLM 调用按量。
+- 合规：ABN 在第一笔收入时注册；affiliate 必须披露；不承诺节省金额（用"估算"）；不碰电工 / 安装本身。
+- 和其他线的关系：FND 账号是心的项目（每月 2 条）；电池工具是钱的项目（每周 4–6 小时）；vidforge 是两条线的内部工具。**不再开第四条线。**
+
+**备选（如果 20 次访谈证明没人要）**：vidforge 转给华人地产经纪的房源视频服务（[Q9](#q9)），同样按"4 周验证 → 4 周建 → 4 周卖"跑。
+
+**依据**：[Cheaper Home Batteries 六个月总结](https://www.energy.gov.au/news/six-months-cheaper-home-batteries-program)；[50 万套安装](https://www.energy-storage.news/australias-cheaper-home-batteries-program-officially-passes-500000-installations/)；[DCCEEW 项目页](https://www.dcceew.gov.au/energy/programs/cheaper-home-batteries)；[2026-05-01 规则变化](https://www.solarnational.com.au/cheaper-home-batteries-program-changes-may-2026/)；[抖快红 B 上最火的 AI 博主在赚钱了吗（澎湃）](https://m.thepaper.cn/newsDetail_forward_33200194)；[独立开发者收入分布](https://solooperatorstack.com/blog/indie-hacker-revenue-distribution-tam-clarity/)；[Marc Lou 案例](https://news.qq.com/rain/a/20260107A07ECX00)；[2026 独立开发者数据](https://www.aprilzz.com/indie/solo-founder-ai-native-2026/)；[一人公司现状（36 氪）](https://36kr.com/p/3674210963923847)；[2026 indie hacker playbook](https://rethinklab.co/blog/from-0-to-10k-mrr-a-2026-indie-hacker-playbook)。

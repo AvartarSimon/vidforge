@@ -31,11 +31,29 @@ class BrowserError(RuntimeError):
 
 
 def _playwright():
+    """Import playwright, installing it on first use if it is missing.
+
+    The launchers only guarantee `vidforge` itself, so the first click on a browser feature used
+    to fail with "pip install playwright" — a dead end for a double-click user. The wheel is
+    ~40 MB, needs no browser download (we drive the installed Edge/Chrome), so just install it.
+    """
     try:
         from playwright.sync_api import sync_playwright
+        return sync_playwright
     except ImportError:
-        raise BrowserError("浏览器自动化需要 playwright：pip install playwright（不用下载浏览器，直接用本机 Edge/Chrome）") from None
-    return sync_playwright
+        pass
+    import subprocess
+    import sys
+    print("[vidforge] playwright 未安装，正在自动安装（一次性，约 40 MB）…")
+    rc = subprocess.call([sys.executable, "-m", "pip", "install", "--quiet", "playwright>=1.45"])
+    if rc == 0:
+        try:
+            from playwright.sync_api import sync_playwright
+            return sync_playwright
+        except ImportError:
+            pass
+    raise BrowserError("浏览器自动化需要 playwright，自动安装失败。请在命令行运行：python -m pip install playwright"
+                       "（不用下载浏览器，直接用本机 Edge/Chrome），然后重启 vidforge。")
 
 
 def launch(pw, headless: bool = False, channel_order: tuple[str, ...] | None = None):
