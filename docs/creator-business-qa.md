@@ -19,6 +19,7 @@
 12. [Q11：FND 账号具体在哪些平台、怎么做视频（出镜 vs vidforge）](#q11)
 13. [Q12：还有哪些方向值得做](#q12)
 14. [Q13：AI 使用技巧分享值不值得做？AI 创业怎么做？](#q13)
+15. [Q14：美国历史频道——时间线 / 人物线 / 事件线选哪个，怎么差异化](#q14)
 
 ---
 
@@ -452,3 +453,58 @@
 **备选（如果 20 次访谈证明没人要）**：vidforge 转给华人地产经纪的房源视频服务（[Q9](#q9)），同样按"4 周验证 → 4 周建 → 4 周卖"跑。
 
 **依据**：[Cheaper Home Batteries 六个月总结](https://www.energy.gov.au/news/six-months-cheaper-home-batteries-program)；[50 万套安装](https://www.energy-storage.news/australias-cheaper-home-batteries-program-officially-passes-500000-installations/)；[DCCEEW 项目页](https://www.dcceew.gov.au/energy/programs/cheaper-home-batteries)；[2026-05-01 规则变化](https://www.solarnational.com.au/cheaper-home-batteries-program-changes-may-2026/)；[抖快红 B 上最火的 AI 博主在赚钱了吗（澎湃）](https://m.thepaper.cn/newsDetail_forward_33200194)；[独立开发者收入分布](https://solooperatorstack.com/blog/indie-hacker-revenue-distribution-tam-clarity/)；[Marc Lou 案例](https://news.qq.com/rain/a/20260107A07ECX00)；[2026 独立开发者数据](https://www.aprilzz.com/indie/solo-founder-ai-native-2026/)；[一人公司现状（36 氪）](https://36kr.com/p/3674210963923847)；[2026 indie hacker playbook](https://rethinklab.co/blog/from-0-to-10k-mrr-a-2026-indie-hacker-playbook)。
+
+---
+
+<a id="q14"></a>
+## Q14：美国历史频道——时间线 / 人物线 / 事件线选哪个，怎么差异化
+
+**结论：主线用「事件线（问题驱动）」，人物线做支线系列，时间线做 Shorts 格式，三者共用一套素材。**
+
+先说前提（[Q1](#q1) 已说过，这里不再展开）：历史解说是最拥挤、最容易被 AI 内容淹没的赛道，YouTube 的 inauthentic 政策也最盯它。能做的条件是：**自己的声音 + 一个别人没有的固定角度 + 每条视频有自己画的地图/时间线（Remotion）**。满足这三条，就按下面做。
+
+### 三条线的比较
+
+| | 时间线（逐年） | 人物线 | 事件线（问题驱动） |
+|---|---|---|---|
+| 已有账号 | 英文有 "History of the USA: Every Year"（地图动画）、TimeGhost 的 WWI/WWII 逐周；**中文没有逐年系列** | 中英文都很多（华盛顿、富兰克林、林肯是热门） | 中文有：小鸣说（独立战争一口气看完）、六度世界（起因/过程/后果）、王局（时政切入）、肥洲纪录片（宪法史）、BBC 中文 |
+| 单条能否独立成立 | ❌ 弱年份没内容，观众必须从第一集看 | ✅ | ✅ 每条回答一个问题 |
+| 搜索流量 | 低（没人搜"1791 年美国"） | 中 | **高**（"美国为什么能独立""美国宪法为什么这样设计"是常搜问题） |
+| 可持续性 | 250 年 = 250 集，前 30 集就会枯竭（1790–1810 年代乏味） | 有限（重要人物约 40–60 个） | 无限（每个事件可拆多个问题） |
+| 适合 vidforge | ✅ 地图 + 年份卡片 | ✅ 画像 + Ken Burns | ✅ 档案画 + 地图 + 时间线卡片 |
+| 结论 | 做成 **Shorts 系列**（"美国这一年 · 1776"，60 秒） | 做成 **事件线的支线**（讲到制宪会议时出"麦迪逊"一集） | **主线** |
+
+### 事件线的差异化（中文受众）
+
+1. **固定角度：把美国当一个"系统"来讲**——你是工程师，制衡、联邦/州权、选举人团、修正案机制，全是"系统设计"问题：为什么这样设计、设计时想防什么、后来哪里失效。这是现有中文频道没有的角度（他们要么讲故事，要么讲时政）。
+2. **"同一年，中国在干什么"**——每条视频固定一个 30 秒环节：1776 年 = 乾隆四十一年，1787 年制宪 = 乾隆修四库全书。中文观众对这种平行对照有天然兴趣，成本几乎为零，且 AI 内容农场不会做。
+3. **不碰时政**——不评价当下政党、选举、总统。讲到"对今天的意义"止于制度层面。这既是安全，也是和王局那类频道的区隔。
+4. **每条都有自己画的图**：一张地图（Remotion）或一条时间线，让"这是这个频道画的"成为识别度。
+
+### 前 12 条选题（每条 8–12 分钟，一个问题）
+
+1. 英国为什么会丢掉北美——七年战争的账单
+2. 波士顿倾茶：一场关于税的争吵怎么变成战争
+3. 莱克星顿的第一枪：谁先开的枪，为什么说不清
+4. 《常识》：一本小册子怎么把"不满"变成"独立"
+5. 独立宣言：杰斐逊删掉了什么
+6. 华盛顿为什么能赢——他其实输了大多数战役
+7. 法国为什么要帮美国（并把自己帮破产了）
+8. 《邦联条例》：美国第一次建国为什么失败
+9. 制宪会议：55 个人怎么在四个月里设计一个国家（系统设计视角）
+10. 联邦党人文献：麦迪逊怎么说服纽约
+11. 权利法案：为什么先有宪法，后有"权利"
+12. 华盛顿为什么只干两届——先例比法律更硬
+
+### 人物支线 & Shorts
+
+- 人物支线：主线讲到谁就出谁（麦迪逊、汉密尔顿、富兰克林、亚当斯夫妇），一条 6–8 分钟，复用主线素材。
+- Shorts："美国这一年"，逐年 60 秒（地图 + 3 件事 + 中国同年），从 1775 起，每周 2 条，从主线视频里切。
+
+### 把制作变快（对应本次改动）
+
+- **一键配图**已改成立刻搜图下载：故事板马上出缩略图，60 段约 5–7 分钟后台跑；来源选 **Commons**（历史画/地图/老照片，公版），不满意的段再点开换。
+- 装了 Ollama 的话搜索词由本地模型出（专有名词 + 年份，中文旁白也出英文），实测 "Battle of Lexington 1775" / "Boston Tea Party 1773" 都能一次命中；偶尔会错（"五月花号"配到了同名植物），所以只当粗剪。
+- 建议顺序：脚本分段 → 一键配图 → 只改错的段 → 加 2–3 张 Remotion 地图/时间线 → 配音 → 渲染。不要一段一段从零挑图。
+
+**依据**：[中文美国史频道搜索结果](https://www.youtube.com/watch?v=CG85NgfOIVY)、[肥洲纪录片：美国宪法史](https://www.youtube.com/watch?v=X06V4PCcU5g)、[六度世界：独立战争](https://www.youtube.com/watch?v=ZZqsn6ZGeS4)、[BBC 中文：从哥伦布到独立宣言](https://www.youtube.com/watch?v=fEpJww0oOQA)、[History of the USA: Every Year](https://www.youtube.com/watch?v=OhLH6iGgyCM)、[The Great War 频道（逐周格式）](https://en.wikipedia.org/wiki/The_Great_War_(YouTube_channel))。
