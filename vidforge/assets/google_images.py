@@ -16,7 +16,7 @@ from __future__ import annotations
 import urllib.parse
 from pathlib import Path
 
-from . import AssetError, Candidate, download, slug
+from . import AssetError, Candidate, blocked_host, download, slug
 
 CC_LABEL = "Creative Commons（Google 筛选，请到来源页核对具体许可）"
 UNKNOWN_LABEL = "版权未知（网页图片，使用前请到来源页确认）"
@@ -91,6 +91,8 @@ class GoogleImagesProvider:
             src = r["src"]
             host = urllib.parse.urlparse(r["ref"] or src).netloc
             ext = Path(urllib.parse.urlparse(src).path).suffix.lower()
+            if blocked_host(src) or blocked_host(r["ref"] or ""):     # watermarked stock previews
+                continue
             out.append(Candidate(
                 provider=self.name, id=r["docid"][:16], kind="image",
                 thumb_url=r["thumb"] or src, preview_url=src, download_url=src,

@@ -44,6 +44,46 @@ _NARR = re.compile(r"^\s*(?:旁白|解说|配音|台词|Narration|Narrator|VO|Vo
 _VISUAL = re.compile(r"^\s*(?:画面|镜头|视觉|素材|Visual|Visuals|Shot|B-?roll|Image|On[- ]screen)\s*[:：]\s*(?P<t>.*)$", re.I)
 _IGNORE = re.compile(r"^\s*(?:字幕|音乐|BGM|音效|SFX|Music|Sound|Subtitle|Title|时长|Duration)\s*[:：]", re.I)
 _SENT_END = re.compile(r"(?<=[.!?。！？])\s+|(?<=[。！？])")
+# Lines that are the AI talking *about* the script, not the script: preamble ("以下是…", "Here is…"),
+# sign-off ("希望对你有帮助", "Let me know…"), production notes ("注：", "Note:", "备注："), word
+# counts, fences and rules. They read out loud otherwise ("以下是约一千五百字的脚本…").
+_CHATTER = re.compile(
+    r"^\s*(?:以下是|下面是|这是|好的[，,]|当然[，,]|没问题|希望(?:这|对|以上)|如需|如果(?:你|您)需要|需要我|以上(?:就是|是)|全文完|【?完】?$|"
+    r"字数[:：]|总字数|约\s*\d+\s*字|注[:：]|备注[:：]|说明[:：]|提示[:：]|温馨提示|注意[:：]|"
+    r"here(?:'s| is)\b|below is|sure[,!]|certainly|of course|hope (?:this|it) helps|let me know|feel free|"
+    r"note[:：]|notes?[:：]|word count|total(?: word)?s?[:：]|end of script|```|---+\s*$|\*\*\*+\s*$)", re.I)
+# a whole line inside brackets = stage direction / annotation, never narration ("（停顿两秒）", "[Music swells]")
+_BRACKETED = re.compile(r"^\s*[（(\[【][^）)\]】]{1,80}[）)\]】]\s*[:：]?\s*$")
+# inline production notes inside a narration line: （注：…）  (Note: …)  [注：…]  — [核实]/[verify] stay
+_INLINE_NOTE = re.compile(r"\s*[（(\[]\s*(?:注|备注|说明|译注|Note|Editor)[:：]?[^）)\]]*[）)\]]")
+_MD_EMPHASIS = re.compile(r"(\*\*|__)(?=\S)(.+?)(?<=\S)\1")
+
+
+def clean_line(line: str) -> str | None:
+    """None = drop the line (chatter / stage note); else the line with inline notes and **bold** removed."""
+    if _CHATTER.match(line) or _BRACKETED.match(line):
+        return None
+    line = _INLINE_NOTE.sub("", line)
+    line = _MD_EMPHASIS.sub(r"\2", line)
+    return line
+
+
+_LATIN_RUN = re.compile(r"[A-Za-z][A-Za-z'’\-]*(?:\s+[A-Za-z][A-Za-z'’\-]*){3,}")   # 4+ English words in a row
+
+
+def language_issues(segments: list[dict], lang: str) -> list[dict]:
+    """Segments whose narration mixes in the other language: for a Chinese project, a run of 4+
+    English words (a stray sentence, not a proper noun); for an English one, any CJK characters.
+    Returned as [{"index", "snippet"}] so the UI can point at them — the fix is a re-prompt or an
+    edit, not something a parser should guess at."""
+    out = []
+    zh = lang.startswith("zh")
+    for i, seg in enumerate(segments):
+        t = seg.get("text", "")
+        m = _LATIN_RUN.search(t) if zh else re.search(r"[一-鿿]{2,}", t)
+        if m:
+            out.append({"index": i, "snippet": m.group(0)[:60]})
+    return out
 
 
 @dataclass
@@ -144,6 +184,14 @@ def parse(text: str) -> list[dict]:
             flush_para()                                  # blank line = paragraph break
             continue
         h = _heading(line)
+        if h is None:
+            cleaned = clean_line(line)
+            if cleaned is None:
+                continue
+            if not cleaned.strip():
+                flush_para()
+                continue
+            line = cleaned
         if h is None:
             h = _bare_title(line, lines, i)
         if h is not None:

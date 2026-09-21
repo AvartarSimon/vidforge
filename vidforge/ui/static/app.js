@@ -448,8 +448,10 @@ function viewScript(v) {
     return bits.length ? `\n\n分类「${c.name}」的设定（请遵守）：\n- ` + bits.join('\n- ') : '';
   };
   const buildPrompt = () => {
-    const zh = (isBase() ? P.base_lang : lang).startsWith('zh');
     const topic = $('#g_topic').value.trim(), mins = +$('#g_minutes').value || 10, aud = $('#g_audience').value.trim(), pts = $('#g_points').value.trim();
+    // Chinese when the project says so OR the topic is typed in Chinese (an English prompt for a
+    // Chinese topic came back as an English script with Chinese names sprinkled in)
+    const zh = (isBase() ? P.base_lang : lang).startsWith('zh') || /[\u4e00-\u9fff]/.test(topic);
     const words = Math.round(mins * (zh ? 240 : 150));
     return (zh
       ? `请为一条约 ${mins} 分钟的讲解类视频写完整旁白脚本。主题：${topic}。${aud ? '受众/语气：' + aud + '。' : ''}${pts ? '\n必须覆盖的要点/参考：\n' + pts + '\n' : ''}
@@ -459,7 +461,9 @@ function viewScript(v) {
 3. 按内容分成 8–15 个段落，每个段落一个意思、2–4 句；每个段落前单独一行写"第N段 章节名"（N 从 1 开始递增，纯文字，不要用 # 或加粗——网页里读出来的回答是渲染后的纯文字，格式符号会丢）。
 4. 每个段落标题下面先写一行 "画面：" 给出适合的画面/素材描述（英文关键词 2–4 个，便于搜图），再写旁白正文。
 5. 数字和年份用汉字读法或明确写法；涉及具体史实处如不确定请标注 [核实]。
-6. 结尾一段是简短总结 + 引出下一集。只输出脚本本身，不要前言和解释。`
+6. 结尾一段是简短总结 + 引出下一集。
+7. 全文只用中文：不要夹英文句子或英文缩写解释；人名地名用通行中文译名，最多在首次出现时括注一次原文。唯一允许英文的地方是"画面："这一行。
+8. 只输出脚本本身：没有前言（"以下是…"）、没有结尾说明、没有字数统计、没有（注：…）（停顿）之类的括号备注或舞台提示，没有 Markdown 符号。`
       : `Write the complete narration script for a ~${mins}-minute explainer video. Topic: ${topic}. ${aud ? 'Audience/tone: ' + aud + '.' : ''}${pts ? '\nPoints/sources that must be covered:\n' + pts + '\n' : ''}
 Requirements:
 1. About ${words} words, spoken style, short sentences, full punctuation (it drives subtitle breaks and pauses).
@@ -467,7 +471,9 @@ Requirements:
 3. Split into 8-15 segments, one idea each, 2-4 sentences; put "Chapter N:" before each title on its own line (N counting up from 1), plain text — not "##" or **bold**, since the answer gets read back as rendered text and formatting characters don't survive that.
 4. Under each heading first write one line "Visual: <2-4 English search keywords for stock footage>", then the narration.
 5. Spell out numbers the way they should be read aloud; mark uncertain facts with [verify].
-6. End with a short recap and a teaser for the next episode. Output only the script, no preamble.`) + categoryNote();
+6. End with a short recap and a teaser for the next episode.
+7. English only throughout — no sentences in other languages; foreign names in their usual English form.
+8. Output only the script: no preamble ("Here is…"), no closing remarks, no word count, no bracketed notes or stage directions like (pause) or [music], no Markdown symbols.`) + categoryNote();
   };
   $('#g_minutes').onchange = e => { raw.target_minutes = parseInt(e.target.value, 10) || 10; markDirty(); if ($('#f_minutes')) $('#f_minutes').value = raw.target_minutes; };
   $('#g_copy').onclick = async () => { await navigator.clipboard.writeText(buildPrompt()); $('#g_status').textContent = '提示词已复制，贴到任意 AI，再把回答贴回下面的框。'; };
@@ -487,8 +493,11 @@ Requirements:
   $('#g_go').onclick = () => genGo(false);
   $('#splitBtn').onclick = async () => {
     const text = $('#script').value.trim(); if (!text) return;
-    const j = await api('/api/script/split', { text });
+    const zhNow = (isBase() ? P.base_lang : lang).startsWith('zh');
+    const j = await api('/api/script/split', { text, lang: zhNow ? 'zh' : 'en' });
     const pieces0 = j.segments; if (!pieces0.length) return;
+    const issues = j.issues || [];
+    $('#g_status').textContent = issues.length ? `⚠ ${issues.length} 段混入了${zhNow ? '英文句子' : '中文'}（例如第 ${issues[0].index + 1} 段："${issues[0].snippet}…"）。可以在预览里改掉，或让 AI 用同一种语言重写。` : '';
     // preview table: label / text / words / est. seconds — accept or cancel
     const est = t => { const cjk = (t.match(/[\u4e00-\u9fff]/g) || []).length; return cjk > t.length * 0.3 ? cjk / 3.8 : t.split(/\s+/).length / 2.6; };
     const total = pieces0.reduce((a, p) => a + est(p.text), 0);
@@ -705,7 +714,7 @@ function viewVisuals(v) {
         const th = !c0 ? '<span class="err">缺</span>' : c0.me ? '🎥' : c0.remotion ? c0.remotion.composition : p0 ? (rr.clips[0].kind === 'video' ? `<img src="/api/poster/${encodeURIComponent(s.id)}/0?lang=${lang}&t=${encodeURIComponent(p0)}">` : `<img src="${fileUrl(p0)}">`) : '自动';
         return `<div class="sb-card ${s.id === selSeg ? 'sel' : ''}" data-id="${esc(s.id)}"><div class="thumb">${th}</div>
         <div><b>${esc(s.id)}</b> <span class="muted">${fmt(rr.need)}</span><div class="t">${esc(s[textKey()] || s.text || '')}</div>
-        <div class="st">${cl.length ? `${cl.length} 个片段` : '<span class="err">● 需要画面</span>'}</div></div></div>`; }).join('')}
+        <div class="st">${cl.length ? `${cl.length} 个片段` : '<span class="err">● 需要画面</span>'}${(rr.clips || []).some(c => c.warning) ? ` <span class="warn" title="${esc((rr.clips || []).filter(c => c.warning).map(c => c.warning).join('；'))}">⚠ 水印/标注</span>` : ''}${(rr.clips || []).some(c => c.checking) ? ' <span class="muted">· 核对中…</span>' : ''}</div></div></div>`; }).join('')}
     </div>
     <div>
       <div class="card">
@@ -751,6 +760,7 @@ function viewVisuals(v) {
   autoBar.innerHTML = `<button class="small" id="autoBtn">✨ 一键配图</button>
     <select id="autoSrc" class="small"><option value="commons">Commons（历史画/地图/老照片）</option><option value="pexels">Pexels（需 key）</option><option value="pixabay">Pixabay（需 key）</option></select>
     <label class="small"><input type="checkbox" id="autoOver"> 已有画面的段也重配</label>
+    <label class="small"><input type="checkbox" id="autoVision" checked> 视觉核对水印/内容（每张约 1 分钟）</label>
     <span id="autoProg" class="muted"></span>`;
   $('#storyboard').prepend(autoBar);
   const autoBtn = $('#autoBtn');
@@ -759,7 +769,7 @@ function viewVisuals(v) {
     if (!await save()) return;
     autoBtn.disabled = true;
     try {
-      const st0 = await api(`/api/autofill?lang=${lang}`, { source: $('#autoSrc').value, overwrite: $('#autoOver').checked });
+      const st0 = await api(`/api/autofill?lang=${lang}`, { source: $('#autoSrc').value, overwrite: $('#autoOver').checked, vision: $('#autoVision').checked });
       let st = { state: 'running', done: 0, total: st0.total };
       while (st.state === 'running') {
         $('#autoProg').textContent = `正在搜图并下载… ${st.done}/${st.total}`;
@@ -769,9 +779,13 @@ function viewVisuals(v) {
       $('#autoProg').textContent = '';
       await load();
       const r = st.result || {};
-      const failed = (r.failed || []).length ? `；${r.failed.length} 段没搜到（${r.failed.map(f => f.id).join('、')}），点开手动选` : '';
-      $('#issues').innerHTML = `<div class="banner info">已为 ${r.filled} 段配好 ${r.resolved} 张图（${r.source}${r.llm ? '，搜索词来自本地模型' : '，搜索词来自关键词提取'}）${failed}。不满意的段点开重选。</div>`;
-    } catch (e) { alert(e.message); }
+      const failed = (r.failed || []).length ? `；${r.failed.length} 段没有准确的图，留空了（${r.failed.map(f => f.id).join('、')}），点开手动选` : '';
+      const how = `${r.source}${r.llm ? '，搜索词来自本地模型' : '，搜索词来自关键词提取'}${r.vision ? `，${r.vision} 已核对水印和内容` : '，未装视觉模型（ollama pull qwen2.5vl:3b 可自动识别水印）'}`;
+      $('#issues').innerHTML = `<div class="banner info">已为 ${r.filled} 段配好 ${r.resolved} 张图（${how}）${failed}。不满意的段点开重选。</div>`;
+    } catch (e) {
+      // a backend started before the last update has no GET /api/autofill -> "not found"
+      alert(/not found/i.test(e.message) ? '后端是旧版本（没有这个接口）：关掉 vidforge 的黑窗口，重新双击 start-vidforge 再试。' : e.message);
+    }
     autoBtn.disabled = false;
   };
   $('#storyboard').onclick = e => { const c = e.target.closest('.sb-card'); if (c) { selSeg = c.dataset.id; picker.cands = []; picker.q = ''; render(); } };
@@ -932,7 +946,13 @@ function segFixed(seg, r) { return seg.clips.reduce((a, c, i) => a + (clipSecond
 async function addCandidate(seg, c, io) {
   $('#issues').innerHTML = `<div class="banner info">下载中：${esc(c.title || c.author)}…</div>`;
   try {
-    const j = await api('/api/assets/fetch', { candidate: c });
+    let j;
+    try { j = await api('/api/assets/fetch', { candidate: c }); }
+    catch (e) {
+      // a paid-stock / watermark host: let the user overrule (they may have checked the licence themselves)
+      if (!(e.data && e.data.rejected && confirm(`${e.message}\n\n仍然使用这张图？`))) throw e;
+      j = await api('/api/assets/fetch', { candidate: c, force: true });
+    }
     const ranges = c.kind === 'video' ? (Array.isArray(io) ? io : [io]) : [null];
     for (const rg of ranges) {
       const clip = rg ? { video: j.path, in: +rg.in.toFixed(2), out: +rg.out.toFixed(2) } : { image: j.path, motion: 'zoom_in' };

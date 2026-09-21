@@ -86,11 +86,12 @@ export function SearchTab({ seg, segId, kind, onAdded }: { seg: Segment; segId: 
     doSearch(1, q, free)
   }
 
-  const addCandidate = async (c: SearchCandidate, ranges: TrimRange[] | null) => {
+  const addCandidate = async (c: SearchCandidate, ranges: TrimRange[] | null, force = false) => {
     setAdding(true)
     try {
       const j = await apiPost<{ path: string; credit: string; duration: number | null; kind: string }>('/api/assets/fetch', {
         candidate: c,
+        force,
       })
       patch((raw) => {
         const s = raw.segments.find((x) => x.id === segId)
@@ -103,6 +104,12 @@ export function SearchTab({ seg, segId, kind, onAdded }: { seg: Segment; segId: 
       })
       if (await saveNow()) onAdded()
     } catch (e) {
+      // a paid-stock / watermark host: let the user overrule (they may have checked the licence themselves)
+      if (e instanceof ApiError && e.data.rejected && !force) {
+        setAdding(false)
+        if (window.confirm(`${e.message}\n\n仍然使用这张图？`)) return addCandidate(c, ranges, true)
+        return
+      }
       setError(e instanceof Error ? e.message : String(e))
     }
     setAdding(false)

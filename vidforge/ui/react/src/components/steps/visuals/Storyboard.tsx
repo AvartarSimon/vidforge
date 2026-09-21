@@ -9,7 +9,7 @@ type AutofillStatus = {
   done: number
   total: number
   lines: string[]
-  result: { filled: number; resolved: number; failed: { id: string; query: string }[]; source: string; llm: boolean } | null
+  result: { filled: number; resolved: number; failed: { id: string; query: string }[]; source: string; llm: boolean; vision: string | null } | null
 }
 
 // where the first rough cut comes from: Commons = paintings/maps/old photos (history), stock = modern footage
@@ -25,6 +25,7 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
   const [msg, setMsg] = useState<string | null>(null)
   const [source, setSource] = useState('commons')
   const [overwrite, setOverwrite] = useState(false)
+  const [vision, setVision] = useState(true)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
 
   if (!raw) return null
@@ -38,7 +39,7 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
     setBusy(true)
     setMsg(null)
     try {
-      const start = await apiPost<{ started: boolean; total: number }>('/api/autofill', { source, overwrite })
+      const start = await apiPost<{ started: boolean; total: number }>('/api/autofill', { source, overwrite, vision })
       setProgress({ done: 0, total: start.total })
       let st: AutofillStatus
       do {
@@ -48,12 +49,15 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
       } while (st.state === 'running')
       const r = st.result
       if (r) {
-        const failed = r.failed.length ? `；${r.failed.length} 段没搜到（${r.failed.map((f) => f.id).join('、')}），点开手动选` : ''
-        setMsg(`已为 ${r.filled} 段配好 ${r.resolved} 张图（${r.source}${r.llm ? '，搜索词来自本地模型' : '，搜索词来自关键词提取'}）${failed}。不满意的段点开重选。`)
+        const failed = r.failed.length ? `；${r.failed.length} 段没有准确的图，留空了（${r.failed.map((f) => f.id).join('、')}），点开手动选` : ''
+        const how = `${r.source}${r.llm ? '，搜索词来自本地模型' : '，搜索词来自关键词提取'}${r.vision ? `，${r.vision} 已核对水印和内容` : '，未装视觉模型（ollama pull qwen2.5vl:3b 可自动识别水印）'}`
+        setMsg(`已为 ${r.filled} 段配好 ${r.resolved} 张图（${how}）${failed}。不满意的段点开重选。`)
       }
       await reload()
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : String(e))
+      const m = e instanceof Error ? e.message : String(e)
+      // a backend started before the last update has no GET /api/autofill -> "not found"
+      setMsg(/not found/i.test(m) ? '后端是旧版本（没有这个接口）：关掉 vidforge 的黑窗口，重新双击 start-vidforge 再试。' : m)
     }
     setProgress(null)
     setBusy(false)
@@ -76,12 +80,16 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
           control={<Checkbox size="small" checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} disabled={busy} />}
           label={<Typography variant="caption">已有画面的段也重配</Typography>}
         />
+        <FormControlLabel
+          control={<Checkbox size="small" checked={vision} onChange={(e) => setVision(e.target.checked)} disabled={busy} />}
+          label={<Typography variant="caption">视觉核对水印/内容（本地模型，每张约 1 分钟）</Typography>}
+        />
       </Stack>
       {progress && (
         <Box>
           <LinearProgress variant={progress.total ? 'determinate' : 'indeterminate'} value={progress.total ? (100 * progress.done) / progress.total : 0} />
           <Typography variant="caption" color="text.secondary">
-            正在搜图并下载… {progress.done}/{progress.total}
+            正在搜图{vision ? '、核对' : ''}并下载… {progress.done}/{progress.total}
           </Typography>
         </Box>
       )}
@@ -153,6 +161,12 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
                 </Typography>
                 <Typography variant="caption" color={s.clips.length ? 'text.secondary' : 'error.main'} sx={{ display: 'block' }}>
                   {s.clips.length ? `${s.clips.length} 个片段` : '● 需要画面'}
+                  {r.clips?.some((c) => c.warning) && (
+                    <span style={{ color: '#ed6c02' }} title={r.clips.filter((c) => c.warning).map((c) => c.warning).join('；')}>
+                      {' '}⚠ 水印/标注
+                    </span>
+                  )}
+                  {r.clips?.some((c) => c.checking) && <span style={{ opacity: 0.6 }}> · 核对中…</span>}
                 </Typography>
               </Box>
             </Box>

@@ -133,6 +133,8 @@ export interface ResolvedClip {
   remotion: string | null
   natural: number | null
   index: number
+  warning?: string | null // vision check: watermark / burned-in text
+  checking?: boolean
 }
 
 export interface ResolvedSegment {

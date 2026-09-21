@@ -93,6 +93,16 @@ class Library:
     def record(self, rel: str) -> dict | None:
         return self.data["files"].get(rel)
 
+    def set_check(self, rel: str, result: dict) -> None:
+        """Vision verdict for a downloaded file: {"ok": bool, "reason": str, "model": str}."""
+        rec = self.data["files"].setdefault(rel, {})
+        rec["check"] = result
+
+    def warning(self, rel: str) -> str | None:
+        rec = self.data["files"].get(rel) or {}
+        chk = rec.get("check")
+        return None if not chk or chk.get("ok", True) else (chk.get("reason") or "视觉模型判定不可用")
+
     def remember_pick(self, spec: str, rel: str) -> None:
         self.data["picks"][spec] = rel
 
@@ -145,7 +155,10 @@ def download(url: str, dest: Path, referer: str | None = None, retries: int = 3)
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) vidforge/0.3"}
     if referer:
         headers["Referer"] = referer
-    req = urllib.request.Request(url, headers=headers)
+    try:
+        req = urllib.request.Request(url, headers=headers)
+    except ValueError as e:                       # "unknown url type" — a candidate without a real URL
+        raise AssetError(f"download failed: {e}") from None
     # Commons (and CDNs) answer 429/503 when several files are fetched back to back — the
     # storyboard autofill does exactly that — so back off and retry before giving up.
     for attempt, wait in enumerate((0, 3, 8, 15)[:retries + 1]):
@@ -249,6 +262,46 @@ def rank(cands: list[Candidate], query: str) -> list[Candidate]:
     return sorted(cands, key=score, reverse=True)
 
 
+# Hosts whose pictures are watermarked previews or paid stock: never usable in a video, whatever
+# Google/Baidu says about them. Matched as a suffix of the URL host.
+BLOCKED_HOSTS = (
+    "shutterstock.com", "gettyimages.com", "gettyimages.co.uk", "istockphoto.com", "alamy.com", "alamyimages.fr",
+    "dreamstime.com", "123rf.com", "depositphotos.com", "stock.adobe.com", "fotolia.com", "bigstockphoto.com",
+    "canstockphoto.com", "agefotostock.com", "superstock.com", "bridgemanimages.com", "sciencephoto.com",
+    "vcg.com", "quanjing.com", "nipic.com", "699pic.com", "58pic.com", "veer.com", "huitu.com", "tuchong.com",
+    "zcool.com.cn", "photophoto.cn", "sucai.com", "16pic.com", "ooopic.com", "51yuansu.com", "pngtree.com",
+    "freepik.com", "vectorstock.com", "colourbox.com", "pixtastock.com", "photoac.com", "storyblocks.com",
+)
+
+
+def blocked_host(url: str) -> bool:
+    host = urllib.parse.urlparse(url).netloc.lower().split("@")[-1].split(":")[0]
+    return any(host == h or host.endswith("." + h) for h in BLOCKED_HOSTS)
+
+
+_WORD = re.compile(r"[A-Za-z0-9一-鿿]+")
+_NOISE = {"ship", "city", "town", "photo", "picture", "painting", "map", "image", "view", "scene", "concept"}
+
+
+def relevant(c: Candidate, query: str) -> bool:
+    """Strict text check for unattended picks: the query's proper nouns / numbers must actually
+    appear in the file's title or description (a 'Mayflower' hit on a *plant* named mayflower
+    still passes here — the vision check catches that). Rule: every capitalised word or number
+    of the query is found, or at least 60 % of all content words are. Titles like "IMG_1234"
+    with no match fail — better an empty slot than a wrong picture."""
+    from ..keywords import _STOP
+    words = [w for w in _WORD.findall(query) if len(w) > 1 and w.lower() not in _NOISE and w.lower() not in _STOP]
+    if not words:
+        return False
+    hay = f"{c.title} {c.desc}".lower()
+    key = [w for w in words if w[0].isupper() or w.isdigit() or any("一" <= ch <= "鿿" for ch in w)]
+    hits = [w for w in words if w.lower() in hay]
+    if key and all(w.lower() in hay for w in key):
+        return True
+    need = max(1, round(0.6 * len(words)))
+    return len(hits) >= need and (not key or any(w in key for w in hits))
+
+
 def fetch(root: Path, cand: Candidate, library: Library | None = None) -> Path:
     prov = get_provider(cand.provider)
     lib = library or Library(root)
@@ -258,16 +311,83 @@ def fetch(root: Path, cand: Candidate, library: Library | None = None) -> Path:
     return dest
 
 
-def pick_for_spec(root: Path, lib: Library, prov_name: str, kind: str, query: str, need: float = 0.0) -> Path:
+def preview_file(root: Path, cand: Candidate) -> Path:
+    """Small copy of a candidate (its thumbnail) for the vision check: watermarks and captions are
+    obvious at thumbnail size, the download is tens of KB, and nothing enters the library if the
+    picture gets rejected."""
+    url = cand.thumb_url or cand.preview_url
+    if cand.kind == "video" or not url:
+        raise AssetError("no preview to check")
+    folder = root / "assets" / ".check"
+    dest = folder / f"{cand.provider}-{slug(cand.id)}{Path(urllib.parse.urlparse(url).path).suffix or '.jpg'}"
+    return download(url, dest, referer=cand.page_url or None, retries=1)
+
+
+def check_file(root: Path, rel: str, lib: Library | None = None) -> dict | None:
+    """Vision-check an already downloaded picture (a hand-picked one) and record the verdict in
+    the library; None when there is no vision model. The picture stays — the UI shows a warning
+    and the user swaps it — because on a CPU-only machine the check takes about a minute, too
+    long to make someone wait on every click."""
+    from .. import llm
+    from PIL import Image
+    if not llm.vision_model():
+        return None
+    lib = lib or Library(root)
+    src = root / rel
+    small = root / "assets" / ".check" / f"local-{slug(Path(rel).stem)}.jpg"
+    small.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with Image.open(src) as im:
+            im.thumbnail((640, 640))
+            im.convert("RGB").save(small, "JPEG", quality=85)
+        v = llm.vision_check(str(small), "")
+    except (OSError, llm.LlmError) as e:
+        result = {"ok": True, "reason": f"未能核对：{e}", "model": llm.vision_model(), "skipped": True}
+    else:
+        why = "水印/版权标记" if v["watermark"] else "带文字标注" if v["text"] else None
+        result = {"ok": why is None, "reason": f"{why}（{v['reason']}）" if why else v["reason"], "model": v["model"]}
+    lib.set_check(rel, result)
+    lib.save()
+    return result
+
+
+def vision_verdict(root: Path, cand: Candidate, subject: str | None, log=None) -> str | None:
+    """None = fine; else a short reason to reject (watermark / text overlay / does not depict).
+    Silently None when no local vision model is pulled: the text filters are then all we have."""
+    from .. import llm
+    if not llm.vision_model():
+        return None
+    try:
+        v = llm.vision_check(str(preview_file(root, cand)), subject or "")
+    except (llm.LlmError, AssetError) as e:
+        if log:
+            log(f"    vision check skipped: {e}")
+        return None
+    if v["watermark"]:
+        return f"水印/版权标记（{v['reason']}）"
+    if v["text"]:
+        return f"带文字标注（{v['reason']}）"
+    if subject and v["depicts"] is False:
+        return f"内容不符（{v['reason']}）"
+    return None
+
+
+def pick_for_spec(root: Path, lib: Library, prov_name: str, kind: str, query: str, need: float = 0.0,
+                  strict: bool = False, log=None, tries: int = 4, vision: bool = True) -> Path:
     """Resolve one "provider:query" spec to a downloaded file: remembered pick, else the best
     unused landscape result (long enough for `need` seconds when it is a video). Shared by the
-    build-time resolver and the storyboard's one-click autofill so both pick the same file."""
+    build-time resolver and the storyboard's one-click autofill so both pick the same file.
+
+    strict (autofill): only candidates whose title/description really names the query, and — when
+    a local vision model exists — no watermark, no burned-in text, and the picture must depict the
+    query. Up to `tries` candidates are examined; none passing raises, leaving the slot empty."""
     prov_name = {"wikimedia": "commons"}.get(prov_name, prov_name)
     spec = f"{prov_name}:{kind}:{query}"
     dest = lib.pick(spec)
     if dest is not None:
         return dest
-    cands = [c for c in rank(search(root, prov_name, query, kind), query) if c.landscape or kind == "image"]
+    cands = [c for c in rank(search(root, prov_name, query, kind), query)
+             if (c.landscape or kind == "image") and not blocked_host(c.download_url)]
     used = lib.used_ids(prov_name)
     fresh = [c for c in cands if c.id not in used]
     pool = fresh or cands
@@ -276,7 +396,24 @@ def pick_for_spec(root: Path, lib: Library, prov_name: str, kind: str, query: st
         pool = long_enough or pool
     if not pool:
         raise AssetError(f"no {kind} found on {prov_name} for {query!r}")
-    dest = fetch(root, pool[0], lib)
+    if not strict:
+        chosen = pool[0]
+    else:
+        chosen = None
+        rejected: list[str] = []
+        for c in pool[:tries]:
+            if not relevant(c, query):
+                rejected.append(f"'{c.title[:40]}' 标题/描述不含 {query!r}")
+                continue
+            why = vision_verdict(root, c, query, log) if (kind == "image" and vision) else None
+            if why:
+                rejected.append(f"'{c.title[:40]}' {why}")
+                continue
+            chosen = c
+            break
+        if chosen is None:
+            raise AssetError(f"no accurate {kind} for {query!r}: " + "; ".join(rejected[:tries]))
+    dest = fetch(root, chosen, lib)
     lib.remember_pick(spec, dest.resolve().relative_to(root.resolve()).as_posix())
     lib.save()
     return dest

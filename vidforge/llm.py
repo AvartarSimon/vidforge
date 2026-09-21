@@ -56,6 +56,58 @@ def chat(prompt: str, *, system: str = "", model: str | None = None, json_mode: 
         raise LlmError(f"Ollama 请求失败：{e}") from None
 
 
+_VISION_HINTS = ("vl", "llava", "moondream", "minicpm-v", "gemma3", "bakllava", "vision")
+
+
+def vision_model() -> str | None:
+    """Name of a pulled model that can look at pictures (qwen2.5vl, llava, gemma3, …), else None.
+    Used to reject watermarked / off-topic pictures; `ollama pull qwen2.5vl:3b` (~3 GB) enables it."""
+    info = available()
+    if not info:
+        return None
+    want = os.environ.get("OLLAMA_VISION_MODEL", "")
+    names = info["models"]
+    if want:
+        return next((n for n in names if n.startswith(want)), None)
+    return next((n for n in names if any(h in n.lower() for h in _VISION_HINTS)), None)
+
+
+def vision_check(image_path: str, subject: str = "", timeout: float = 300) -> dict:
+    """Look at one picture: {"watermark": bool, "text": bool, "depicts": bool|None, "reason": str}.
+
+    watermark = agency/site watermark, logo stamp or copyright overlay; text = large captions,
+    labels, annotations or UI chrome burned into the image (a museum plaque *in* a photo is not
+    an overlay). depicts = does it show `subject`? (None when no subject was asked).
+    Raises LlmError when no vision model is pulled — callers decide whether to skip the check."""
+    import base64
+    model = vision_model()
+    if not model:
+        raise LlmError("没有本地视觉模型：ollama pull qwen2.5vl:3b 后可自动识别水印和核对图片内容")
+    data = base64.b64encode(open(image_path, "rb").read()).decode("ascii")
+    q = ("Look at this picture. Answer in JSON only: {\"watermark\": true/false, \"text\": true/false"
+         + (", \"depicts\": true/false" if subject else "") + ", \"reason\": \"<10 words>\"}.\n"
+         "watermark: a stock-agency or website watermark, logo stamp, copyright notice or URL overlaid on the image.\n"
+         "text: large captions, labels, arrows, annotations, screenshot UI or meme text overlaid on the image "
+         "(text that is part of the scene, like a sign or a book page, does not count).\n"
+         + (f"depicts: does the picture clearly show {subject!r} (the actual place / event / person / object, "
+            "not something merely related)?" if subject else ""))
+    # keep_alive: a CPU-only box takes ~1 min per picture; reloading the model between segments would double that
+    body = {"model": model, "stream": False, "format": "json", "options": {"temperature": 0}, "keep_alive": "30m",
+            "messages": [{"role": "user", "content": q, "images": [data]}]}
+    req = urllib.request.Request(f"{HOST}/api/chat", data=json.dumps(body).encode("utf-8"), headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            out = json.loads(r.read().decode("utf-8"))["message"]["content"].strip()
+        j = json.loads(out)
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, KeyError) as e:
+        raise LlmError(f"视觉模型请求失败：{e}") from None
+
+    def b(v):
+        return v if isinstance(v, bool) else str(v).strip().lower() in ("true", "yes", "1")
+    return {"watermark": b(j.get("watermark")), "text": b(j.get("text")),
+            "depicts": (b(j.get("depicts")) if subject else None), "reason": str(j.get("reason", ""))[:120], "model": model}
+
+
 def keywords(text: str, n: int = 4) -> list[str]:
     """Stock-footage search terms (English) for a narration snippet."""
     out = chat(f"Narration: {text}\n\nGive {n} short English search phrases (2-3 words each) for finding stock photos/video "
@@ -92,9 +144,11 @@ def keywords_batch(items: dict[str, str], n_words: str = "2-4") -> dict[str, str
         v = v.strip().strip('"')
         if re.search(r"[A-Za-z]{3}", v):           # small models sometimes leak a CJK char into an English phrase
             v = re.sub(r"[一-鿿]+", " ", v)
-        v = " ".join(v.split())
-        if v:
-            phrases[str(k)] = v
+        v = " ".join(v.split()).rstrip(".。")
+        # a sentence ("This is about abstract.") is not a search phrase: drop it, the caller falls back
+        if not v or len(v.split()) > 7 or re.search(r"[.?!,;:。？！，；：]", v)                 or re.match(r"(?i)(this|it|there|here|these|those|the video|the segment|about)", v):
+            continue
+        phrases[str(k)] = v
     return phrases
 
 

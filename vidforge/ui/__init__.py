@@ -91,6 +91,9 @@ class State:
         self.lock = threading.Lock()
         self.build = {"state": "idle", "lines": [], "lang": None, "started": None, "finished": None, "error": None}
         self.autofill = {"state": "idle", "done": 0, "total": 0, "lines": [], "result": None}
+        self.checks: list[str] = []          # hand-picked files waiting for the (slow) vision check
+        self.check_current: str | None = None
+        self._check_worker: threading.Thread | None = None
         self._last_snapshot = 0.0
         if project_path is not None:
             self.open(project_path)
@@ -108,6 +111,27 @@ class State:
     @property
     def has_project(self) -> bool:
         return self.project_path is not None
+
+    def enqueue_check(self, rel: str) -> None:
+        """Vision-check a downloaded picture in the background; the verdict lands in assets/index.json
+        and project_view() surfaces it as clip["warning"]."""
+        from ..assets import check_file
+        root = self.root
+        self.checks.append(rel)
+        if self._check_worker and self._check_worker.is_alive():
+            return
+
+        def work():
+            while self.checks:
+                r = self.check_current = self.checks.pop(0)
+                try:
+                    check_file(root, r)
+                except Exception as e:  # noqa: BLE001  never let the worker die on one bad file
+                    print(f"[vidforge] check {r}: {e}")
+                finally:
+                    self.check_current = None
+        self._check_worker = threading.Thread(target=work, daemon=True)
+        self._check_worker.start()
 
     def read_raw(self) -> dict:
         if self.project_path is None:
@@ -542,9 +566,11 @@ def make_handler(state: State):
                 if path == "/api/voices/preview":
                     return self.voice_preview(body.get("voice"), body.get("text"), body.get("provider", "edge"), q.get("lang"))
                 if path == "/api/script/split":
-                    return self._json({"segments": script_parser.parse(body.get("text", ""))})
+                    segs = script_parser.parse(body.get("text", ""))
+                    lang = body.get("lang") or (state.read_raw().get("language", "en") if state.has_project else "en")
+                    return self._json({"segments": segs, "issues": script_parser.language_issues(segs, lang)})
                 if path == "/api/assets/fetch":
-                    return self.fetch_candidate(body.get("candidate"))
+                    return self.fetch_candidate(body.get("candidate"), bool(body.get("force")))
                 if path == "/api/assets/upload":
                     return self.upload_asset(body)
                 if path == "/api/me/upload":
@@ -581,6 +607,9 @@ def make_handler(state: State):
                     return self._json({"video": state.rel(out), "duration": dur, "stamp": time.time()})
                 if path == "/api/autofill":
                     return self.autofill(q.get("lang"), body)
+                if path == "/api/shutdown":              # a newer launcher replacing this (older) copy
+                    threading.Thread(target=self.server.shutdown, daemon=True).start()
+                    return self._json({"bye": True})
                 if path == "/api/build/cancel":
                     pipeline.cancel()
                     return self._json({"cancelling": state.build["state"] == "running"})
@@ -651,10 +680,13 @@ def make_handler(state: State):
                             nat = c.duration
                         if nat:
                             fixed_total += nat
+                        rel_path = state.rel(c.video or c.image) if (c.video or c.image) else None
                         clips.append({
                             "kind": "me" if c.me else ("remotion" if c.remotion else ("video" if c.is_video else "image")),
                             "me": c.me,
-                            "path": state.rel(c.video or c.image) if (c.video or c.image) else None,
+                            "path": rel_path,
+                            "warning": lib.warning(rel_path) if rel_path else None,
+                            "checking": bool(rel_path) and (rel_path in state.checks or rel_path == state.check_current),
                             "source": c.source, "in": c.in_, "out": c.out, "duration": c.duration, "motion": c.motion,
                             "remotion": c.remotion.composition if c.remotion else None,
                             "natural": nat, "index": i,
@@ -711,6 +743,7 @@ def make_handler(state: State):
             return {
                 "ffmpeg": {"ok": ff_ok, "path": ff}, "encoder": enc, "encoders": ["libx264", *hw],
                 "node": bool(shutil.which("node")), "remotion": (APP_DIR / "node_modules").exists(),
+                "stamp": STAMP,
                 "keys": {k: bool(os.environ.get(k)) for k in env.KEYS},
                 "youtube_secret": (Path.home() / ".vidforge" / "client_secret.json").exists()
                                   or bool(os.environ.get("YOUTUBE_CLIENT_SECRET")),
@@ -735,6 +768,7 @@ def make_handler(state: State):
             source = body.get("source") or ("commons" if not has_stock else "pexels" if os.environ.get("PEXELS_API_KEY") else "pixabay")
             overwrite = bool(body.get("overwrite"))
             resolve = body.get("resolve", True)
+            vision = body.get("vision", True)          # ~1 min per picture on a CPU-only machine: can be turned off
             raw = state.read_raw()
             base = raw.get("language", "en")
             pending = []
@@ -777,7 +811,7 @@ def make_handler(state: State):
                     if resolve:
                         for prov in providers:
                             try:
-                                dest = pick_for_spec(state.root, lib, prov, "image", query)
+                                dest = pick_for_spec(state.root, lib, prov, "image", query, strict=True, log=log, vision=vision)
                                 clip["image"] = f"{prov}:{query}"
                                 resolved += 1
                                 log(f"{seg['id']}: {prov} '{query}' -> {dest.name}")
@@ -788,7 +822,8 @@ def make_handler(state: State):
                                 log(f"{seg['id']}: {prov} 出错 {e}")
                         else:
                             failed.append({"id": seg["id"], "query": query})
-                    seg["clips"] = [clip]
+                            clip = None                      # nothing accurate: leave the slot empty, no spec either
+                    seg["clips"] = [clip] if clip else []
                     for k in ("image", "video"):
                         seg.pop(k, None)
                     state.autofill["done"] += 1
@@ -802,7 +837,7 @@ def make_handler(state: State):
                             seg.pop(k, None)
                 state.write_raw(cur, snapshot=True)
                 state.autofill["result"] = {"filled": len(pending), "resolved": resolved, "failed": failed,
-                                            "source": source, "llm": used_llm}
+                                            "source": source, "llm": used_llm, "vision": llm.vision_model() if vision else None}
                 state.autofill["state"] = "done"
 
             if body.get("sync"):
@@ -879,14 +914,23 @@ def make_handler(state: State):
                 return self._error(str(e), needs_key=key if key and not os.environ.get(key) else None)
             return self._json({"candidates": [asdict(c) for c in cands]})
 
-        def fetch_candidate(self, cand: dict | None):
+        def fetch_candidate(self, cand: dict | None, force: bool = False):
+            """Download a picked search result. Paid-stock / watermark hosts are refused outright (409,
+            `force` overrides); with a local vision model the file is then checked in the background
+            (~1 min on CPU) and the storyboard shows a warning if it has a watermark or burned-in text."""
             from .. import assets
             if not cand:
                 return self._error("candidate required")
             c = assets.Candidate(**{k: v for k, v in cand.items() if k in assets.Candidate.__dataclass_fields__})
+            if c.kind == "image" and assets.blocked_host(c.download_url) and not force:
+                return self._error("这是付费图库/带水印的预览图，不能用在视频里", HTTPStatus.CONFLICT, rejected="付费图库预览")
             dest = assets.fetch(state.root, c)
+            from .. import llm
+            checking = c.kind == "image" and bool(llm.vision_model())
+            if checking:
+                state.enqueue_check(state.rel(dest))
             return self._json({"path": state.rel(dest), "credit": c.credit_line(), "duration": c.duration,
-                               "kind": c.kind})
+                               "kind": c.kind, "checking": checking})
 
         def upload_asset(self, body: dict):
             name = re.sub(r"[^A-Za-z0-9_.\-一-鿿]+", "_", body.get("name", "upload"))
@@ -979,16 +1023,58 @@ def spawn_instance(project_path: Path, timeout: float = 20.0) -> str:
     raise RuntimeError(f"新实例在 {timeout:.0f} 秒内没有响应（端口 {port}）")
 
 
-def _port_is_ours(port: int, timeout: float = 1.5) -> bool:
-    """Is something that looks like vidforge already answering on this port?"""
+def code_stamp() -> str:
+    """Newest mtime across the package's .py/.js files: tells a running server apart from the
+    code on disk. A double-clicked launcher used to just re-open a copy started days ago, so
+    freshly pulled features answered 404 ("not found") until the user thought to kill it."""
+    pkg = Path(__file__).resolve().parent.parent
+    latest = 0.0
+    for f in pkg.rglob("*"):
+        if f.suffix in (".py", ".js", ".css", ".html") and "node_modules" not in f.parts and "react" not in f.parts:
+            try:
+                latest = max(latest, f.stat().st_mtime)
+            except OSError:
+                pass
+    return str(int(latest))
+
+
+STAMP = code_stamp()
+
+
+def _running_health(port: int, timeout: float = 1.5) -> dict | None:
+    """/api/health of whatever answers on this port, if it looks like vidforge."""
     import urllib.error
     import urllib.request
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=timeout) as r:
             data = json.loads(r.read())
-        return "ffmpeg" in data
+        return data if "ffmpeg" in data else None
     except (urllib.error.URLError, OSError, ValueError, TimeoutError):
+        return None
+
+
+def _port_is_ours(port: int, timeout: float = 1.5) -> bool:
+    """Is something that looks like vidforge already answering on this port?"""
+    return _running_health(port, timeout) is not None
+
+
+def _replace_stale(port: int) -> bool:
+    """Ask an old vidforge on `port` to quit when its code is older than ours; True once the port is free."""
+    import urllib.request
+    h = _running_health(port)
+    if not h or h.get("stamp") == STAMP:
         return False
+    print(f"vidforge on port {port} runs older code (started before the last update) — replacing it.")
+    try:
+        urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{port}/api/shutdown", data=b"{}",
+                                                      headers={"Content-Type": "application/json"}), timeout=3).read()
+    except Exception:  # noqa: BLE001  an old build without /api/shutdown: nothing we can do
+        return False
+    for _ in range(40):
+        time.sleep(0.25)
+        if _running_health(port, timeout=0.5) is None:
+            return True
+    return False
 
 
 def serve(project: str | Path | None, port: int = 8765, open_browser: bool = True) -> None:
@@ -1004,24 +1090,31 @@ def serve(project: str | Path | None, port: int = 8765, open_browser: bool = Tru
     try:
         httpd = _Server(("127.0.0.1", port), make_handler(state))
     except OSError:
-        if _port_is_ours(port):
-            # Another vidforge is already up and healthy — just point the browser at it instead
-            # of erroring or silently spawning a second server that will never get requests.
+        httpd = None
+        if _port_is_ours(port) and _replace_stale(port):
+            try:
+                httpd = _Server(("127.0.0.1", port), make_handler(state))
+            except OSError:
+                httpd = None
+        if httpd is None and _port_is_ours(port):
+            # Another vidforge (same code) is already up and healthy — just point the browser at it
+            # instead of erroring or silently spawning a second server that will never get requests.
             url = f"http://127.0.0.1:{port}/"
             print(f"vidforge is already running at {url} — opening that instead of starting another copy.")
             if open_browser:
                 webbrowser.open(url)
             return
-        for p in range(port + 1, port + 21):        # something else (or a hung/unhealthy process) has the port
-            try:
-                httpd = _Server(("127.0.0.1", p), make_handler(state))
-                port = p
-                break
-            except OSError:
-                continue
-        else:
-            raise SystemExit(f"could not find a free port near {requested_port}")
-        print(f"port {requested_port} busy (not vidforge); using {port} instead.")
+        if httpd is None:
+            for p in range(port + 1, port + 21):    # something else (or a hung/unhealthy process) has the port
+                try:
+                    httpd = _Server(("127.0.0.1", p), make_handler(state))
+                    port = p
+                    break
+                except OSError:
+                    continue
+            else:
+                raise SystemExit(f"could not find a free port near {requested_port}")
+            print(f"port {requested_port} busy (not vidforge); using {port} instead.")
     httpd.daemon_threads = True
     url = f"http://127.0.0.1:{port}/"
     print(f"vidforge ui · {project_path or 'project picker'}\n  {url}   (Ctrl+C to stop)")

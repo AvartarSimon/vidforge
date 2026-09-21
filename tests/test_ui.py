@@ -98,7 +98,8 @@ class UiApi(unittest.TestCase):
         with mock.patch("vidforge.assets.search", return_value=[cand]):
             st, j = self.call("/api/search?source=pexels&kind=image&q=volcano")
         self.assertEqual(st, 200); self.assertEqual(j["candidates"][0]["id"], "77")
-        with mock.patch("vidforge.assets.pexels.download", side_effect=lambda url, dest: (dest.parent.mkdir(parents=True, exist_ok=True), dest.write_bytes(b"jpg"), dest)[2]):
+        with mock.patch("vidforge.assets.pexels.download", side_effect=lambda url, dest: (dest.parent.mkdir(parents=True, exist_ok=True), dest.write_bytes(b"jpg"), dest)[2]), \
+                mock.patch("vidforge.llm.vision_model", return_value=None):      # keep the suite offline
             st, j = self.call("/api/assets/fetch", {"candidate": cand.__dict__})
         self.assertEqual(st, 200)
         self.assertEqual(j["path"], "assets/pexels/volcano-77.jpg")
@@ -132,7 +133,7 @@ class UiApi(unittest.TestCase):
             self.assertNotIn("clips", segs["s2"])                                   # remotion segment untouched
             st, j = self.call("/api/project")
             self.assertEqual(j["resolved"]["s3"]["clips"][0]["path"], "assets/commons/battle-of-lexington-9.jpg")
-            self.assertIsNone(j["resolved"]["s4"]["clips"][0]["path"])             # spec only, picker shows 自动
+            self.assertEqual(j["resolved"]["s4"]["clips"], [])                     # nothing accurate: left empty, no spec
             st, j = self.call("/api/autofill")
             self.assertEqual(j["state"], "done")
         finally:

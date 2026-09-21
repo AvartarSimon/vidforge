@@ -15,7 +15,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from . import AssetError, Candidate, download, slug
+from . import AssetError, Candidate, blocked_host, download, slug
 
 UNKNOWN_LABEL = "版权未知（百度网页图片，使用前请到来源页确认）"
 _TABLE = str.maketrans("wkv1ju2it3hs4g5rq6fp7eo8dn9cm0bla", "abcdefghijklmnopqrstuvw1234567890")
@@ -57,6 +57,8 @@ class BaiduImagesProvider:
             full = decode_url(d["objURL"]) if d.get("objURL") else (d.get("middleURL") or d["thumbURL"])
             ref = decode_url(d["fromURL"]) if d.get("fromURL") else ""
             title = re.sub(r"<[^>]+>", "", d.get("fromPageTitleEnc") or d.get("fromPageTitle") or "")
+            if blocked_host(full) or blocked_host(ref or ""):        # 视觉中国/千图/摄图网等带水印预览
+                continue
             out.append(Candidate(
                 provider="baidu", id=hashlib.sha1(full.encode()).hexdigest()[:12], kind="image",
                 thumb_url=d["thumbURL"], preview_url=d.get("middleURL") or d.get("hoverURL") or d["thumbURL"],

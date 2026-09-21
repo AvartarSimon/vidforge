@@ -48,7 +48,9 @@ function buildPrompt(opts: {
 3. 按内容分成 8–15 个段落，每个段落一个意思、2–4 句；每个段落前单独一行写"第N段 章节名"（N 从 1 开始递增，纯文字，不要用 # 或加粗——网页里读出来的回答是渲染后的纯文字，格式符号会丢）。
 4. 每个段落标题下面先写一行 "画面：" 给出适合的画面/素材描述（英文关键词 2–4 个，便于搜图），再写旁白正文。
 5. 数字和年份用汉字读法或明确写法；涉及具体史实处如不确定请标注 [核实]。
-6. 结尾一段是简短总结 + 引出下一集。只输出脚本本身，不要前言和解释。`
+6. 结尾一段是简短总结 + 引出下一集。
+7. 全文只用中文：不要夹英文句子或英文缩写解释；人名地名用通行中文译名，最多在首次出现时括注一次原文。唯一允许英文的地方是"画面："这一行。
+8. 只输出脚本本身：没有前言（"以下是…"）、没有结尾说明、没有字数统计、没有（注：…）（停顿）之类的括号备注或舞台提示，没有 Markdown 符号。`
     : `Write the complete narration script for a ~${mins}-minute explainer video. Topic: ${topic}. ${audience ? 'Audience/tone: ' + audience + '.' : ''}${points ? '\nPoints/sources that must be covered:\n' + points + '\n' : ''}
 Requirements:
 1. About ${words} words, spoken style, short sentences, full punctuation (it drives subtitle breaks and pauses).
@@ -56,7 +58,9 @@ Requirements:
 3. Split into 8-15 segments, one idea each, 2-4 sentences; put "Chapter N:" before each title on its own line (N counting up from 1), plain text — not "##" or **bold**, since the answer gets read back as rendered text and formatting characters don't survive that.
 4. Under each heading first write one line "Visual: <2-4 English search keywords for stock footage>", then the narration.
 5. Spell out numbers the way they should be read aloud; mark uncertain facts with [verify].
-6. End with a short recap and a teaser for the next episode. Output only the script, no preamble.`
+6. End with a short recap and a teaser for the next episode.
+7. English only throughout — no sentences in other languages; foreign names in their usual English form.
+8. Output only the script: no preamble ("Here is…"), no closing remarks, no word count, no bracketed notes or stage directions like (pause) or [music], no Markdown symbols.`
   return body + note
 }
 
@@ -92,7 +96,9 @@ export function AiGeneratePanel({
   }, [])
 
   if (!raw) return null
-  const zh = (raw.language || 'en').startsWith('zh')
+  // Chinese when the project says so OR the topic is typed in Chinese: an English prompt for a
+  // Chinese topic came back as an English script with Chinese names sprinkled in.
+  const zh = (raw.language || 'en').startsWith('zh') || /[\u4e00-\u9fff]/.test(topic)
 
   const applyMinutes = (v: number) => {
     setMins(v)
@@ -144,7 +150,17 @@ export function AiGeneratePanel({
   const doSplit = async () => {
     const text = script.trim()
     if (!text) return
-    const j = await apiPost<{ segments: SplitSegment[] }>('/api/script/split', { text })
+    const j = await apiPost<{ segments: SplitSegment[]; issues: { index: number; snippet: string }[] }>('/api/script/split', {
+      text,
+      lang: zh ? 'zh' : 'en',
+    })
+    if (j.issues?.length) {
+      setStatus(
+        `⚠ ${j.issues.length} 段混入了${zh ? '英文句子' : '中文'}（例如第 ${j.issues[0].index + 1} 段："${j.issues[0].snippet}…"）。可以在预览里改掉，或让 AI 用同一种语言重写。`,
+      )
+    } else {
+      setStatus('')
+    }
     if (j.segments.length) setSplitPieces(j.segments)
   }
 

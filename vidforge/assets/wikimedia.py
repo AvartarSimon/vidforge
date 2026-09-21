@@ -51,7 +51,9 @@ class CommonsProvider:
             return []
         q = urllib.parse.urlencode({
             "action": "query", "format": "json", "formatversion": "2",
-            "generator": "search", "gsrsearch": f"filetype:bitmap {query}", "gsrnamespace": "6",
+            "generator": "search", "gsrnamespace": "6",
+            # Commons tags watermarked uploads with {{watermark}} -> this category; CirrusSearch can exclude it
+            "gsrsearch": f'filetype:bitmap -incategory:"Images with watermarks" {query}',
             "gsrlimit": per_page, "gsroffset": (page - 1) * per_page,
             "prop": "imageinfo", "iiprop": "url|size|extmetadata", "iiurlwidth": 640,
             "iiextmetadatafilter": "LicenseShortName|Artist|ObjectName|ImageDescription",
@@ -64,12 +66,16 @@ class CommonsProvider:
             lic = (meta.get("LicenseShortName") or {}).get("value", "")
             if not licence_ok(lic) or not ii.get("thumburl"):
                 continue
+            ii["thumburl"] = ii["thumburl"].split("?")[0]      # "?utm_source=…" would end up in file names
+            ii["url"] = (ii.get("url") or "").split("?")[0]
             w, h = int(ii.get("width", 0)), int(ii.get("height", 0))
             if w < 800:
                 continue
             artist = html.unescape(_TAG.sub("", (meta.get("Artist") or {}).get("value", ""))).strip()
             desc = html.unescape(_TAG.sub(" ", (meta.get("ImageDescription") or {}).get("value", ""))).strip()[:300]
             title = page_.get("title", "").replace("File:", "")
+            if re.search(r"watermark|logo|screenshot|collage|montage", f"{title} {desc}", re.I):
+                continue
             ext = Path(urllib.parse.urlparse(ii.get("url", "")).path).suffix.lower()
             if w <= ORIGINAL_MAX and ext in (".jpg", ".jpeg", ".png"):
                 download_url = ii["url"]                          # original: sharpest, and a sane size
