@@ -7,7 +7,8 @@
 4. [没接进 vidforge、但免费/开源值得知道的方案](#其它方案)
 5. [⚠️ 一个用不了的：不要指望"克隆真人声音"用于变现视频](#风险提示)
 6. [做完之后：以后所有文字它都会念吗？](#会不会发声)
-7. [给普通用户的建议路径](#建议)
+7. [声音存在哪、怎么搬到别的电脑、怎么脱离 vidforge 用](#搬运)
+8. [给普通用户的建议路径](#建议)
 
 ---
 
@@ -78,6 +79,41 @@ vidforge 目前接的是 **A（声音设计）**，两个引擎都已经在第2�
 
 - **VoxCPM2（本地）**：只要这台电脑上还装着 VoxCPM2、`~/.vidforge/voices/voxcpm/` 里的配置文件还在，就能无限次、免费生成任意文字的音频，没有月度用量上限（限制只是你自己电脑的算力和时间）。
 - **ElevenLabs（云端）**：声音本身长期保留在你的账号里，但**每次真正生成一段新的旁白音频**都要消耗当月的 credits 额度——免费版每月约 1 万 credits，超了要么等下个月刷新要么升级付费档。也就是说"声音"是免费长期保留的，"用这个声音念多少字"才是真正花配额的地方。
+
+---
+
+## 6.5 声音存在哪、怎么搬到别的电脑、怎么脱离 vidforge 用 {#搬运}
+
+以 VoxCPM2 里保存的 `Simon1` 为例。
+
+**存在哪**：`~/.vidforge/voices/voxcpm/Simon1.json`（Windows 下是 `C:\Users\<你>\.vidforge\voices\voxcpm\Simon1.json`），内容只有两个字段：
+
+```json
+{ "description": "四十岁左右，磁性，有魅力，低沉，温暖，专业，调", "seed": 776455128 }
+```
+
+**这就是全部**——没有音频文件，也没有模型权重。声音 = 这段描述 + 这个随机种子 + VoxCPM2 模型。三者相同，出来的声音就相同。`~/.vidforge/voices/voxcpm_<时间戳>_1.wav` 只是当时的试听样本，不是声音本体。
+
+**能念任意文字吗**：能。它是 TTS，给什么文字念什么，不限于设计时那段样例，也不限语言（VoxCPM2 支持 30 种语言 + 9 种中文方言）。唯一的限制是算力：没有独显的机器上约 40 倍实时（十几秒音频要跑几百秒），实际使用需要 NVIDIA 显卡，或 Apple Silicon（未实测）。
+
+**搬到别的电脑**：拷那个一百多字节的 JSON 就够了。新电脑上：
+
+```bash
+pip install voxcpm soundfile          # 首次运行会下载约 4.7 GB 模型到 ~/.cache/huggingface
+mkdir -p ~/.vidforge/voices/voxcpm && cp Simon1.json ~/.vidforge/voices/voxcpm/
+```
+
+**脱离 vidforge 用**（给剪映、Premiere、播客生成 wav）：仓库里的 `tools/say.py` 是一个不依赖 vidforge 的独立脚本。
+
+```bash
+python tools/say.py --voice Simon1 --text "今天我们讲一个关于火山的故事。" -o out.wav
+python tools/say.py --voice Simon1 --file script.txt --split -o narration/   # 每行一个 wav
+python tools/say.py --desc "四十岁左右，磁性，低沉，温暖" --seed 776455128 --text "…" -o out.wav
+```
+
+最后一种连 JSON 都不需要——把描述和 seed 记在别处即可。反过来说：**这两个值就是你的声音，记下来比备份任何音频都重要。**
+
+**ElevenLabs 设计的声音**不一样：voice_id 在它的服务器上，换电脑只要同一个账号的 API key 就能用，但用量受账号额度限制；脱离 vidforge 就是直接调它的 API。
 
 ---
 

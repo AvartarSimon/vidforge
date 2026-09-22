@@ -29,6 +29,7 @@ import mimetypes
 import os
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -1058,23 +1059,68 @@ def _port_is_ours(port: int, timeout: float = 1.5) -> bool:
     return _running_health(port, timeout) is not None
 
 
-def _replace_stale(port: int) -> bool:
-    """Ask an old vidforge on `port` to quit when its code is older than ours; True once the port is free."""
-    import urllib.request
-    h = _running_health(port)
-    if not h or h.get("stamp") == STAMP:
-        return False
-    print(f"vidforge on port {port} runs older code (started before the last update) — replacing it.")
+def _pid_on_port(port: int) -> int | None:
+    """PID listening on 127.0.0.1:<port>, via the OS (no psutil dependency)."""
     try:
-        urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{port}/api/shutdown", data=b"{}",
-                                                      headers={"Content-Type": "application/json"}), timeout=3).read()
-    except Exception:  # noqa: BLE001  an old build without /api/shutdown: nothing we can do
-        return False
-    for _ in range(40):
+        if sys.platform == "win32":
+            out = subprocess.run(["netstat", "-ano", "-p", "TCP"], capture_output=True, text=True, timeout=10).stdout
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[0] == "TCP" and parts[1].endswith(f":{port}") and parts[3].upper() == "LISTENING":
+                    return int(parts[4])
+        else:
+            out = subprocess.run(["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"], capture_output=True, text=True, timeout=10).stdout
+            if out.strip():
+                return int(out.split()[0])
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+    return None
+
+
+def _wait_gone(port: int, seconds: float = 10.0) -> bool:
+    deadline = time.time() + seconds
+    while time.time() < deadline:
         time.sleep(0.25)
         if _running_health(port, timeout=0.5) is None:
             return True
     return False
+
+
+def _replace_stale(port: int) -> bool:
+    """Make room for this (newer) copy when an older vidforge holds the port; True once it is free.
+
+    Why bother: a server keeps the Python it imported at startup but serves ui/static/* from disk
+    on every request — so an instance started before an update hands the browser the *new* page
+    while still answering the *old* routes, and the user sees "not found" on a feature that is
+    right there in the UI. First ask it to quit (POST /api/shutdown); builds older than that
+    endpoint can only be ended by terminating the process, which is safe here because /api/health
+    already identified it as vidforge."""
+    import urllib.request
+    h = _running_health(port)
+    if not h or h.get("stamp") == STAMP:
+        return False
+    print(f"[vidforge] 端口 {port} 上的 vidforge 是旧版本（在这次更新之前启动的），正在替换它…")
+    try:
+        urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{port}/api/shutdown", data=b"{}",
+                                                      headers={"Content-Type": "application/json"}), timeout=3).read()
+        if _wait_gone(port):
+            return True
+    except Exception:  # noqa: BLE001  an old build without /api/shutdown: terminate it instead
+        pass
+    pid = _pid_on_port(port)
+    if pid is None or pid == os.getpid():
+        print(f"[vidforge] 没能自动结束它。请手动关掉那个 vidforge 窗口（或结束进程），然后重新启动。")
+        return False
+    print(f"[vidforge] 旧版本没有退出接口，结束进程 {pid}。")
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, timeout=10)
+        else:
+            os.kill(pid, signal.SIGTERM)
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"[vidforge] 结束进程失败：{e}；请手动关掉那个窗口。")
+        return False
+    return _wait_gone(port)
 
 
 def serve(project: str | Path | None, port: int = 8765, open_browser: bool = True) -> None:

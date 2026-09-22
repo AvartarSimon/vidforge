@@ -230,6 +230,10 @@ $('#history').onchange = async e => {
 async function refreshHealth() {
   try {
     const h = await api('/api/health'); H = h;
+    // This page is served from disk on every request, so a server started before an update hands
+    // you today's UI while still answering yesterday's routes ("not found" on a button you can see).
+    // Old builds have no `stamp` in /api/health — say so up front instead of at the first click.
+    if (!h.stamp) $('#issues').innerHTML = '<div class="banner err">后端是旧版本（在这次更新之前启动的），新功能会报 “not found”。关掉 vidforge 的黑窗口，重新双击 start-vidforge 即可（新版会自动替换旧进程）。</div>';
     if (!h.keys.PEXELS_API_KEY && picker.source === 'pexels' && !picker.cands.length) picker.source = h.keys.PIXABAY_API_KEY ? 'pixabay' : 'commons';
     const dot = (ok, label, title) => `<span title="${esc(title || '')}"><span class="dot ${ok ? 'ok' : 'err'}"></span>${label}</span>`;
     $('#health').innerHTML = dot(h.ffmpeg.ok, `ffmpeg · ${h.encoder}`, h.ffmpeg.path) + dot(h.keys.PEXELS_API_KEY, 'Pexels', 'PEXELS_API_KEY') +

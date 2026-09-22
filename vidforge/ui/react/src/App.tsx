@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Box, CircularProgress, CssBaseline, Stack, ThemeProvider, Toolbar, Typography } from '@mui/material'
+import { Alert, Box, CircularProgress, CssBaseline, Stack, ThemeProvider, Toolbar, Typography } from '@mui/material'
 import type { PaletteMode } from '@mui/material'
+import { apiGet } from './api/client'
 import { NavRail, DRAWER_WIDTH } from './components/nav/NavRail'
 import { ScriptStep } from './components/steps/ScriptStep'
 import { VoiceStep } from './components/steps/VoiceStep'
@@ -44,6 +45,16 @@ function Shell({ mode, onToggleMode }: { mode: PaletteMode; onToggleMode: () => 
     }
   })
 
+  // The backend serves this page from disk on every request, so an instance started before an
+  // update hands you today's UI while still answering yesterday's routes ("not found" on a button
+  // you can see). Builds older than that have no `stamp` in /api/health.
+  const [staleBackend, setStaleBackend] = useState(false)
+  useEffect(() => {
+    apiGet<{ stamp?: string }>('/api/health')
+      .then((h) => setStaleBackend(!h.stamp))
+      .catch(() => setStaleBackend(false))
+  }, [])
+
   useEffect(() => {
     try {
       localStorage.setItem('vf.react.step', String(step))
@@ -71,6 +82,11 @@ function Shell({ mode, onToggleMode }: { mode: PaletteMode; onToggleMode: () => 
           )}
         </Toolbar>
         <Box sx={{ p: 3 }}>
+          {staleBackend && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              后端是旧版本（在这次更新之前启动的），新功能会报 “not found”。关掉 vidforge 的黑窗口，重新双击 start-vidforge 即可（新版会自动替换旧进程）。
+            </Alert>
+          )}
           {loading && (
             <Stack alignItems="center" sx={{ py: 8 }}>
               <CircularProgress />
