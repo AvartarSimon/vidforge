@@ -13,3 +13,4 @@ examples/*/i18n_*.json
 examples/*/assets/
 examples/*/build*/
 last-project.txt
+examples/*/.history/
