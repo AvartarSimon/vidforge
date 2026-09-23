@@ -92,6 +92,7 @@ class State:
         self.lock = threading.Lock()
         self.build = {"state": "idle", "lines": [], "lang": None, "started": None, "finished": None, "error": None}
         self.autofill = {"state": "idle", "done": 0, "total": 0, "lines": [], "result": None, "cancel": False}
+        self.heads = {"state": "idle", "lines": [], "result": None, "error": None}
         self.checks: list[str] = []          # hand-picked files waiting for the (slow) vision check
         self.check_current: str | None = None
         self._check_worker: threading.Thread | None = None
@@ -389,6 +390,10 @@ def make_handler(state: State):
                     return self._json({"status": browser.LAST_LOGIN_STATUS, "running": browser._lock.locked()})
                 if path == "/api/autofill":
                     return self._json(state.autofill)
+                if path == "/api/video/heads":
+                    return self._json(state.heads)
+                if path == "/api/assets/library":
+                    return self._json(self.asset_library())
                 if path == "/api/keywords":
                     p = state.load(q.get("lang"))
                     seg = next((s for s in p.segments if s.id == q.get("id")), None)
@@ -608,6 +613,10 @@ def make_handler(state: State):
                     return self._json({"video": state.rel(out), "duration": dur, "stamp": time.time()})
                 if path == "/api/autofill":
                     return self.autofill(q.get("lang"), body)
+                if path == "/api/video/heads/detect":
+                    return self.heads_detect(body)
+                if path == "/api/video/heads/cover":
+                    return self.heads_cover(body)
                 if path == "/api/autofill/cancel":
                     state.autofill["cancel"] = True
                     return self._json({"cancelling": state.autofill["state"] == "running"})
@@ -949,6 +958,99 @@ def make_handler(state: State):
                 return self._json({"started": True, **state.autofill["result"]})
             threading.Thread(target=run, daemon=True).start()
             return self._json({"started": True, "total": len(pending)})
+
+        def _video_path(self, rel_or_abs: str) -> Path:
+            """A clip the user picked: a path inside the project, or in the footage library."""
+            from .. import me
+            p = Path(rel_or_abs)
+            for cand in (p, state.root / rel_or_abs, me.library_dir(state.root) / p.name, me.GLOBAL_DIR / p.name):
+                if cand.is_file():
+                    return cand.resolve()
+            raise FileNotFoundError(rel_or_abs)
+
+        def heads_detect(self, body: dict):
+            """One frame with boxes drawn on it, so detection can be judged before a long render."""
+            from ..video import VideoToolError, heads
+            try:
+                src = self._video_path(body.get("video", ""))
+            except FileNotFoundError as e:
+                return self._error(f"找不到视频：{e}")
+            out = state.root / "build" / "heads" / f"detect-{pipeline._safe(src.stem)}.png"
+            try:
+                heads.preview_frame(src, out, at=float(body.get("at", 0)), min_score=float(body.get("min_score", 0.85)))
+            except VideoToolError as e:
+                return self._error(str(e))
+            return self._json({"path": state.rel(out), "at": body.get("at", 0)})
+
+        def heads_cover(self, body: dict):
+            """Render the covered clip in a thread — a minute of 1080p takes a couple of minutes
+            of detection, which is far too long to hold an HTTP request open."""
+            from ..video import VideoToolError, heads
+            if state.heads["state"] == "running":
+                return self._error("正在处理上一个视频")
+            try:
+                src = self._video_path(body.get("video", ""))
+            except FileNotFoundError as e:
+                return self._error(f"找不到视频：{e}")
+            image = None
+            if body.get("image"):
+                try:
+                    image = self._video_path(body["image"])
+                except FileNotFoundError:
+                    image = (state.root / body["image"]).resolve()
+                    if not image.is_file():
+                        return self._error(f"找不到遮挡图片：{body['image']}")
+            out = state.root / "assets" / "covered" / f"{pipeline._safe(src.stem)}-covered.mp4"
+            state.heads = {"state": "running", "lines": [], "result": None, "error": None}
+            log = state.heads["lines"].append
+
+            def run():
+                try:
+                    r = heads.cover(src, out, image=image, scale=float(body.get("scale", 1.5)),
+                                    y_offset=float(body.get("y_offset", -0.08)),
+                                    every=int(body.get("every", 1)),
+                                    min_score=float(body.get("min_score", 0.85)), log=log)
+                    r["path"] = state.rel(out)
+                    state.heads["result"] = r
+                except (VideoToolError, ffmpeg.FfmpegError, OSError) as e:
+                    state.heads["error"] = str(e)
+                finally:
+                    state.heads["state"] = "done"
+
+            if body.get("sync"):
+                run()
+                return self._json({"started": True, **(state.heads["result"] or {"error": state.heads["error"]})})
+            threading.Thread(target=run, daemon=True).start()
+            return self._json({"started": True})
+
+        def asset_library(self) -> dict:
+            """Everything downloaded into this project, with licence, credit, vision verdict and
+            which segments use it — the 图片 section is this list."""
+            from ..assets import Library
+            lib = Library(state.root)
+            raw = state.read_raw() if state.has_project else {"segments": []}
+            used: dict[str, list[str]] = {}
+            for seg in raw.get("segments") or []:
+                for c in seg.get("clips") or []:
+                    for k in ("image", "video"):
+                        v = c.get(k)
+                        if isinstance(v, str) and not v.startswith(proj.ASSET_PREFIXES):
+                            used.setdefault(v.replace("\\", "/"), []).append(seg["id"])
+            items = []
+            for rel, rec in lib.data.get("files", {}).items():
+                chk = rec.get("check") or {}
+                items.append({
+                    "path": rel, "kind": rec.get("kind", "image"), "provider": rec.get("provider", ""),
+                    "title": rec.get("title", ""), "author": rec.get("author", ""),
+                    "license": rec.get("license", ""), "page_url": rec.get("page_url", ""),
+                    "width": rec.get("width"), "height": rec.get("height"),
+                    "downloaded_at": rec.get("downloaded_at", ""),
+                    "warning": None if chk.get("ok", True) else chk.get("reason"),
+                    "used_by": used.get(rel, []),
+                    "exists": (state.root / rel).is_file(),
+                })
+            items.sort(key=lambda i: i["downloaded_at"], reverse=True)
+            return {"items": items, "root": str(state.root)}
 
         def save_project(self, body: dict, snapshot: bool = False):
             data = body.get("raw")

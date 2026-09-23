@@ -21,8 +21,10 @@ User-facing manual: `QUICKSTART.zh.md`. Roadmap: `docs/roadmap-v0.4-plan.md`.
 | Browser bridge | `browser/` (Playwright on the user's own Chrome/Edge profile) | types prompts into ChatGPT/Claude/DeepSeek/… web UIs for script generation; no API keys |
 | Script parsing | `script_parser.py` | pasted AI text → segments; strips chatter/notes/stage directions; `language_issues()` flags mixed language |
 | Web UI backend | `ui/__init__.py` (stdlib `ThreadingHTTPServer`, `/api/*`, port 8765) | `State` holds project path, build status, autofill job, background vision-check queue. `STAMP` = code mtime; a stale running copy is replaced on start |
+| UI sections | `ui/react/src/components/sections/` | 视频 / 声音 / 图片 — material-centred pages beside the 5-step wizard (React UI only; the old static UI has no nav rail) |
 | Web UI frontends | `ui/static/app.js` (vanilla, served by the backend — what the launchers open) **and** `ui/react/` (Vite + MUI, `npm run dev` on 5175 proxying to 8765) | **Every UI change must be made in both** until the React one replaces the old |
 | Remotion | `remotion/` | animated TitleCard / Timeline / BarChart at exact narration length; needs Node |
+| Video tools | `video/heads.py` | face detect (OpenCV YuNet, weights auto-downloaded to `~/.vidforge/models/`) → track/smooth → cover each face with a picture; `vidforge video heads` + `/api/video/heads/*`. UI: the 视频 section |
 | Presenter | `me.py`, `lipsync.py`, `avatar/` | own-footage library `~/.vidforge/me/`, optional lip-sync providers |
 | Tests | `tests/` — `python -m unittest discover -s tests` (115 tests, offline; providers/TTS mocked) | e2e browser test skips without playwright |
 

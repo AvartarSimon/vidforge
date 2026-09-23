@@ -14,6 +14,9 @@ import {
 } from '@mui/material'
 import type { PaletteMode } from '@mui/material'
 import CategoryIcon from '@mui/icons-material/Category'
+import MovieFilterIcon from '@mui/icons-material/MovieFilter'
+import GraphicEqIcon from '@mui/icons-material/GraphicEq'
+import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
@@ -34,14 +37,29 @@ const STEPS = [
   { n: 5, label: '发布', sub: '上传与声明' },
 ]
 
+// Work that is about one kind of material rather than about one step of this video: covering
+// faces in a clip, managing voices, reviewing everything that was downloaded. Kept out of the
+// wizard so it can be reached at any time and grown independently.
+export const SECTIONS = [
+  { id: 'video', label: '视频', sub: '遮脸、我的镜头', icon: MovieFilterIcon },
+  { id: 'voice', label: '声音', sub: '声音库与试听', icon: GraphicEqIcon },
+  { id: 'images', label: '图片', sub: '素材与授权', icon: PhotoLibraryIcon },
+] as const
+
+export type SectionId = (typeof SECTIONS)[number]['id']
+
 export function NavRail({
   activeStep,
   onStep,
+  activeSection,
+  onSection,
   mode,
   onToggleMode,
 }: {
   activeStep: number
   onStep: (n: number) => void
+  activeSection: SectionId | null
+  onSection: (id: SectionId) => void
   mode: PaletteMode
   onToggleMode: () => void
 }) {
@@ -93,7 +111,7 @@ export function NavRail({
           {STEPS.map((s) => (
             <ListItemButton
               key={s.n}
-              selected={activeStep === s.n}
+              selected={activeSection === null && activeStep === s.n}
               disabled={!raw}
               onClick={() => onStep(s.n)}
             >
@@ -113,6 +131,26 @@ export function NavRail({
               <ListItemText primary={s.label} secondary={s.sub} />
             </ListItemButton>
           ))}
+        </List>
+        <Divider />
+        <List>
+          {SECTIONS.map((sec) => {
+            const Icon = sec.icon
+            return (
+              <ListItemButton
+                key={sec.id}
+                selected={activeSection === sec.id}
+                disabled={!raw}
+                onClick={() => onSection(sec.id)}
+                sx={{ mx: 1, borderRadius: 2 }}
+              >
+                <ListItemIcon>
+                  <Icon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary={sec.label} secondary={sec.sub} />
+              </ListItemButton>
+            )
+          })}
         </List>
         <Divider />
         <List sx={{ flexGrow: 1 }}>

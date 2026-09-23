@@ -162,6 +162,27 @@ def cmd_me(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_video(args: argparse.Namespace) -> int:
+    """Tools that take a clip and give a clip back, independent of any project.
+    `heads`: cover every face with a picture (or a blurred disc) that follows it."""
+    from .video import heads
+    src = Path(args.input).resolve()
+    if not src.is_file():
+        raise SystemExit(f"找不到视频：{src}")
+    if args.action == "detect":
+        out = Path(args.out) if args.out else src.with_name(src.stem + "_faces.png")
+        heads.preview_frame(src, out, at=args.at)
+        print(f"检测结果（红框=会被盖住）：{out}")
+        return 0
+    out = Path(args.out) if args.out else src.with_name(src.stem + "_covered.mp4")
+    image = Path(args.image).resolve() if args.image else None
+    if image and not image.is_file():
+        raise SystemExit(f"找不到遮挡图片：{image}")
+    r = heads.cover(src, out, image=image, scale=args.scale, y_offset=args.y_offset, every=args.every)
+    print(f"完成：{r['out']}（{r['faces']} 张脸，{r['covered']}/{r['frames']} 帧）")
+    return 0
+
+
 def cmd_category(args: argparse.Namespace) -> int:
     """Named per-topic-vertical presets (platforms, reference sources, banned keywords, defaults)
     — see vidforge/categories.py for why these are plain JSON files, not a database."""
@@ -377,6 +398,18 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--tags", help="tag: comma-separated tags, e.g. backyard,glasses")
     s.add_argument("--talking", choices=["true", "false"], help="tag: mark as a speaking take or silent B-roll")
     s.set_defaults(fn=cmd_me)
+
+    s = sub.add_parser("video", help="clip tools: 'heads' covers every face with a picture that follows it")
+    s.add_argument("action", choices=["heads", "detect"],
+                   help="heads: render the covered clip · detect: one frame showing what was found")
+    s.add_argument("input", help="the video file")
+    s.add_argument("-o", "--out", help="output file (default: alongside the input)")
+    s.add_argument("--image", help="picture to paste over each face (PNG with transparency is best); omit for a blurred disc")
+    s.add_argument("--scale", type=float, default=1.5, help="cover size as a multiple of the face box (default 1.5)")
+    s.add_argument("--y-offset", dest="y_offset", type=float, default=-0.08, help="move the cover up by this fraction of its size")
+    s.add_argument("--every", type=int, default=1, help="detect every Nth frame (2-3 is much faster on long clips)")
+    s.add_argument("--at", type=float, default=0.0, help="detect: which second to look at")
+    s.set_defaults(fn=cmd_video)
 
     s = sub.add_parser("category", help="topic-vertical presets (platforms/sources/banned keywords/defaults): plain JSON files, not a database")
     s.add_argument("action", choices=["list", "show", "path", "delete", "export", "import"])

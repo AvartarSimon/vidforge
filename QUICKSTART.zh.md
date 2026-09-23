@@ -137,6 +137,16 @@ vidforge i18n import my-video --lang zh
 4. 第 3 步「🎥 我的镜头」tab：选标签/说话与否，「作为本段主画面」或「作为画中画」——不指定具体文件，渲染时自动挑**用得最少**的匹配镜头，同一素材不会一集比一集眼熟。上传新镜头、改标签都能在这个 tab 直接做，或用命令行 `vidforge me scan` / `vidforge me tag <文件名> --tags a,b --talking true`。
 5. 只要真的用了口型同步（provider ≠ none），vidforge 会自动在简介里加上"主持人形象为数字合成"的 AI 内容披露（YouTube synthetic 标记 + 中国 2025-09-01 标注新规都要求）；纯沉默镜头不触发这条。
 
+## 2.7 左侧的「视频 / 声音 / 图片」（React 界面）
+
+五步向导之外，左侧栏下半部分是按**素材种类**分的三个区，随时可进：
+
+- **视频**：① 用头像盖住视频里的人脸——逐帧检测并跟踪人脸，把你给的 PNG（卡通头、logo）贴上去跟着头动；不给图片就用半透明圆形。先点「先看检测结果」确认框对不对，再生成。② 我的镜头库一览。
+  命令行同样可用：`vidforge video detect take.mp4 --at 2` / `vidforge video heads take.mp4 --image avatar.png -o out.mp4`。
+  首次使用会自动装 `opencv-python`（约 40 MB）并下载人脸检测模型 YuNet（约 230 KB）。
+- **声音**：列出 Edge / VoxCPM2 / ElevenLabs 下所有可用声音，试听、一键设为本项目声音；VoxCPM2 的声音说明它是「描述 + 种子」两个值，怎么搬机器。
+- **图片**：这个项目下载过的全部素材，带授权、作者、出处链接、视觉核对警告，以及被哪些段落用到；可筛「没被用到」和「有水印警告」。
+
 ## 3. 各种 key（都可选）
 
 在项目目录（或 vidforge 目录）建 `.env`：

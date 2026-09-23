@@ -16,6 +16,7 @@ dependencies = [
 youtube = ["google-api-python-client>=2.100", "google-auth-oauthlib>=1.2"]
 dev = ["playwright>=1.45"]
 browser = ["playwright>=1.45"]
+video = ["opencv-python>=4.8"]   # face detection for `vidforge video heads` (installed on first use too)
 voxcpm = ["voxcpm", "soundfile"]   # free/local Voice Design alt to ElevenLabs; pulls in PyTorch, install on the render machine only
 
 [project.scripts]
