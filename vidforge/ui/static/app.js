@@ -761,19 +761,42 @@ function viewVisuals(v) {
   </div>`;
   // one click: search + download a first picture for every segment without one (server thread, polled)
   const autoBar = document.createElement('div'); autoBar.style.cssText = 'display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px';
+  // same sources as the picker's 搜索 tab, videos included
+  const AUTO_SRC = [['commons', 'Commons（历史画/地图/老照片）', 'image'], ['openverse', 'Openverse（CC 聚合）', 'image'],
+    ['archive', 'Internet Archive（公有领域）', 'image video'], ['pexels', 'Pexels（需 key）', 'image video'],
+    ['pixabay', 'Pixabay（需 key）', 'image video'], ['google', 'Google 图片 · 仅 CC（用浏览器）', 'image'],
+    ['google_all', 'Google 图片 · 全部 ⚠ 版权未知', 'image'], ['baidu', '百度图片 ⚠ 版权未知', 'image']];
   autoBar.innerHTML = `<button class="small" id="autoBtn">✨ 一键配图</button>
-    <select id="autoSrc" class="small"><option value="commons">Commons（历史画/地图/老照片）</option><option value="pexels">Pexels（需 key）</option><option value="pixabay">Pixabay（需 key）</option></select>
+    <select id="autoKind" class="small"><option value="image">图片</option><option value="video">视频</option></select>
+    <select id="autoSrc" class="small"></select>
     <label class="small"><input type="checkbox" id="autoOver"> 已有画面的段也重配</label>
     <label class="small"><input type="checkbox" id="autoVision" checked> 视觉核对水印/内容（每张约 1 分钟）</label>
+    <select id="autoSite" class="small"><option value="">搜索词：本地模型（快）</option></select>
     <span id="autoProg" class="muted"></span>`;
   $('#storyboard').prepend(autoBar);
+  const fillSrc = () => {
+    const k = $('#autoKind').value;
+    const keep = $('#autoSrc').value;
+    const opts = AUTO_SRC.filter(o => o[2].includes(k));
+    $('#autoSrc').innerHTML = opts.map(o => `<option value="${o[0]}">${esc(o[1])}</option>`).join('');
+    $('#autoSrc').value = opts.some(o => o[0] === keep) ? keep : (k === 'video' ? 'archive' : 'commons');
+    $('#autoBtn').textContent = k === 'video' ? '✨ 一键配视频' : '✨ 一键配图';
+  };
+  $('#autoKind').onchange = fillSrc;
+  fillSrc();
+  // a full-size model in the user's own browser writes much better search phrases than the local 3B one
+  api('/api/chat/sites').then(j => {
+    $('#autoSite').innerHTML = '<option value="">搜索词：本地模型（快）</option>' +
+      (j.sites || []).map(x => `<option value="${esc(x.id)}">搜索词：${esc(x.label)}（更准，需登录）</option>`).join('');
+  }).catch(() => { });
   const autoBtn = $('#autoBtn');
   autoBtn.title = '按每段旁白生成搜索词（本地模型或关键词提取），立刻搜图下载，之后可逐段替换';
   autoBtn.onclick = async () => {
     if (!await save()) return;
     autoBtn.disabled = true;
     try {
-      const st0 = await api(`/api/autofill?lang=${lang}`, { source: $('#autoSrc').value, overwrite: $('#autoOver').checked, vision: $('#autoVision').checked });
+      const st0 = await api(`/api/autofill?lang=${lang}`, { source: $('#autoSrc').value, kind: $('#autoKind').value, overwrite: $('#autoOver').checked, vision: $('#autoVision').checked, site: $('#autoSite').value });
+      if (!st0.total) { $('#autoProg').textContent = ''; autoBtn.disabled = false; return alert('没有需要配图的段落。勾上「已有画面的段也重配」可以全部重来。'); }
       let st = { state: 'running', done: 0, total: st0.total };
       while (st.state === 'running') {
         $('#autoProg').textContent = `正在搜图并下载… ${st.done}/${st.total}`;
@@ -783,9 +806,12 @@ function viewVisuals(v) {
       $('#autoProg').textContent = '';
       await load();
       const r = st.result || {};
-      const failed = (r.failed || []).length ? `；${r.failed.length} 段没有准确的图，留空了（${r.failed.map(f => f.id).join('、')}），点开手动选` : '';
-      const how = `${r.source}${r.llm ? '，搜索词来自本地模型' : '，搜索词来自关键词提取'}${r.vision ? `，${r.vision} 已核对水印和内容` : '，未装视觉模型（ollama pull qwen2.5vl:3b 可自动识别水印）'}`;
-      $('#issues').innerHTML = `<div class="banner info">已为 ${r.filled} 段配好 ${r.resolved} 张图（${how}）${failed}。不满意的段点开重选。</div>`;
+      const unit = r.kind === 'video' ? '段视频' : '张图';
+      const failed = (r.failed || []).length ? `；${r.failed.length} 段没有准确的素材，留空了（${r.failed.map(f => f.id).join('、')}），点开手动选` : '';
+      const who = r.site ? `搜索词来自 ${r.site}` : r.llm ? '搜索词来自本地模型' : '搜索词来自关键词提取';
+      const how = `${r.source}，${who}${r.vision ? `，${r.vision} 已核对水印和内容` : '，未装视觉模型（ollama pull qwen2.5vl:3b 可自动识别水印）'}`;
+      const generic = (r.generic || []).length ? `；其中 ${r.generic.length} 段（${r.generic.join('、')}）旁白太抽象，用的是主题素材（${(r.topic_pool || []).join('、')}），建议自己换` : '';
+      $('#issues').innerHTML = `<div class="banner info">已为 ${r.filled} 段配好 ${r.resolved} ${unit}（${how}）${generic}${failed}。不满意的段点开重选。</div>`;
     } catch (e) {
       // a backend started before the last update has no GET /api/autofill -> "not found"
       alert(/not found/i.test(e.message) ? '后端是旧版本（没有这个接口）：关掉 vidforge 的黑窗口，重新双击 start-vidforge 再试。' : e.message);

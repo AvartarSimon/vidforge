@@ -753,29 +753,58 @@ def make_handler(state: State):
             }
 
         def autofill(self, lang: str | None, body: dict):
-            """Give segments a first picture right now, not at render time.
+            """Give segments a first picture (or video clip) right now, not at render time.
 
-            body: source (commons|pexels|pixabay; default = commons, the history archive, unless only a
-            stock key is set), overwrite (also redo segments that already have clips), resolve (default
-            True: search + download so the storyboard shows a real thumbnail; False = old behaviour,
-            just write "provider:query" specs), sync (run inline — tests).
-            Search phrases: one batched Ollama call when it is running, else the heuristic. Runs in a
-            thread; GET /api/autofill reports progress so a 60-segment script does not look frozen.
+            body: source (any provider the search tab offers), kind (image|video), overwrite (redo
+            segments that already have a real file too), resolve (default True: search + download so
+            the storyboard shows a real thumbnail), vision (look at each candidate), sync (tests).
+
+            A segment counts as needing a picture when it has no clips at all *or* only unresolved
+            "provider:query" specs — earlier versions wrote those specs without downloading anything,
+            so a project full of them looked "done" while autofill reported 0 segments to fill and
+            the build would later fail on every one of them.
             """
             if state.autofill["state"] == "running":
                 return self._error("自动配图正在进行中")
             env.load_dotenv(state.root)
+            from ..assets import Library
             has_stock = os.environ.get("PEXELS_API_KEY") or os.environ.get("PIXABAY_API_KEY")
-            source = body.get("source") or ("commons" if not has_stock else "pexels" if os.environ.get("PEXELS_API_KEY") else "pixabay")
+            kind = "video" if body.get("kind") == "video" else "image"
+            default_source = ("archive" if kind == "video" and not has_stock else
+                              "pexels" if os.environ.get("PEXELS_API_KEY") else
+                              "pixabay" if os.environ.get("PIXABAY_API_KEY") else "commons")
+            source = body.get("source") or (default_source if kind == "video" or has_stock else "commons")
             overwrite = bool(body.get("overwrite"))
             resolve = body.get("resolve", True)
             vision = body.get("vision", True)          # ~1 min per picture on a CPU-only machine: can be turned off
+            site = (body.get("site") or "").strip()    # browser AI for the search phrases; "" = local model
+            topic_fallback = body.get("topic_fallback", True)
             raw = state.read_raw()
             base = raw.get("language", "en")
+            lib = Library(state.root)
+
+            def unresolved(seg: dict) -> bool:
+                """Only "provider:query" specs, none of which has a downloaded file yet."""
+                clips = seg.get("clips") or []
+                if not clips:
+                    return True
+                for c in clips:
+                    for k in ("image", "video"):
+                        v = c.get(k)
+                        if not isinstance(v, str):
+                            continue
+                        if not v.startswith(proj.ASSET_PREFIXES):
+                            return False                     # a real file (or me/remotion clip)
+                        prov, _, query = v.partition(":")
+                        if lib.pick(f"{'commons' if prov == 'wikimedia' else prov}:{k}:{query}"):
+                            return False                     # spec already resolved to a file
+                return True
+
             pending = []
             for seg in raw["segments"]:
-                has_visual = seg.get("clips") or any(k in seg for k in ("image", "video", "remotion"))
-                if seg.get("remotion") or (has_visual and not overwrite):
+                if seg.get("remotion") or any(k in seg for k in ("image", "video")):
+                    continue
+                if not overwrite and not unresolved(seg):
                     continue
                 text = seg.get("text" if not lang or lang == base else f"text_{lang}") or seg.get("text") or ""
                 if text.strip():
@@ -785,35 +814,83 @@ def make_handler(state: State):
 
             def run():
                 from .. import llm
-                from ..assets import AssetError, Library, pick_for_spec
+                from ..assets import AssetError, pick_for_spec
                 phrases: dict[str, str] = {}
                 used_llm = False
-                if pending and llm.available():
+                title = raw.get("title", "")
+                items = {s["id"]: t for s, t in pending}
+                if pending and site:
+                    # a full-size model in the user's browser writes far better phrases than a 3B
+                    # local one, which starts echoing the narration on abstract paragraphs
+                    from ..browser import BrowserError, chat
                     try:
-                        phrases = llm.keywords_batch({s["id"]: t for s, t in pending})
+                        log(f"正在 {site} 里生成搜索词（一次提问，通常 30–120 秒）…")
+                        answer = chat.ask(site, llm.keywords_prompt(items, topic=title), timeout=300, log=log)
+                        phrases = llm.parse_keywords_answer(answer, items)
+                        used_llm = bool(phrases)
+                        log(f"{site} 给出 {len(phrases)} 段搜索词")
+                    except BrowserError as e:
+                        log(f"浏览器 AI 不可用，改用本地模型：{e}")
+                if pending and not phrases and llm.available():
+                    try:
+                        phrases = llm.keywords_batch(items, topic=title)
                         used_llm = bool(phrases)
                         log(f"本地模型给出 {len(phrases)} 段搜索词")
                     except llm.LlmError as e:
                         log(f"本地模型不可用，改用启发式关键词：{e}")
-                fallbacks = [p for p in (source, "commons", "pexels" if os.environ.get("PEXELS_API_KEY") else None,
-                                         "pixabay" if os.environ.get("PIXABAY_API_KEY") else None) if p]
-                providers = list(dict.fromkeys(fallbacks))
-                lib = Library(state.root)
+                # Abstract narration ("这里有一个容易被误解的问题") has no picture of its own. Rather
+                # than leave every such segment empty, fall back to the video's own subject — generic
+                # but never wrong — and report which segments got one so they can be reviewed.
+                topic_pool: list[str] = []
+                if topic_fallback and title and llm.available():
+                    sample = pending[0][1] if pending else ""
+                    topic_pool = llm.topic_queries(title, sample)
+                    if topic_pool:
+                        log("没有具体画面的段落将回退到主题素材：" + "、".join(topic_pool))
+                # if the chosen source has nothing, try the other key-less ones of the same kind
+                # before giving up (a Commons miss is often an Openverse/Archive hit)
+                backups = (["archive", "pexels" if os.environ.get("PEXELS_API_KEY") else None,
+                            "pixabay" if os.environ.get("PIXABAY_API_KEY") else None] if kind == "video" else
+                           ["commons", "openverse", "archive",
+                            "pexels" if os.environ.get("PEXELS_API_KEY") else None,
+                            "pixabay" if os.environ.get("PIXABAY_API_KEY") else None])
+                # browser/unknown-licence sources are only used when explicitly chosen, never as a fallback
+                providers = list(dict.fromkeys([p for p in [source] + backups if p]))
                 failed: list[dict] = []
                 resolved = 0
+                generic: list[str] = []
+                seen_queries: set[str] = set()
                 for seg, text in pending:
-                    query = phrases.get(seg["id"]) or " ".join(keywords.suggest(text, 2)) or seg["id"]
-                    if used_llm and any("一" <= ch <= "鿿" for ch in query):   # stock/archive search wants English
-                        try:
-                            query = llm.translate_query(query) or query
-                        except llm.LlmError:
-                            pass
-                    clip = {"image": f"{source}:{query}", "motion": "zoom_in"}
+                    query = phrases.get(seg["id"]) or ""
+                    if not query:
+                        heuristic = " ".join(keywords.suggest(text, 2))
+                        if heuristic and any("一" <= ch <= "鿿" for ch in heuristic) and llm.available():
+                            try:                                   # archives answer English, not 中文
+                                heuristic = llm.translate_query(heuristic) or ""
+                            except llm.LlmError:
+                                heuristic = ""
+                        query = llm._clean_phrase(heuristic) or ""
+                    if not query and topic_pool:
+                        query = topic_pool[len(generic) % len(topic_pool)]   # rotate: not the same picture每段
+                        generic.append(seg["id"])
+                    if not query:
+                        failed.append({"id": seg["id"], "query": "(没有可搜索的关键词)"})
+                        seg["clips"] = []
+                        state.autofill["done"] += 1
+                        continue
+                    # several segments often land on one query ("Qin State"); without a per-segment
+                    # slot in the pick memory they would all show the identical file
+                    repeat = query in seen_queries
+                    seen_queries.add(query)
+                    clip = {kind: f"{source}:{query}", "motion": "zoom_in"} if kind == "image" else {kind: f"{source}:{query}"}
                     if resolve:
+                        need = estimate_seconds(text) if kind == "video" else 0.0
                         for prov in providers:
                             try:
-                                dest = pick_for_spec(state.root, lib, prov, "image", query, strict=True, log=log, vision=vision)
-                                clip["image"] = f"{prov}:{query}"
+                                dest = pick_for_spec(state.root, lib, prov, kind, query, need=need,
+                                                     strict=True, log=log, vision=vision,
+                                                     unique_key=seg["id"] if (repeat or seg["id"] in generic) else None)
+                                clip[kind] = f"{prov}:{query}"
                                 resolved += 1
                                 log(f"{seg['id']}: {prov} '{query}' -> {dest.name}")
                                 break
@@ -838,7 +915,9 @@ def make_handler(state: State):
                             seg.pop(k, None)
                 state.write_raw(cur, snapshot=True)
                 state.autofill["result"] = {"filled": len(pending), "resolved": resolved, "failed": failed,
-                                            "source": source, "llm": used_llm, "vision": llm.vision_model() if vision else None}
+                                            "source": source, "kind": kind, "llm": used_llm, "site": site,
+                                            "generic": generic, "topic_pool": topic_pool,
+                                            "vision": llm.vision_model() if vision else None}
                 state.autofill["state"] = "done"
 
             if body.get("sync"):

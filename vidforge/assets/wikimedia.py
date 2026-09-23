@@ -58,6 +58,7 @@ class CommonsProvider:
             "prop": "imageinfo", "iiprop": "url|size|extmetadata", "iiurlwidth": 640,
             "iiextmetadatafilter": "LicenseShortName|Artist|ObjectName|ImageDescription",
         })
+        _pace(0.5)                       # api.php 429s during autofill's back-to-back searches
         data = http_json(f"{API}?{q}")
         out: list[Candidate] = []
         for page_ in (data.get("query") or {}).get("pages", []):
@@ -106,7 +107,7 @@ class CommonsProvider:
 _last_fetch = 0.0
 
 
-def _pace(gap: float = 1.0) -> None:
+def _pace(gap: float = 1.0) -> None:   # noqa: D401  (used by search() above and fetch() below)
     """Commons rate-limits bursts (autofill fetches one file per segment back to back)."""
     global _last_fetch
     wait = _last_fetch + gap - time.time()

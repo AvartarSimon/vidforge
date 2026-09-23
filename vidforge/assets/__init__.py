@@ -280,26 +280,36 @@ def blocked_host(url: str) -> bool:
 
 
 _WORD = re.compile(r"[A-Za-z0-9一-鿿]+")
-_NOISE = {"ship", "city", "town", "photo", "picture", "painting", "map", "image", "view", "scene", "concept"}
+_NOISE = {"photo", "picture", "image", "view", "scene", "concept"}
+from ..keywords import _STOP      # noqa: E402  (same stopwords the heuristic keyword picker uses)
+
+
+def _content_words(text: str) -> list[str]:
+    out = []
+    for w in _WORD.findall(text.lower()):
+        if any("一" <= ch <= "鿿" for ch in w):
+            out.append(w)
+        elif len(w) > 1 and w not in _NOISE and w not in _STOP:
+            out.append(re.sub(r"(?:es|s)$", "", w))      # crude singular, so "wars" matches "war"
+    return out
 
 
 def relevant(c: Candidate, query: str) -> bool:
-    """Strict text check for unattended picks: the query's proper nouns / numbers must actually
-    appear in the file's title or description (a 'Mayflower' hit on a *plant* named mayflower
-    still passes here — the vision check catches that). Rule: every capitalised word or number
-    of the query is found, or at least 60 % of all content words are. Titles like "IMG_1234"
-    with no match fail — better an empty slot than a wrong picture."""
-    from ..keywords import _STOP
-    words = [w for w in _WORD.findall(query) if len(w) > 1 and w.lower() not in _NOISE and w.lower() not in _STOP]
-    if not words:
-        return False
-    hay = f"{c.title} {c.desc}".lower()
-    key = [w for w in words if w[0].isupper() or w.isdigit() or any("一" <= ch <= "鿿" for ch in w)]
-    hits = [w for w in words if w.lower() in hay]
-    if key and all(w.lower() in hay for w in key):
-        return True
-    need = max(1, round(0.6 * len(words)))
-    return len(hits) >= need and (not key or any(w in key for w in hits))
+    """Strict text check for unattended picks: two neighbouring content words of the query must sit
+    next to each other in the file's title or description.
+
+    Counting shared words is not enough — "Qin and Yi tribes" then matches a press photo of the
+    politicians Qin Gang and Wang Yi, and "Key to Qin's rise" a tuning key for the qin instrument,
+    because the words do occur, just not together. Requiring the *pair* keeps those out while still
+    accepting "Qin Empire Establishment" for "Map of the Qin Empire in 221 BCE", where the model
+    tacked an abstract word onto a perfectly good subject. Stopwords are dropped on both sides, so
+    "Battle of Lexington" and "Battle Lexington 1775" are the same phrase."""
+    q = _content_words(query)
+    if len(q) < 2:
+        return False              # one generic word is not evidence that a picture is about it
+    hay = _content_words(f"{c.title} {c.desc}")
+    pairs = {(a, b) for a, b in zip(hay, hay[1:])}
+    return any((a, b) in pairs for a, b in zip(q, q[1:]))
 
 
 def fetch(root: Path, cand: Candidate, library: Library | None = None) -> Path:
@@ -373,7 +383,8 @@ def vision_verdict(root: Path, cand: Candidate, subject: str | None, log=None) -
 
 
 def pick_for_spec(root: Path, lib: Library, prov_name: str, kind: str, query: str, need: float = 0.0,
-                  strict: bool = False, log=None, tries: int = 4, vision: bool = True) -> Path:
+                  strict: bool = False, log=None, tries: int = 4, vision: bool = True,
+                  unique_key: str | None = None) -> Path:
     """Resolve one "provider:query" spec to a downloaded file: remembered pick, else the best
     unused landscape result (long enough for `need` seconds when it is a video). Shared by the
     build-time resolver and the storyboard's one-click autofill so both pick the same file.
@@ -382,7 +393,9 @@ def pick_for_spec(root: Path, lib: Library, prov_name: str, kind: str, query: st
     a local vision model exists — no watermark, no burned-in text, and the picture must depict the
     query. Up to `tries` candidates are examined; none passing raises, leaving the slot empty."""
     prov_name = {"wikimedia": "commons"}.get(prov_name, prov_name)
-    spec = f"{prov_name}:{kind}:{query}"
+    # unique_key: several segments share one query (the topic fallback) but must not all end up
+    # with the same file — give each its own slot in the pick memory so an unused candidate is taken
+    spec = f"{prov_name}:{kind}:{query}" + (f"#{unique_key}" if unique_key else "")
     dest = lib.pick(spec)
     if dest is not None:
         return dest

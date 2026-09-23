@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Box, Button, Checkbox, FormControlLabel, LinearProgress, MenuItem, Select, Stack, Typography } from '@mui/material'
 import { apiGet, apiPost } from '../../../api/client'
 import { useProject } from '../../../state/ProjectContext'
@@ -9,29 +9,68 @@ type AutofillStatus = {
   done: number
   total: number
   lines: string[]
-  result: { filled: number; resolved: number; failed: { id: string; query: string }[]; source: string; llm: boolean; vision: string | null } | null
+  result: {
+    filled: number
+    resolved: number
+    failed: { id: string; query: string }[]
+    source: string
+    kind: string
+    llm: boolean
+    site: string
+    generic: string[]
+    topic_pool: string[]
+    vision: string | null
+  } | null
 }
 
-// where the first rough cut comes from: Commons = paintings/maps/old photos (history), stock = modern footage
-const SOURCES = [
-  { id: 'commons', label: 'Wikimedia Commons（历史画/地图/老照片）' },
-  { id: 'pexels', label: 'Pexels（需要 key）' },
-  { id: 'pixabay', label: 'Pixabay（需要 key）' },
+// same list as the picker's 搜索 tab (SearchTab.tsx) — autofill should be able to reach every
+// source you can reach by hand, videos included
+const SOURCES: { id: string; label: string; kinds: ('image' | 'video')[] }[] = [
+  { id: 'commons', label: 'Wikimedia Commons（历史画/地图/老照片）', kinds: ['image'] },
+  { id: 'openverse', label: 'Openverse（CC 聚合：Flickr/博物馆）', kinds: ['image'] },
+  { id: 'archive', label: 'Internet Archive（公有领域老照片/影像）', kinds: ['image', 'video'] },
+  { id: 'pexels', label: 'Pexels（需要 key）', kinds: ['image', 'video'] },
+  { id: 'pixabay', label: 'Pixabay（需要 key）', kinds: ['image', 'video'] },
+  { id: 'google', label: 'Google 图片 · 仅 CC（用我的浏览器，较慢）', kinds: ['image'] },
+  { id: 'google_all', label: 'Google 图片 · 全部 ⚠ 版权未知', kinds: ['image'] },
+  { id: 'baidu', label: '百度图片 ⚠ 版权未知', kinds: ['image'] },
 ]
+const DEFAULT_SOURCE = { image: 'commons', video: 'archive' } as const
 
 export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect: (id: string) => void }) {
   const { raw, view, reload, saveNow } = useProject()
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
-  const [source, setSource] = useState('commons')
+  const [kind, setKind] = useState<'image' | 'video'>('image')
+  const [source, setSource] = useState<string>(DEFAULT_SOURCE.image)
   const [overwrite, setOverwrite] = useState(false)
   const [vision, setVision] = useState(true)
+  // who writes the search phrases: the local 3B model is instant but weak on abstract narration,
+  // a full-size model in the user's own browser is much better (one question, 30-120 s)
+  const [site, setSite] = useState('')
+  const [sites, setSites] = useState<{ id: string; label: string }[]>([])
+  useEffect(() => {
+    apiGet<{ sites: { id: string; label: string }[] }>('/api/chat/sites')
+      .then((j) => setSites(j.sites))
+      .catch(() => setSites([]))
+  }, [])
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
 
   if (!raw) return null
   const segments = raw.segments
   const resolved = view?.resolved || {}
-  const missing = segments.filter((s) => !s.clips.length && !s.remotion).length
+  // "needs a picture" = no clips, or only unresolved provider:query specs (the old autofill wrote
+  // those without downloading anything, so such segments look filled but have nothing to show)
+  const missing = segments.filter(
+    (s) =>
+      !s.remotion &&
+      (!s.clips.length || (resolved[s.id]?.clips || []).every((c) => !c.path && !!c.source)),
+  ).length
+
+  const pickKind = (k: 'image' | 'video') => {
+    setKind(k)
+    if (!SOURCES.find((o) => o.id === source)?.kinds.includes(k)) setSource(DEFAULT_SOURCE[k])
+  }
 
   // the server searches + downloads one picture per segment in a thread; poll until it is done
   const autofill = async () => {
@@ -39,7 +78,12 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
     setBusy(true)
     setMsg(null)
     try {
-      const start = await apiPost<{ started: boolean; total: number }>('/api/autofill', { source, overwrite, vision })
+      const start = await apiPost<{ started: boolean; total: number }>('/api/autofill', { source, kind, overwrite, vision, site })
+      if (!start.total) {
+        setMsg('没有需要配图的段落。勾上「已有画面的段也重配」可以全部重来。')
+        setBusy(false)
+        return
+      }
       setProgress({ done: 0, total: start.total })
       let st: AutofillStatus
       do {
@@ -49,9 +93,18 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
       } while (st.state === 'running')
       const r = st.result
       if (r) {
-        const failed = r.failed.length ? `；${r.failed.length} 段没有准确的图，留空了（${r.failed.map((f) => f.id).join('、')}），点开手动选` : ''
-        const how = `${r.source}${r.llm ? '，搜索词来自本地模型' : '，搜索词来自关键词提取'}${r.vision ? `，${r.vision} 已核对水印和内容` : '，未装视觉模型（ollama pull qwen2.5vl:3b 可自动识别水印）'}`
-        setMsg(`已为 ${r.filled} 段配好 ${r.resolved} 张图（${how}）${failed}。不满意的段点开重选。`)
+        const unit = r.kind === 'video' ? '段视频' : '张图'
+        const failed = r.failed.length
+          ? `；${r.failed.length} 段没有准确的素材，留空了（${r.failed.map((f) => f.id).join('、')}），点开手动选`
+          : ''
+        const who = r.site ? `搜索词来自 ${r.site}` : r.llm ? '搜索词来自本地模型' : '搜索词来自关键词提取'
+        const how = `${r.source}，${who}${r.vision ? `，${r.vision} 已核对水印和内容` : '，未装视觉模型（ollama pull qwen2.5vl:3b 可自动识别水印）'}`
+        // segments whose narration is abstract got a picture of the video's subject instead —
+        // on-topic but generic, so say which ones deserve a look
+        const generic = r.generic?.length
+          ? `；其中 ${r.generic.length} 段（${r.generic.join('、')}）旁白太抽象，用的是主题素材（${r.topic_pool.join('、')}），建议自己换`
+          : ''
+        setMsg(`已为 ${r.filled} 段配好 ${r.resolved} ${unit}（${how}）${generic}${failed}。不满意的段点开重选。`)
       }
       await reload()
     } catch (e) {
@@ -67,10 +120,15 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
     <Stack spacing={1}>
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
         <Button size="small" variant="contained" onClick={autofill} disabled={busy || (!overwrite && missing === 0)}>
-          ✨ 一键配图{overwrite ? '（全部重配）' : missing ? `（${missing} 段没画面）` : ''}
+          ✨ 一键配{kind === 'video' ? '视频' : '图'}
+          {overwrite ? '（全部重配）' : missing ? `（${missing} 段没画面）` : ''}
         </Button>
+        <Select size="small" value={kind} onChange={(e) => pickKind(e.target.value as 'image' | 'video')} disabled={busy} sx={{ fontSize: 12 }}>
+          <MenuItem value="image" sx={{ fontSize: 12 }}>图片</MenuItem>
+          <MenuItem value="video" sx={{ fontSize: 12 }}>视频</MenuItem>
+        </Select>
         <Select size="small" value={source} onChange={(e) => setSource(e.target.value)} disabled={busy} sx={{ fontSize: 12, minWidth: 150 }}>
-          {SOURCES.map((o) => (
+          {SOURCES.filter((o) => o.kinds.includes(kind)).map((o) => (
             <MenuItem key={o.id} value={o.id} sx={{ fontSize: 12 }}>
               {o.label}
             </MenuItem>
@@ -84,6 +142,16 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
           control={<Checkbox size="small" checked={vision} onChange={(e) => setVision(e.target.checked)} disabled={busy} />}
           label={<Typography variant="caption">视觉核对水印/内容（本地模型，每张约 1 分钟）</Typography>}
         />
+        <Select size="small" value={site} onChange={(e) => setSite(e.target.value)} disabled={busy} sx={{ fontSize: 12, minWidth: 170 }}>
+          <MenuItem value="" sx={{ fontSize: 12 }}>
+            搜索词：本地模型（快）
+          </MenuItem>
+          {sites.map((o) => (
+            <MenuItem key={o.id} value={o.id} sx={{ fontSize: 12 }}>
+              搜索词：{o.label}（更准，需登录）
+            </MenuItem>
+          ))}
+        </Select>
       </Stack>
       {progress && (
         <Box>
