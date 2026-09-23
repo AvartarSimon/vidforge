@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Box, Button, Checkbox, FormControlLabel, LinearProgress, MenuItem, Select, Stack, Typography } from '@mui/material'
 import { apiGet, apiPost } from '../../../api/client'
 import { useProject } from '../../../state/ProjectContext'
@@ -37,6 +37,15 @@ const SOURCES: { id: string; label: string; kinds: ('image' | 'video')[] }[] = [
 ]
 const DEFAULT_SOURCE = { image: 'commons', video: 'archive' } as const
 
+// "3/22 · 已用 4 分钟，约还需 25 分钟" — a vision-checked run is slow enough that a bare count
+// looks like it has stalled
+function etaText(p: { done: number; total: number; started: number }): string {
+  const elapsed = (Date.now() - p.started) / 1000
+  if (!p.done || elapsed < 5) return ''
+  const left = Math.round(((elapsed / p.done) * (p.total - p.done)) / 60)
+  return `　已用 ${Math.round(elapsed / 60)} 分钟${left > 0 ? `，约还需 ${left} 分钟` : ''}`
+}
+
 export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect: (id: string) => void }) {
   const { raw, view, reload, saveNow } = useProject()
   const [busy, setBusy] = useState(false)
@@ -54,7 +63,8 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
       .then((j) => setSites(j.sites))
       .catch(() => setSites([]))
   }, [])
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  const [progress, setProgress] = useState<{ done: number; total: number; started: number } | null>(null)
+  const progressStart = useRef(0)
 
   if (!raw) return null
   const segments = raw.segments
@@ -77,6 +87,7 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
     if (!(await saveNow())) return
     setBusy(true)
     setMsg(null)
+    progressStart.current = Date.now()
     try {
       const start = await apiPost<{ started: boolean; total: number }>('/api/autofill', { source, kind, overwrite, vision, site })
       if (!start.total) {
@@ -84,12 +95,16 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
         setBusy(false)
         return
       }
-      setProgress({ done: 0, total: start.total })
+      setProgress({ done: 0, total: start.total, started: Date.now() })
       let st: AutofillStatus
+      let ticks = 0
       do {
-        await new Promise((r) => setTimeout(r, 800))
+        await new Promise((r) => setTimeout(r, 1000))
         st = await apiGet<AutofillStatus>('/api/autofill')
-        setProgress({ done: st.done, total: st.total })
+        setProgress({ done: st.done, total: st.total, started: progressStart.current })
+        // the server saves each segment as it finishes, so refresh the storyboard while it runs —
+        // a run with the vision check on takes about a minute per picture and used to look frozen
+        if (++ticks % 4 === 0) await reload()
       } while (st.state === 'running')
       const r = st.result
       if (r) {
@@ -156,9 +171,15 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
       {progress && (
         <Box>
           <LinearProgress variant={progress.total ? 'determinate' : 'indeterminate'} value={progress.total ? (100 * progress.done) / progress.total : 0} />
-          <Typography variant="caption" color="text.secondary">
-            正在搜图{vision ? '、核对' : ''}并下载… {progress.done}/{progress.total}
-          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography variant="caption" color="text.secondary">
+              正在搜图{vision ? '、核对' : ''}并下载… {progress.done}/{progress.total}
+              {etaText(progress)}　每配好一段就会立刻出现在下面，中途停止也会保留。
+            </Typography>
+            <Button size="small" color="warning" onClick={() => apiPost('/api/autofill/cancel', {})}>
+              停止
+            </Button>
+          </Stack>
         </Box>
       )}
       {msg && (

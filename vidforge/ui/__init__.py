@@ -91,7 +91,7 @@ class State:
         self.root: Path = workspace_dir()
         self.lock = threading.Lock()
         self.build = {"state": "idle", "lines": [], "lang": None, "started": None, "finished": None, "error": None}
-        self.autofill = {"state": "idle", "done": 0, "total": 0, "lines": [], "result": None}
+        self.autofill = {"state": "idle", "done": 0, "total": 0, "lines": [], "result": None, "cancel": False}
         self.checks: list[str] = []          # hand-picked files waiting for the (slow) vision check
         self.check_current: str | None = None
         self._check_worker: threading.Thread | None = None
@@ -608,6 +608,9 @@ def make_handler(state: State):
                     return self._json({"video": state.rel(out), "duration": dur, "stamp": time.time()})
                 if path == "/api/autofill":
                     return self.autofill(q.get("lang"), body)
+                if path == "/api/autofill/cancel":
+                    state.autofill["cancel"] = True
+                    return self._json({"cancelling": state.autofill["state"] == "running"})
                 if path == "/api/shutdown":              # a newer launcher replacing this (older) copy
                     threading.Thread(target=self.server.shutdown, daemon=True).start()
                     return self._json({"bye": True})
@@ -809,7 +812,8 @@ def make_handler(state: State):
                 text = seg.get("text" if not lang or lang == base else f"text_{lang}") or seg.get("text") or ""
                 if text.strip():
                     pending.append((seg, text))
-            state.autofill = {"state": "running", "done": 0, "total": len(pending), "lines": [], "result": None}
+            state.autofill = {"state": "running", "done": 0, "total": len(pending), "lines": [], "result": None,
+                              "cancel": False}
             log = state.autofill["lines"].append
 
             def run():
@@ -860,6 +864,30 @@ def make_handler(state: State):
                 resolved = 0
                 generic: list[str] = []
                 seen_queries: set[str] = set()
+                first_write = [True]
+
+                def flush(done_seg: dict) -> None:
+                    """Save this one segment's clips straight away.
+
+                    Writing only at the end meant a 20-segment run with the vision check on (about a
+                    minute per picture here) showed nothing for half an hour, and losing patience —
+                    or reloading the page — threw away everything it had found. Re-reading first
+                    keeps whatever the user edited in the meantime."""
+                    try:
+                        cur = state.read_raw()
+                    except proj.ProjectError:
+                        return
+                    for s2 in cur["segments"]:
+                        if s2["id"] == done_seg["id"]:
+                            s2["clips"] = done_seg["clips"]
+                            for k in ("image", "video"):
+                                s2.pop(k, None)
+                            break
+                    else:
+                        return                       # segment disappeared (project switched): nothing to do
+                    state.write_raw(cur, snapshot=first_write[0])
+                    first_write[0] = False
+
                 for seg, text in pending:
                     query = phrases.get(seg["id"]) or ""
                     if not query:
@@ -877,6 +905,7 @@ def make_handler(state: State):
                         failed.append({"id": seg["id"], "query": "(没有可搜索的关键词)"})
                         seg["clips"] = []
                         state.autofill["done"] += 1
+                        flush(seg)
                         continue
                     # several segments often land on one query ("Qin State"); without a per-segment
                     # slot in the pick memory they would all show the identical file
@@ -905,16 +934,11 @@ def make_handler(state: State):
                     for k in ("image", "video"):
                         seg.pop(k, None)
                     state.autofill["done"] += 1
-                # the user may have edited text meanwhile: re-read and apply only our clip changes
-                cur = state.read_raw()
-                by_id = {s["id"]: s for s, _ in pending}
-                for seg in cur["segments"]:
-                    if seg["id"] in by_id:
-                        seg["clips"] = by_id[seg["id"]]["clips"]
-                        for k in ("image", "video"):
-                            seg.pop(k, None)
-                state.write_raw(cur, snapshot=True)
-                state.autofill["result"] = {"filled": len(pending), "resolved": resolved, "failed": failed,
+                    flush(seg)
+                    if state.autofill.get("cancel"):
+                        log("已停止。已经配好的段落都保留了。")
+                        break
+                state.autofill["result"] = {"filled": state.autofill["done"], "resolved": resolved, "failed": failed,
                                             "source": source, "kind": kind, "llm": used_llm, "site": site,
                                             "generic": generic, "topic_pool": topic_pool,
                                             "vision": llm.vision_model() if vision else None}

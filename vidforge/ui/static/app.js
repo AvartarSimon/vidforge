@@ -772,6 +772,7 @@ function viewVisuals(v) {
     <label class="small"><input type="checkbox" id="autoOver"> 已有画面的段也重配</label>
     <label class="small"><input type="checkbox" id="autoVision" checked> 视觉核对水印/内容（每张约 1 分钟）</label>
     <select id="autoSite" class="small"><option value="">搜索词：本地模型（快）</option></select>
+    <button class="small" id="autoStop" style="display:none">停止</button>
     <span id="autoProg" class="muted"></span>`;
   $('#storyboard').prepend(autoBar);
   const fillSrc = () => {
@@ -789,21 +790,30 @@ function viewVisuals(v) {
     $('#autoSite').innerHTML = '<option value="">搜索词：本地模型（快）</option>' +
       (j.sites || []).map(x => `<option value="${esc(x.id)}">搜索词：${esc(x.label)}（更准，需登录）</option>`).join('');
   }).catch(() => { });
+  $('#autoStop').onclick = () => api('/api/autofill/cancel', {});
   const autoBtn = $('#autoBtn');
   autoBtn.title = '按每段旁白生成搜索词（本地模型或关键词提取），立刻搜图下载，之后可逐段替换';
   autoBtn.onclick = async () => {
     if (!await save()) return;
     autoBtn.disabled = true;
+    $('#autoStop').style.display = '';
     try {
       const st0 = await api(`/api/autofill?lang=${lang}`, { source: $('#autoSrc').value, kind: $('#autoKind').value, overwrite: $('#autoOver').checked, vision: $('#autoVision').checked, site: $('#autoSite').value });
       if (!st0.total) { $('#autoProg').textContent = ''; autoBtn.disabled = false; return alert('没有需要配图的段落。勾上「已有画面的段也重配」可以全部重来。'); }
       let st = { state: 'running', done: 0, total: st0.total };
+      const t0 = Date.now();
+      let ticks = 0;
       while (st.state === 'running') {
-        $('#autoProg').textContent = `正在搜图并下载… ${st.done}/${st.total}`;
-        await new Promise(r => setTimeout(r, 800));
+        const el = (Date.now() - t0) / 1000;
+        const eta = st.done && el > 5 ? `　已用 ${Math.round(el / 60)} 分钟，约还需 ${Math.round((el / st.done) * (st.total - st.done) / 60)} 分钟` : '';
+        $('#autoProg').textContent = `正在搜图并下载… ${st.done}/${st.total}${eta}（每配好一段立刻出现，中途停止也会保留）`;
+        await new Promise(r => setTimeout(r, 1000));
         st = await api('/api/autofill');
+        // the server saves each segment as it finishes; refresh so thumbnails appear while it runs
+        if (++ticks % 4 === 0) await load();
       }
       $('#autoProg').textContent = '';
+      $('#autoStop').style.display = 'none';
       await load();
       const r = st.result || {};
       const unit = r.kind === 'video' ? '段视频' : '张图';
