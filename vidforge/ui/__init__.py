@@ -44,6 +44,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .. import env, ffmpeg, keywords, pipeline, project as proj, script_parser
+from ..assets import is_cjk as llm_is_cjk
 from ..tts.silent import estimate_seconds
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -808,6 +809,8 @@ def make_handler(state: State):
             # more than 10 nobody watches. Both ends are overridable.
             per_min, per_max = max(1, int(body.get("min_per_segment", 3))), max(1, int(body.get("max_per_segment", 10)))
             workers = max(1, min(8, int(body.get("workers", 5))))
+            smart = body.get("smart_match", True)       # let the text model throw out off-topic hits
+            per_keyword = max(1, int(body.get("keywords_per_segment", 4)))
             raw = state.read_raw()
             base = raw.get("language", "en")
             lib = Library(state.root)
@@ -844,32 +847,45 @@ def make_handler(state: State):
             log = state.autofill["lines"].append
 
             def run():
-                from concurrent.futures import ThreadPoolExecutor
+                from concurrent.futures import ThreadPoolExecutor, as_completed
                 from .. import llm
                 from ..assets import AssetError, pick_many
-                phrases: dict[str, str] = {}
+                ranked: dict[str, list[str]] = {}
                 used_llm = False
                 title = raw.get("title", "")
                 items = {s["id"]: t for s, t in pending}
+                # Search in the language the script is written in. A Chinese script described in
+                # English loses exactly what makes it findable (戎狄, 军功爵制), and the English the
+                # model invents for it is often wrong; the translation is a fallback, not the plan.
+                zh_project = base.startswith("zh") or any(llm_is_cjk(t) for t in items.values())
                 if pending and site:
-                    # a full-size model in the user's browser writes far better phrases than a 3B
-                    # local one, which starts echoing the narration on abstract paragraphs
+                    # a full-size model in the user's browser writes far better phrases than a 3B one
                     from ..browser import BrowserError, chat
                     try:
                         log(f"正在 {site} 里生成搜索词（一次提问，通常 30–120 秒）…")
-                        answer = chat.ask(site, llm.keywords_prompt(items, topic=title), timeout=300, log=log)
-                        phrases = llm.parse_keywords_answer(answer, items)
-                        used_llm = bool(phrases)
-                        log(f"{site} 给出 {len(phrases)} 段搜索词")
+                        answer = chat.ask(site, llm.ranked_prompt(items, title, per_keyword, zh_project),
+                                          timeout=300, log=log)
+                        ranked = llm.parse_ranked_answer(answer, items, per_keyword, zh_project)
+                        used_llm = bool(ranked)
+                        log(f"{site} 给出 {len(ranked)} 段关键词")
                     except BrowserError as e:
                         log(f"浏览器 AI 不可用，改用本地模型：{e}")
-                if pending and not phrases and llm.available():
+                if pending and not ranked and llm.available():
                     try:
-                        phrases = llm.keywords_batch(items, topic=title)
-                        used_llm = bool(phrases)
-                        log(f"本地模型给出 {len(phrases)} 段搜索词")
+                        ranked = llm.keywords_ranked(items, topic=title, n=per_keyword, zh=zh_project)
+                        used_llm = bool(ranked)
+                        log(f"本地模型给出 {len(ranked)} 段关键词（每段最多 {per_keyword} 个，按重要性排序）")
                     except llm.LlmError as e:
                         log(f"本地模型不可用，改用启发式关键词：{e}")
+                # One translation call for every Chinese phrase in the script: the big archives
+                # (Commons, Internet Archive) only index English, so each keyword needs both forms.
+                english: dict[str, str] = {}
+                if zh_project and ranked and llm.available():
+                    try:
+                        english = llm.translate_batch([w for v in ranked.values() for w in v])
+                        log(f"译出 {len(english)} 个英文搜索词")
+                    except llm.LlmError:
+                        pass
                 # Abstract narration ("这里有一个容易被误解的问题") has no picture of its own. Rather
                 # than leave every such segment empty, fall back to the video's own subject — generic
                 # but never wrong — and report which segments got one so they can be reviewed.
@@ -932,18 +948,38 @@ def make_handler(state: State):
 
                 lock = threading.Lock()
 
-                def segment_query(seg: dict, text: str) -> str:
-                    """This segment's own search phrase, or "" when the narration gives nothing."""
-                    q = phrases.get(seg["id"]) or ""
-                    if q:
-                        return q
-                    heuristic = " ".join(keywords.suggest(text, 2))
-                    if heuristic and any("一" <= ch <= "鿿" for ch in heuristic) and llm.available():
-                        try:                                       # archives answer English, not 中文
-                            heuristic = llm.translate_query(heuristic) or ""
-                        except llm.LlmError:
-                            heuristic = ""
-                    return llm._clean_phrase(heuristic) or ""
+                zh_providers = [p2 for p2 in (["baidu"] if source == "baidu" else []) + ["openverse", "commons"]
+                                if p2 in providers or p2 in ("openverse", "commons")]
+
+                def segment_plan(seg: dict, text: str) -> list[tuple[str, list[str]]]:
+                    """(query, providers) in priority order for one segment.
+
+                    Each keyword is tried in Chinese first — on the sources that actually index
+                    Chinese captions — and then as English on every source. Keyword 1 is what the
+                    段 is mainly about, so its pictures come first on screen; the last keyword is a
+                    detail and only contributes if the earlier ones did not fill the quota."""
+                    plan: list[tuple[str, list[str]]] = []
+                    words = ranked.get(seg["id"]) or []
+                    if not words:
+                        heuristic = " ".join(keywords.suggest(text, 2))
+                        if heuristic:
+                            words = [heuristic]
+                    for w in words:
+                        if llm_is_cjk(w):
+                            plan.append((w, zh_providers))
+                            en = english.get(w) or ""
+                            if not en and llm.available():
+                                try:
+                                    en = llm._clean_phrase(llm.translate_query(w)) or ""
+                                except llm.LlmError:
+                                    en = ""
+                            if en:
+                                plan.append((en, providers))
+                        else:
+                            cleaned = llm._clean_phrase(w)
+                            if cleaned:
+                                plan.append((cleaned, providers))
+                    return plan
 
                 topic_words = {w.lower() for q in topic_pool for w in re.findall(r"[A-Za-z0-9]+", q) if len(w) > 2}
 
@@ -958,9 +994,27 @@ def make_handler(state: State):
                     return (not topic_words) or bool(words & topic_words) or any(w.isdigit() for w in words)
 
                 claimed: set[str] = set()      # "provider:id" already handed to some segment this run
+                screened: dict[tuple, list] = {}
+
+                def _screen(narration: str, cands: list) -> list:
+                    """Ask the text model which candidate titles really illustrate this narration.
+
+                    The text filters can only say the words match; they cannot say that a Scottish
+                    hillside called "dangerous country" has nothing to do with the Qin state. One
+                    small-model call takes a few seconds, against a minute for looking at a picture."""
+                    key = (narration[:40], tuple(c.id for c in cands[:12]))
+                    if key in screened:
+                        return screened[key]
+                    try:
+                        keep = llm.rank_titles(narration, [f"{c.title} {c.desc[:60]}" for c in cands[:12]])
+                    except llm.LlmError:
+                        keep = None
+                    out = cands if keep is None else [cands[i] for i in keep if i < len(cands)]
+                    screened[key] = out
+                    return out
 
                 def take(seg_id: str, query: str, n: int, need: float, provs: list[str],
-                         vision_first: bool, allow_reuse: bool = False) -> list:
+                         vision_first: bool, allow_reuse: bool = False, screen=None) -> list:
                     """Up to `n` files for one query, **accumulating across providers**.
 
                     Stopping at the first provider that returns anything is why segments used to end
@@ -968,12 +1022,12 @@ def make_handler(state: State):
                     rest of the quota has to come from Openverse or the Archive."""
                     files: list = []
                     for prov in provs:
-                        if len(files) >= n:
+                        if len(files) >= n or state.autofill.get("cancel"):
                             break
                         try:
                             got = pick_many(job_root, lib, prov, kind, query, n - len(files), need=need,
                                             log=log, vision_first=vision_first and not files,
-                                            claimed=claimed, allow_reuse=allow_reuse)
+                                            claimed=claimed, allow_reuse=allow_reuse, screen=screen)
                         except AssetError as e:
                             log(f"{seg_id}: {e}")
                             continue
@@ -997,11 +1051,32 @@ def make_handler(state: State):
                     want = max(per_min, min(per_max, round(estimate_seconds(text) / 5.0))) if kind == "image" else 1
                     need = estimate_seconds(text) if kind == "video" else 0.0
                     files: list = []
-                    query = segment_query(seg, text)
-                    if query:
-                        provs = providers if (relaxed or on_topic(query)) else providers[:1]
-                        files = take(seg["id"], query, want, need, provs, vision and kind == "image",
-                                     allow_reuse=relaxed)
+                    plan = segment_plan(seg, text)[:6]      # 3 keywords x (Chinese, English)
+                    # Ollama answers one request at a time, so screening every query of every
+                    # segment would serialise the whole run behind it. Two calls per segment cover
+                    # the keywords that supply most of its pictures.
+                    budget = [2 if (smart and kind == "image") else 0]
+
+                    def screen(cands, q):
+                        if budget[0] <= 0:
+                            return cands
+                        budget[0] -= 1
+                        return _screen(text, cands)
+                    # spread the quota over the keywords, best first, so the pictures follow the
+                    # order of ideas in the narration instead of all illustrating the first noun
+                    share = max(1, -(-want // max(1, len(plan))))
+                    for i, (query, provs) in enumerate(plan):
+                        if len(files) >= want or state.autofill.get("cancel"):
+                            break
+                        if not (relaxed or on_topic(query) or llm_is_cjk(query)):
+                            provs = provs[:1]
+                        room = want - len(files)
+                        files += [f for f in take(seg["id"], query, min(room, share if i < len(plan) - 1 else room),
+                                                  need, provs, vision and kind == "image" and not files,
+                                                  allow_reuse=relaxed,
+                                                  screen=screen if (smart and kind == "image") else None)
+                                  if f not in files]
+                    query = plan[0][0] if plan else ""
                     # Top up to the floor with pictures of the video's own subject: on-topic and
                     # accurate, if unspecific — better than a segment with one picture or none.
                     if kind == "image" and len(files) < per_min and topic_pool:
@@ -1010,7 +1085,7 @@ def make_handler(state: State):
                             if seg["id"] not in generic:
                                 generic.append(seg["id"])
                         for k in range(len(topic_pool)):
-                            if len(files) >= per_min:
+                            if len(files) >= per_min or state.autofill.get("cancel"):
                                 break
                             files += [f for f in take(seg["id"], topic_pool[(start_at + k) % len(topic_pool)],
                                                       per_min - len(files), need, providers, False,
@@ -1028,6 +1103,8 @@ def make_handler(state: State):
                 MOTIONS = ("zoom_in", "zoom_out", "pan_right", "pan_left")
 
                 def apply(seg, rels, err, count_done: bool):
+                    if not rels and state.autofill.get("cancel"):
+                        return                    # cancelled before it found anything: leave it alone
                     if rels:
                         seg["clips"] = [
                             ({kind: r, "motion": MOTIONS[i % len(MOTIONS)]} if kind == "image" else {kind: r})
@@ -1053,16 +1130,28 @@ def make_handler(state: State):
                         return item[0], [], str(e)
 
                 def sweep(items, relaxed=False, count_done=True):
-                    """One parallel pass over `items`; returns the ones still without pictures."""
+                    """One parallel pass over `items`; returns the ones still without pictures.
+
+                    Futures are submitted explicitly rather than with ex.map so that a stop can
+                    cancel the ones that have not started: map() queues everything up front and
+                    exiting the `with` block waits for all of it, which is why the stop button
+                    used to do nothing for minutes."""
                     left = []
-                    with ThreadPoolExecutor(max_workers=workers) as ex:
-                        for seg, rels, err in ex.map(lambda it: guarded(it, relaxed), items):
+                    ex = ThreadPoolExecutor(max_workers=workers)
+                    futures = {ex.submit(guarded, it, relaxed): it[0] for it in items}
+                    try:
+                        for fut in as_completed(futures):
+                            seg, rels, err = fut.result()
                             apply(seg, rels, err, count_done)
-                            if not rels:
+                            if not rels and not state.autofill.get("cancel"):
                                 left.append(seg)
                             if state.autofill.get("cancel"):
+                                for f2 in futures:
+                                    f2.cancel()          # drop whatever has not started yet
                                 log("已停止。已经配好的段落都保留了。")
                                 break
+                    finally:
+                        ex.shutdown(wait=False, cancel_futures=True)
                     return left
 
                 by_id = {seg["id"]: text for seg, text in pending}
@@ -1080,6 +1169,7 @@ def make_handler(state: State):
                         log(f"仍有 {len(still)} 段没有素材：" + "、".join(s2["id"] for s2 in still))
 
                 state.autofill["result"] = {"filled": state.autofill["done"], "resolved": resolved, "failed": failed,
+                                            "cancelled": bool(state.autofill.get("cancel")),
                                             "segments_with_pictures": state.autofill["done"] - len(failed),
                                             "source": source, "kind": kind, "llm": used_llm, "site": site,
                                             "generic": generic, "topic_pool": topic_pool,

@@ -296,6 +296,31 @@ def _content_words(text: str) -> list[str]:
     return out
 
 
+CJK_SOURCES = ("openverse", "baidu", "commons")   # the ones whose index holds Chinese captions
+
+
+def is_cjk(text: str) -> bool:
+    return any("一" <= ch <= "鿿" for ch in text)
+
+
+def _cjk_terms(text: str) -> list[str]:
+    """Chinese has no spaces, so a query is whatever the writer separated with spaces/punctuation."""
+    return [t for t in re.split(r"[\s,，、;；/]+", text) if len(t) >= 2 and is_cjk(t)]
+
+
+def relevant_cjk(c: Candidate, query: str) -> bool:
+    """Every Chinese term of the query must appear in the title or description.
+
+    Token bigrams cannot work here: "秦国青铜器" is one unbroken run, so substring matching is the
+    only honest test. Commons answers a Chinese query by dropping words until *something* matches
+    (a search for 秦国 青铜器 comes back with Swiss landscapes), which is exactly what this rejects."""
+    terms = _cjk_terms(query)
+    if not terms:
+        return False
+    hay = f"{c.title} {c.desc}"
+    return all(t in hay for t in terms)
+
+
 def relevant(c: Candidate, query: str) -> bool:
     """Strict text check for unattended picks: two neighbouring content words of the query must sit
     next to each other in the file's title or description.
@@ -306,6 +331,8 @@ def relevant(c: Candidate, query: str) -> bool:
     accepting "Qin Empire Establishment" for "Map of the Qin Empire in 221 BCE", where the model
     tacked an abstract word onto a perfectly good subject. Stopwords are dropped on both sides, so
     "Battle of Lexington" and "Battle Lexington 1775" are the same phrase."""
+    if is_cjk(query):
+        return relevant_cjk(c, query)
     q = _content_words(query)
     if len(q) < 2:
         return False              # one generic word is not evidence that a picture is about it
@@ -430,7 +457,7 @@ _pool_lock = threading.Lock()
 
 def pick_many(root: Path, lib: Library, prov_name: str, kind: str, query: str, n: int,
               need: float = 0.0, log=None, vision_first: bool = False, pool: int = 4,
-              claimed: set[str] | None = None, allow_reuse: bool = False) -> list[Path]:
+              claimed: set[str] | None = None, allow_reuse: bool = False, screen=None) -> list[Path]:
     """Up to `n` different accurate files for one query, downloaded in parallel.
 
     One search yields a page of candidates; taking several of them is far cheaper than searching
@@ -445,9 +472,14 @@ def pick_many(root: Path, lib: Library, prov_name: str, kind: str, query: str, n
     finished video shows one picture over and over. allow_reuse lifts that for a last-resort pass,
     where repeating a picture beats leaving a segment blank."""
     prov_name = {"wikimedia": "commons"}.get(prov_name, prov_name)
-    cands = [c for c in rank(search(root, prov_name, query, kind), query)
+    # relax drops the last word until something matches — useful in English, poison in Chinese,
+    # where dropping a word leaves a fragment that matches anything.
+    found = search(root, prov_name, query, kind, relax=not is_cjk(query))
+    cands = [c for c in rank(found, query)
              if (c.landscape or kind == "image") and not blocked_host(c.download_url)
              and not branded(c) and relevant(c, query)]
+    if screen is not None and cands:
+        cands = screen(cands, query) or []
     if kind == "video":
         cands = [c for c in cands if (c.duration or 0) >= need] or cands
     with _pool_lock:

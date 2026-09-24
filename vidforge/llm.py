@@ -152,6 +152,7 @@ def _clean_phrase(v: object) -> str | None:
     if not isinstance(v, str):
         return None
     v = v.strip().strip('"').replace("\u2019s", "").replace("'s", "")
+    v = re.sub(r"[-_]+", " ", v)          # small models answer "qin-state-bronze" as one token
     if re.search(r"[A-Za-z]{3}", v):          # small models leak a CJK char into an English phrase
         v = re.sub(r"[一-鿿]+", " ", v)
     v = " ".join(v.split()).rstrip(".。")
@@ -186,6 +187,150 @@ def topic_queries(topic: str, sample: str = "", n: int = 6) -> list[str]:
         if cleaned and cleaned not in seen:
             seen.append(cleaned)
     return seen[:n]
+
+
+def _dedupe_words(phrase: str) -> str:
+    """A small model loves to repeat itself ("秦国 青铜器 秦国 青铜器"); keep the first of each word."""
+    seen, out = set(), []
+    for w in phrase.split():
+        if w not in seen:
+            seen.add(w)
+            out.append(w)
+    return " ".join(out)
+
+
+def _clean_zh(v: object) -> str:
+    if not isinstance(v, str):
+        return ""
+    v = _dedupe_words(" ".join(re.sub(r"[\"'。，,、；;：:！!？?（）()【】\[\]]", " ", v).split()))
+    return v if re.search(r"[一-鿿]", v) and 2 <= len(v) <= 20 else ""
+
+
+def ranked_prompt(items: dict[str, str], topic: str = "", n: int = 4, zh: bool = True) -> str:
+    """Prompt for `n` picture subjects per segment, most important first, in one language.
+
+    Asking a 3B model for Chinese *and* English in one JSON object produced repeated words and
+    empty translations, so the languages are split: subjects in the narration's own language here,
+    translation afterwards by `translate_batch`."""
+    head = (f"这个视频的主题是：{topic}。\n" if topic else "") if zh else (f"The video is about: {topic}.\n" if topic else "")
+    listing = "\n".join(f"{k}: {v[:500]}" for k, v in items.items())
+    if zh:
+        return (head +
+                f"为下面每一段旁白，列出 {n} 个"
+                "**可以拍成照片/画作/地图/文物的具体东西**，按重要性从高到低排列："
+                "第一个是这段主要在讲的，最后一个是次要细节。\n"
+                "只能写具体的人名、地名、建筑、器物、artwork、地图或有年份的事件；"
+                "不要写抽象词（崛起、权力、策略、身份、关系、问题），不要写动词、代词、标点。\n"
+                "每个写成 2-3 个中文词，用空格分开，像博物馆的藏品标签，例如：秦国 青铜器 / 兵马俑 陶俑 / 战国 地图。\n"
+                '只输出 JSON：{"<段落id>": ["…", "…"]}\n\n' + listing)
+    return (head +
+            f"For each narration segment below, list {n} things a picture could show, most important first.\n"
+            "Each must be something a photograph, painting, map or artefact can actually show: a named "
+            "person, place, building, object, artwork, map or dated event. No abstract nouns (rise, power, "
+            "strategy, identity), no verbs, no pronouns, no punctuation. 2-4 words each.\n"
+            'Return JSON only: {"<segment id>": ["…", "…"]}\n\n' + listing)
+
+
+def parse_ranked_answer(text: str, items: dict[str, str], n: int = 4, zh: bool = True) -> dict[str, list[str]]:
+    """{segment id: [phrase, …]} from an answer to ranked_prompt(); unusable entries dropped."""
+    m = re.search(r"\{.*\}", text or "", re.S)
+    try:
+        data = json.loads(m.group(0)) if m else {}
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: dict[str, list[str]] = {}
+    for k, v in data.items():
+        if str(k) not in items or not isinstance(v, list):
+            continue
+        picks: list[str] = []
+        for entry in v[:n]:
+            phrase = _clean_zh(entry) if zh else (_clean_phrase(entry) or "")
+            if phrase and phrase not in picks:
+                picks.append(phrase)
+        if picks:
+            out[str(k)] = picks
+    return out
+
+
+def keywords_ranked(items: dict[str, str], topic: str = "", n: int = 4, chunk: int = 2,
+                    zh: bool = True) -> dict[str, list[str]]:
+    """Several picture subjects per segment, in priority order, in the narration's own language.
+
+    One phrase per segment is not enough for a segment that needs six pictures — they would all
+    come from one query and show the same thing. Ranking them lets picture 1 be what the segment
+    is about and picture 5 a detail, which is also the order they appear on screen."""
+    if not items:
+        return {}
+    ids = list(items)
+    out: dict[str, list[str]] = {}
+    for i in range(0, len(ids), max(1, chunk)):
+        batch = {k: items[k] for k in ids[i:i + max(1, chunk)]}
+        try:
+            answer = chat(ranked_prompt(batch, topic, n, zh), json_mode=True)
+        except LlmError:
+            continue
+        out.update(parse_ranked_answer(answer, batch, n, zh))
+    return out
+
+
+def translate_batch(phrases: list[str]) -> dict[str, str]:
+    """Chinese search phrases -> English ones, in one call. Unusable answers are simply absent.
+
+    Needed because the big archives (Commons, Internet Archive) index English: a Chinese query
+    there either finds nothing or, worse, has words dropped until something unrelated matches."""
+    phrases = [p for p in dict.fromkeys(phrases) if p.strip()]
+    if not phrases:
+        return {}
+    listing = "\n".join(f"{i}: {p}" for i, p in enumerate(phrases))
+    try:
+        data = json.loads(chat(
+            "Translate each Chinese image-search phrase into English, the way a museum or an "
+            "encyclopedia captions the same object. Keep proper nouns in their usual English form "
+            "(秦国 = Qin state, 周 = Zhou dynasty, 戎狄 = Rong and Di peoples, 兵马俑 = Terracotta Army).\n"
+            "Answer with 2-4 separate English words, separated by spaces — never hyphens, never one "
+            "run-together token. No explanations, no punctuation.\n"
+            'Example: {"0": "Qin state bronze vessel", "1": "Warring States map"}\n'
+            'Return JSON only: {"<index>": "<english>"}\n\n' + listing, json_mode=True))
+    except (LlmError, json.JSONDecodeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: dict[str, str] = {}
+    for k, v in data.items():
+        try:
+            src = phrases[int(k)]
+        except (ValueError, TypeError, IndexError):
+            continue
+        en = _clean_phrase(v)
+        if en:
+            out[src] = en
+    return out
+
+
+def rank_titles(narration: str, titles: list[str], keep: int = 8) -> list[int] | None:
+    """Which of these file titles actually illustrate this narration? Indices, best first.
+
+    A text check can only say the words match; it cannot say a 'dangerous country' hillside has
+    nothing to do with the Qin state. One small-model call per query catches that for a second or
+    two, where looking at the pictures themselves costs a minute each. None = no model, keep all."""
+    if not titles or not available():
+        return None
+    listing = "\n".join(f"{i}: {t[:110]}" for i, t in enumerate(titles[:20]))
+    try:
+        data = json.loads(chat(
+            "Narration:\n" + narration[:600] + "\n\nCandidate picture titles:\n" + listing + "\n\n"
+            "Which of these pictures would a viewer accept as an illustration of that narration? "
+            "Judge the subject, not shared words: a title that happens to repeat a word but shows "
+            "something unrelated must be left out. Keep at most {} , best first, and it is fine to "
+            'keep none. Return JSON only: {{"keep": [<index>, …]}}'.format(keep), json_mode=True))
+    except (LlmError, json.JSONDecodeError):
+        return None
+    idx = data.get("keep") if isinstance(data, dict) else data
+    if not isinstance(idx, list):
+        return None
+    return [int(i) for i in idx if isinstance(i, (int, float)) and 0 <= int(i) < len(titles)][:keep]
 
 
 def keywords_prompt(items: dict[str, str], topic: str = "") -> str:

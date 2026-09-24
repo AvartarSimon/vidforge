@@ -812,7 +812,10 @@ function viewVisuals(v) {
     $('#autoSite').innerHTML = '<option value="">搜索词：本地模型（快）</option>' +
       (j.sites || []).map(x => `<option value="${esc(x.id)}">搜索词：${esc(x.label)}（更准，需登录）</option>`).join('');
   }).catch(() => { });
-  $('#autoStop').onclick = () => api('/api/autofill/cancel', {});
+  $('#autoStop').onclick = e => {
+    e.target.disabled = true; e.target.textContent = '正在停止…';
+    api('/api/autofill/cancel', {}).catch(() => { });
+  };
   const autoBtn = $('#autoBtn');
   autoBtn.title = '按每段旁白生成搜索词（本地模型或关键词提取），立刻搜图下载，之后可逐段替换';
   autoBtn.onclick = async () => {
@@ -838,6 +841,7 @@ function viewVisuals(v) {
       }
       $('#autoProg').textContent = '';
       $('#autoStop').style.display = 'none';
+      $('#autoStop').disabled = false; $('#autoStop').textContent = '停止';
       await load();
       const r = st.result || {};
       const unit = r.kind === 'video' ? '段视频' : '张图';
@@ -845,7 +849,9 @@ function viewVisuals(v) {
       const who = r.site ? `搜索词来自 ${r.site}` : r.llm ? '搜索词来自本地模型' : '搜索词来自关键词提取';
       const how = `${r.source}，${who}${r.vision ? `，${r.vision} 已核对水印和内容` : ''}`;
       const generic = (r.generic || []).length ? `；其中 ${r.generic.length} 段旁白太抽象或搜不到，用主题素材补足（${(r.topic_pool || []).join('、')}），建议自己换` : '';
-      $('#issues').innerHTML = `<div class="banner info">已为 ${r.segments_with_pictures}/${r.filled} 段配好 ${r.resolved} ${unit}（${how}）${generic}${failed}。不满意的段点开重选。</div>`;
+      $('#issues').innerHTML = r.cancelled
+        ? `<div class="banner info">已停止。这次配好 ${r.segments_with_pictures} 段共 ${r.resolved} ${unit}，都已保存；没轮到的段保持原样，再点一次可以接着配。</div>`
+        : `<div class="banner info">已为 ${r.segments_with_pictures}/${r.filled} 段配好 ${r.resolved} ${unit}（${how}）${generic}${failed}。不满意的段点开重选。</div>`;
     } catch (e) {
       // a backend started before the last update has no GET /api/autofill -> "not found"
       alert(/not found/i.test(e.message) ? '后端是旧版本（没有这个接口）：关掉 vidforge 的黑窗口，重新双击 start-vidforge 再试。' : e.message);

@@ -28,6 +28,7 @@ type AutofillStatus = {
     resolved: number
     segments_with_pictures: number
     failed: { id: string; query: string }[]
+    cancelled: boolean
     source: string
     kind: string
     llm: boolean
@@ -77,6 +78,7 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
   // fetches dozens of them — so it is off by default and the text filters do the work.
   const [vision, setVision] = useState(false)
   const [perSeg, setPerSeg] = useState<[number, number]>([3, 10])
+  const [stopping, setStopping] = useState(false)
   // who writes the search phrases: the local 3B model is instant but weak on abstract narration,
   // a full-size model in the user's own browser is much better (one question, 30-120 s)
   const [site, setSite] = useState('')
@@ -111,6 +113,7 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
     setBusy(true)
     setMsg(null)
     progressStart.current = Date.now()
+    setStopping(false)
     try {
       const start = await apiPost<{ started: boolean; total: number }>('/api/autofill', {
         source,
@@ -151,7 +154,9 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
           ? `；其中 ${r.generic.length} 段旁白太抽象或搜不到，用主题素材补足（${r.topic_pool.join('、')}），建议自己换`
           : ''
         setMsg(
-          `已为 ${r.segments_with_pictures}/${r.filled} 段配好 ${r.resolved} ${unit}（${how}）${generic}${failed}。不满意的段点开重选。`,
+          r.cancelled
+            ? `已停止。这次配好 ${r.segments_with_pictures} 段共 ${r.resolved} ${unit}，都已保存；没轮到的段保持原样，再点一次可以接着配。`
+            : `已为 ${r.segments_with_pictures}/${r.filled} 段配好 ${r.resolved} ${unit}（${how}）${generic}${failed}。不满意的段点开重选。`,
         )
       }
       await reload()
@@ -161,6 +166,7 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
       setMsg(/not found/i.test(m) ? '后端是旧版本（没有这个接口）：关掉 vidforge 的黑窗口，重新双击 start-vidforge 再试。' : m)
     }
     setProgress(null)
+    setStopping(false)
     setBusy(false)
   }
 
@@ -224,8 +230,16 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
               正在搜图{vision ? '、核对' : ''}并下载… {progress.done}/{progress.total} 段
               {etaText(progress)}　可以切到别的项目，它会继续在后台跑完。
             </Typography>
-            <Button size="small" color="warning" onClick={() => apiPost('/api/autofill/cancel', {})}>
-              停止
+            <Button
+              size="small"
+              color="warning"
+              disabled={stopping}
+              onClick={async () => {
+                setStopping(true)
+                await apiPost('/api/autofill/cancel', {}).catch(() => {})
+              }}
+            >
+              {stopping ? '正在停止…' : '停止'}
             </Button>
           </Stack>
         </Box>
