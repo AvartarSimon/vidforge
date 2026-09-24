@@ -29,6 +29,8 @@ export function ProjectSwitcher({ open, onClose }: { open: boolean; onClose: () 
   const [error, setError] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
   const [newTitle, setNewTitle] = useState('')
+  const [filter, setFilter] = useState('')
+  const [job, setJob] = useState<{ state: string; project: string; title: string; done: number; total: number } | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -37,12 +39,23 @@ export function ProjectSwitcher({ open, onClose }: { open: boolean; onClose: () 
       .then((j) => setProjects(j.projects))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
+    // a picture run takes minutes and keeps going after a switch — say so instead of letting the
+    // user wonder whether leaving the page kills it
+    apiGet<{ state: string; project: string; title: string; done: number; total: number }>('/api/autofill')
+      .then(setJob)
+      .catch(() => setJob(null))
   }, [open])
+
+  const shown = projects.filter((p) => {
+    const q = filter.trim().toLowerCase()
+    return !q || `${p.title || ''} ${p.path}`.toLowerCase().includes(q)
+  })
 
   const switchTo = async (path: string) => {
     if (saveState === 'dirty' || saveState === 'saving') {
       if (!window.confirm('当前项目有未保存的改动，切换会丢失。确定切换吗？')) return
     }
+    // the autofill job writes to the project it started on, so switching never disturbs it
     try {
       await apiPost('/api/open', { path })
       onClose()
@@ -82,6 +95,22 @@ export function ProjectSwitcher({ open, onClose }: { open: boolean; onClose: () 
         </IconButton>
       </DialogTitle>
       <DialogContent dividers>
+        <TextField
+          size="small"
+          fullWidth
+          autoFocus
+          placeholder="搜索项目（名字或路径）"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          sx={{ mb: 1.5 }}
+        />
+        {job?.state === 'running' && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+            ⏳「{job.title || job.project.split(/[\\/]/).pop()}」正在后台配图（{job.done}/{job.total} 段）——
+            切换项目不会打断它，它只写回自己的项目。
+          </Typography>
+        )}
+
         {error && (
           <Typography color="error" variant="body2" sx={{ mb: 1 }}>
             {error}
@@ -119,7 +148,7 @@ export function ProjectSwitcher({ open, onClose }: { open: boolean; onClose: () 
           </Typography>
         ) : (
           <List dense>
-            {projects.map((pr) => {
+            {shown.map((pr) => {
               const current = view?.root === pr.path
               return (
                 <ListItem

@@ -429,7 +429,8 @@ _pool_lock = threading.Lock()
 
 
 def pick_many(root: Path, lib: Library, prov_name: str, kind: str, query: str, n: int,
-              need: float = 0.0, log=None, vision_first: bool = False, pool: int = 4) -> list[Path]:
+              need: float = 0.0, log=None, vision_first: bool = False, pool: int = 4,
+              claimed: set[str] | None = None, allow_reuse: bool = False) -> list[Path]:
     """Up to `n` different accurate files for one query, downloaded in parallel.
 
     One search yields a page of candidates; taking several of them is far cheaper than searching
@@ -438,7 +439,11 @@ def pick_many(root: Path, lib: Library, prov_name: str, kind: str, query: str, n
     so a segment ends up with fewer pictures rather than wrong ones.
 
     vision_first: run the (slow, ~1 min on CPU) vision check on the first accepted candidate only —
-    enough to catch a query whose whole result page is off-topic, without paying for every file."""
+    enough to catch a query whose whole result page is off-topic, without paying for every file.
+    claimed: ids already taken by this run ("provider:id"). Several segments often search the same
+    thing, and without claiming them up front the parallel workers all take the top hit and the
+    finished video shows one picture over and over. allow_reuse lifts that for a last-resort pass,
+    where repeating a picture beats leaving a segment blank."""
     prov_name = {"wikimedia": "commons"}.get(prov_name, prov_name)
     cands = [c for c in rank(search(root, prov_name, query, kind), query)
              if (c.landscape or kind == "image") and not blocked_host(c.download_url)
@@ -447,8 +452,10 @@ def pick_many(root: Path, lib: Library, prov_name: str, kind: str, query: str, n
         cands = [c for c in cands if (c.duration or 0) >= need] or cands
     with _pool_lock:
         used = lib.used_ids(prov_name)
-    fresh = [c for c in cands if c.id not in used]
-    chosen = (fresh or cands)[:n]
+        taken = claimed if claimed is not None else set()
+        fresh = [c for c in cands if c.id not in used and f"{prov_name}:{c.id}" not in taken]
+        chosen = fresh[:n] or ([c for c in cands if f"{prov_name}:{c.id}" not in taken][:n] if allow_reuse else [])
+        taken.update(f"{prov_name}:{c.id}" for c in chosen)
     if not chosen:
         raise AssetError(f"no accurate {kind} for {query!r} on {prov_name}")
     if vision_first:

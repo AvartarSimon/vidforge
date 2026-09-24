@@ -826,8 +826,9 @@ def make_handler(state: State):
                 text = seg.get("text" if not lang or lang == base else f"text_{lang}") or seg.get("text") or ""
                 if text.strip():
                     pending.append((seg, text))
-            state.autofill = {"state": "running", "done": 0, "total": len(pending), "lines": [], "result": None,
-                              "cancel": False}
+            state.autofill = {"state": "running", "done": 0, "total": len(pending), "pictures": 0,
+                              "lines": [], "result": None, "cancel": False,
+                              "project": str(state.root), "title": raw.get("title", "")}
             log = state.autofill["lines"].append
 
             def run():
@@ -880,27 +881,42 @@ def make_handler(state: State):
                 generic: list[str] = []
                 first_write = [True]
 
-                def flush(done_seg: dict) -> None:
-                    """Save this one segment's clips straight away.
+                # The job belongs to the project it was started on, not to whatever is open now:
+                # a run takes minutes, and the user should be able to go and work on another
+                # project meanwhile without their pictures landing in the wrong file.
+                job_path, job_root = state.project_path, state.root
+                write_lock = threading.Lock()
 
-                    Writing only at the end meant a 20-segment run with the vision check on (about a
-                    minute per picture here) showed nothing for half an hour, and losing patience —
-                    or reloading the page — threw away everything it had found. Re-reading first
-                    keeps whatever the user edited in the meantime."""
-                    try:
-                        cur = state.read_raw()
-                    except proj.ProjectError:
-                        return
-                    for s2 in cur["segments"]:
-                        if s2["id"] == done_seg["id"]:
-                            s2["clips"] = done_seg["clips"]
-                            for k in ("image", "video"):
-                                s2.pop(k, None)
-                            break
-                    else:
-                        return                       # segment disappeared (project switched): nothing to do
-                    state.write_raw(cur, snapshot=first_write[0])
-                    first_write[0] = False
+                def rel(f) -> str:
+                    """Project-relative path against *this job's* root, not whatever is open now."""
+                    return Path(f).resolve().relative_to(job_root.resolve()).as_posix()
+
+                def flush(done_seg: dict) -> None:
+                    """Save this one segment's clips straight away, into this job's own project.
+
+                    Writing only at the end meant a long run showed nothing until it finished, and
+                    losing patience — or reloading the page — threw away everything it had found.
+                    Re-reading first keeps whatever the user edited in the meantime."""
+                    with write_lock:
+                        try:
+                            cur = json.loads(job_path.read_text(encoding="utf-8"))
+                        except (OSError, json.JSONDecodeError):
+                            return
+                        for s2 in cur["segments"]:
+                            if s2["id"] == done_seg["id"]:
+                                s2["clips"] = done_seg["clips"]
+                                for k in ("image", "video"):
+                                    s2.pop(k, None)
+                                break
+                        else:
+                            return                   # segment gone (script edited): nothing to do
+                        if job_path == state.project_path:
+                            state.write_raw(cur, snapshot=first_write[0])   # keeps history/undo
+                        else:
+                            tmp = job_path.with_suffix(".json.tmp")
+                            tmp.write_text(json.dumps(cur, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                            tmp.replace(job_path)
+                        first_write[0] = False
 
                 lock = threading.Lock()
 
@@ -929,23 +945,40 @@ def make_handler(state: State):
                     words = {w.lower() for w in re.findall(r"[A-Za-z0-9]+", q)}
                     return (not topic_words) or bool(words & topic_words) or any(w.isdigit() for w in words)
 
-                def take(seg_id: str, query: str, n: int, need: float, provs: list[str], vision_first: bool):
-                    """Files for one query, trying each provider in turn; [] if none are accurate."""
+                claimed: set[str] = set()      # "provider:id" already handed to some segment this run
+
+                def take(seg_id: str, query: str, n: int, need: float, provs: list[str],
+                         vision_first: bool, allow_reuse: bool = False) -> list:
+                    """Up to `n` files for one query, **accumulating across providers**.
+
+                    Stopping at the first provider that returns anything is why segments used to end
+                    up with a single picture: Commons often has one good hit for a phrase and the
+                    rest of the quota has to come from Openverse or the Archive."""
+                    files: list = []
                     for prov in provs:
+                        if len(files) >= n:
+                            break
                         try:
-                            files = pick_many(state.root, lib, prov, kind, query, n, need=need, log=log,
-                                              vision_first=vision_first)
-                            log(f"{seg_id}: {prov} '{query}' -> {len(files)} 张")
-                            return files
+                            got = pick_many(job_root, lib, prov, kind, query, n - len(files), need=need,
+                                            log=log, vision_first=vision_first and not files,
+                                            claimed=claimed, allow_reuse=allow_reuse)
                         except AssetError as e:
                             log(f"{seg_id}: {e}")
+                            continue
                         except Exception as e:  # noqa: BLE001  network / provider quirks: try the next
                             log(f"{seg_id}: {prov} 出错 {e}")
-                    return []
+                            continue
+                        files += [f for f in got if f not in files]
+                        log(f"{seg_id}: {prov} '{query}' -> {len(got)} 张（共 {len(files)}）")
+                    return files
 
-                def do_segment(item):
+                def do_segment(item, relaxed: bool = False):
                     """Search + download one segment's pictures. Runs in a worker thread: it only
-                    touches its own segment dict; the shared Library locks inside assets."""
+                    touches its own segment dict; the shared Library locks inside assets.
+
+                    relaxed is the second pass over segments the first one left empty: every source
+                    is tried whatever the phrase looks like, and a picture another segment already
+                    uses may be reused — repeating one beats a blank segment."""
                     seg, text = item
                     if state.autofill.get("cancel"):
                         return seg, [], None
@@ -954,8 +987,9 @@ def make_handler(state: State):
                     files: list = []
                     query = segment_query(seg, text)
                     if query:
-                        provs = providers if on_topic(query) else providers[:1]
-                        files = take(seg["id"], query, want, need, provs, vision and kind == "image")
+                        provs = providers if (relaxed or on_topic(query)) else providers[:1]
+                        files = take(seg["id"], query, want, need, provs, vision and kind == "image",
+                                     allow_reuse=relaxed)
                     # Top up to the floor with pictures of the video's own subject: on-topic and
                     # accurate, if unspecific — better than a segment with one picture or none.
                     if kind == "image" and len(files) < per_min and topic_pool:
@@ -964,39 +998,74 @@ def make_handler(state: State):
                             if seg["id"] not in generic:
                                 generic.append(seg["id"])
                         for k in range(len(topic_pool)):
-                            if len(files) >= max(per_min, want if not files else per_min):
+                            if len(files) >= per_min:
                                 break
-                            extra = take(seg["id"], topic_pool[(start_at + k) % len(topic_pool)],
-                                         per_min - len(files), need, providers, False)
-                            files += [f for f in extra if f not in files]
+                            files += [f for f in take(seg["id"], topic_pool[(start_at + k) % len(topic_pool)],
+                                                      per_min - len(files), need, providers, False,
+                                                      allow_reuse=relaxed)
+                                      if f not in files]
                     if not files:
                         with lock:
                             if seg["id"] in generic:
                                 generic.remove(seg["id"])
                         return seg, [], f"{query!r} 没有合适的素材" if query else "(没有可搜索的关键词)"
-                    return seg, [state.rel(f) for f in files], None
+                    return seg, [rel(f) for f in files], None
 
                 # The whole job is network-bound, so segments are fetched in parallel; results are
                 # written as each one lands, which is what makes the storyboard fill up visibly.
                 MOTIONS = ("zoom_in", "zoom_out", "pan_right", "pan_left")
-                with ThreadPoolExecutor(max_workers=workers) as ex:
-                    for seg, rels, err in ex.map(do_segment, pending):
-                        if rels:
-                            seg["clips"] = [
-                                ({kind: r, "motion": MOTIONS[i % len(MOTIONS)]} if kind == "image" else {kind: r})
-                                for i, r in enumerate(rels)
-                            ]
-                            resolved += len(rels)
-                        else:
-                            seg["clips"] = []
-                            failed.append({"id": seg["id"], "query": err or ""})
-                        for k in ("image", "video"):
-                            seg.pop(k, None)
+
+                def apply(seg, rels, err, count_done: bool):
+                    if rels:
+                        seg["clips"] = [
+                            ({kind: r, "motion": MOTIONS[i % len(MOTIONS)]} if kind == "image" else {kind: r})
+                            for i, r in enumerate(rels)
+                        ]
+                    else:
+                        seg["clips"] = []
+                        failed.append({"id": seg["id"], "query": err or ""})
+                    for k in ("image", "video"):
+                        seg.pop(k, None)
+                    if count_done:
                         state.autofill["done"] += 1
-                        flush(seg)
-                        if state.autofill.get("cancel"):
-                            log("已停止。已经配好的段落都保留了。")
-                            break
+                    state.autofill["pictures"] += len(rels)
+                    flush(seg)
+
+                def guarded(item, relaxed):
+                    """do_segment that can only fail by returning an error, never by raising:
+                    an exception inside a worker used to hang the whole job at "running"."""
+                    try:
+                        return do_segment(item, relaxed)
+                    except Exception as e:  # noqa: BLE001
+                        log(f"{item[0]['id']}: 出错 {e}")
+                        return item[0], [], str(e)
+
+                def sweep(items, relaxed=False, count_done=True):
+                    """One parallel pass over `items`; returns the ones still without pictures."""
+                    left = []
+                    with ThreadPoolExecutor(max_workers=workers) as ex:
+                        for seg, rels, err in ex.map(lambda it: guarded(it, relaxed), items):
+                            apply(seg, rels, err, count_done)
+                            if not rels:
+                                left.append(seg)
+                            if state.autofill.get("cancel"):
+                                log("已停止。已经配好的段落都保留了。")
+                                break
+                    return left
+
+                by_id = {seg["id"]: text for seg, text in pending}
+                empty = sweep(pending)
+                resolved = state.autofill["pictures"]
+                # Second pass: anything still blank is retried with every source and with reuse
+                # allowed, so the finished project has no empty segments unless nothing exists at all.
+                if empty and not state.autofill.get("cancel") and kind == "image":
+                    log(f"第二轮：{len(empty)} 段还没有图，放宽来源和去重再试一次")
+                    failed.clear()
+                    still = sweep([(seg, by_id.get(seg["id"], "")) for seg in empty],
+                                  relaxed=True, count_done=False)
+                    resolved = state.autofill["pictures"]
+                    if still:
+                        log(f"仍有 {len(still)} 段没有素材：" + "、".join(s2["id"] for s2 in still))
 
                 state.autofill["result"] = {"filled": state.autofill["done"], "resolved": resolved, "failed": failed,
                                             "segments_with_pictures": state.autofill["done"] - len(failed),
@@ -1005,10 +1074,22 @@ def make_handler(state: State):
                                             "vision": llm.vision_model() if vision else None}
                 state.autofill["state"] = "done"
 
+            def run_guarded():
+                try:
+                    run()
+                except Exception as e:  # noqa: BLE001  never leave the UI polling a dead job
+                    state.autofill["lines"].append(f"配图失败：{e}")
+                    state.autofill["result"] = {"filled": state.autofill["done"], "resolved": state.autofill.get("pictures", 0),
+                                                "failed": [], "segments_with_pictures": 0, "source": source, "kind": kind,
+                                                "llm": False, "site": site, "generic": [], "topic_pool": [], "vision": None,
+                                                "error": str(e)}
+                finally:
+                    state.autofill["state"] = "done"
+
             if body.get("sync"):
-                run()
+                run_guarded()
                 return self._json({"started": True, **state.autofill["result"]})
-            threading.Thread(target=run, daemon=True).start()
+            threading.Thread(target=run_guarded, daemon=True).start()
             return self._json({"started": True, "total": len(pending)})
 
         def _video_path(self, rel_or_abs: str) -> Path:

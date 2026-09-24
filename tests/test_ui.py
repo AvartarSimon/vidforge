@@ -176,6 +176,38 @@ class UiApi(unittest.TestCase):
             raw["segments"] = [s for s in raw["segments"] if s["id"] != "s5"]
             self.state.write_raw(raw)
 
+    def test_autofill_does_not_give_two_segments_the_same_picture(self):
+        """Several segments search the same thing; each must still get its own files, and a
+        segment the first pass leaves empty is retried with reuse allowed rather than left blank."""
+        raw = self.state.read_raw()
+        for i in (6, 7, 8):
+            raw["segments"].append({"id": f"d{i}", "text": "The Battle of Lexington began the war."})
+        self.state.write_raw(raw)
+        try:
+            hits = [Candidate(provider="commons", id=str(100 + i), kind="image", thumb_url="t", preview_url="p",
+                              download_url=f"http://x/d{i}.jpg", width=3000, height=2000, duration=None, author="A",
+                              license="Public domain", page_url="pg", title=f"Battle of Lexington {i}.jpg")
+                    for i in range(7)]        # 7 files for 3 segments wanting 3 each: not enough
+
+            def fake_search(root, provider, query, kind, page=1, relax=True):
+                return list(hits) if provider == "commons" and "Lexington" in query else []
+            fake_dl = lambda url, dest, referer=None, retries=3: (dest.parent.mkdir(parents=True, exist_ok=True), dest.write_bytes(b"jpg"), dest)[2]
+            with mock.patch("vidforge.assets.search", fake_search), mock.patch("vidforge.assets.wikimedia.download", fake_dl), \
+                    mock.patch("vidforge.llm.available", return_value=None), mock.patch.dict("os.environ", {"PEXELS_API_KEY": "", "PIXABAY_API_KEY": ""}):
+                st, j = self.call("/api/autofill", {"source": "commons", "sync": True, "vision": False, "workers": 3})
+            self.assertEqual(st, 200)
+            segs = {s["id"]: s for s in self.state.read_raw()["segments"]}
+            got = {sid: [c["image"] for c in segs[sid]["clips"]] for sid in ("d6", "d7", "d8")}
+            for sid, paths in got.items():
+                self.assertTrue(paths, f"{sid} 应该有图（第二轮会放宽去重）")
+            first_two = got["d6"] + got["d7"]
+            self.assertEqual(len(first_two), len(set(first_two)))     # the pass-1 segments never share
+            self.assertEqual(j["failed"], [])
+        finally:
+            raw = self.state.read_raw()
+            raw["segments"] = [s for s in raw["segments"] if not s["id"].startswith("d")]
+            self.state.write_raw(raw)
+
     def test_upload_asset(self):
         import io
         from PIL import Image

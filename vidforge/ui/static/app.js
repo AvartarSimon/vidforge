@@ -807,8 +807,9 @@ function viewVisuals(v) {
       let ticks = 0;
       while (st.state === 'running') {
         const el = (Date.now() - t0) / 1000;
-        const eta = st.done && el > 5 ? `　已用 ${Math.round(el / 60)} 分钟，约还需 ${Math.round((el / st.done) * (st.total - st.done) / 60)} 分钟` : '';
-        $('#autoProg').textContent = `正在搜图并下载… ${st.done}/${st.total}${eta}（每配好一段立刻出现，中途停止也会保留）`;
+        const fmtS = s2 => s2 < 60 ? `${Math.round(s2)} 秒` : `${Math.floor(s2 / 60)} 分 ${String(Math.round(s2 % 60)).padStart(2, '0')} 秒`;
+        const eta = st.done && el > 3 ? `，约还需 ${fmtS((el / st.done) * (st.total - st.done))}` : '';
+        $('#autoProg').textContent = `正在搜图并下载… ${st.done}/${st.total} 段 · ${st.pictures || 0} 张　已用 ${fmtS(el)}${eta}（可切到别的项目，后台会跑完）`;
         await new Promise(r => setTimeout(r, 1000));
         st = await api('/api/autofill');
         // the server saves each segment as it finishes; refresh so thumbnails appear while it runs

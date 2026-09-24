@@ -19,6 +19,9 @@ type AutofillStatus = {
   state: 'idle' | 'running' | 'done'
   done: number
   total: number
+  pictures: number
+  project: string
+  title: string
   lines: string[]
   result: {
     filled: number
@@ -49,13 +52,18 @@ const SOURCES: { id: string; label: string; kinds: ('image' | 'video')[] }[] = [
 ]
 const DEFAULT_SOURCE = { image: 'commons', video: 'archive' } as const
 
-// "3/22 · 已用 4 分钟，约还需 25 分钟" — a vision-checked run is slow enough that a bare count
-// looks like it has stalled
-function etaText(p: { done: number; total: number; started: number }): string {
+// "3/22 段 · 11 张 · 已用 40 秒，约还需 4 分 10 秒" — a bare count looks stalled on a long run
+function fmtSecs(s: number): string {
+  s = Math.max(0, Math.round(s))
+  return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${String(s % 60).padStart(2, '0')} 秒`
+}
+
+function etaText(p: { done: number; total: number; pictures: number; started: number }): string {
   const elapsed = (Date.now() - p.started) / 1000
-  if (!p.done || elapsed < 5) return ''
-  const left = Math.round(((elapsed / p.done) * (p.total - p.done)) / 60)
-  return `　已用 ${Math.round(elapsed / 60)} 分钟${left > 0 ? `，约还需 ${left} 分钟` : ''}`
+  const pics = p.pictures ? ` · ${p.pictures} 张` : ''
+  if (!p.done || elapsed < 3) return `${pics}　已用 ${fmtSecs(elapsed)}`
+  const left = (elapsed / p.done) * (p.total - p.done)
+  return `${pics}　已用 ${fmtSecs(elapsed)}${left > 1 ? `，约还需 ${fmtSecs(left)}` : ''}`
 }
 
 export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect: (id: string) => void }) {
@@ -78,7 +86,7 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
       .then((j) => setSites(j.sites))
       .catch(() => setSites([]))
   }, [])
-  const [progress, setProgress] = useState<{ done: number; total: number; started: number } | null>(null)
+  const [progress, setProgress] = useState<{ done: number; total: number; pictures: number; started: number } | null>(null)
   const progressStart = useRef(0)
 
   if (!raw) return null
@@ -118,13 +126,13 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
         setBusy(false)
         return
       }
-      setProgress({ done: 0, total: start.total, started: Date.now() })
+      setProgress({ done: 0, total: start.total, pictures: 0, started: Date.now() })
       let st: AutofillStatus
       let ticks = 0
       do {
         await new Promise((r) => setTimeout(r, 1000))
         st = await apiGet<AutofillStatus>('/api/autofill')
-        setProgress({ done: st.done, total: st.total, started: progressStart.current })
+        setProgress({ done: st.done, total: st.total, pictures: st.pictures ?? 0, started: progressStart.current })
         // the server saves each segment as it finishes, so refresh the storyboard while it runs —
         // a run with the vision check on takes about a minute per picture and used to look frozen
         if (++ticks % 4 === 0) await reload()
@@ -213,8 +221,8 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
           <LinearProgress variant={progress.total ? 'determinate' : 'indeterminate'} value={progress.total ? (100 * progress.done) / progress.total : 0} />
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography variant="caption" color="text.secondary">
-              正在搜图{vision ? '、核对' : ''}并下载… {progress.done}/{progress.total}
-              {etaText(progress)}　每配好一段就会立刻出现在下面，中途停止也会保留。
+              正在搜图{vision ? '、核对' : ''}并下载… {progress.done}/{progress.total} 段
+              {etaText(progress)}　可以切到别的项目，它会继续在后台跑完。
             </Typography>
             <Button size="small" color="warning" onClick={() => apiPost('/api/autofill/cancel', {})}>
               停止

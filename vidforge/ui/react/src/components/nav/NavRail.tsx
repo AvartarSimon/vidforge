@@ -14,6 +14,7 @@ import {
 } from '@mui/material'
 import type { PaletteMode } from '@mui/material'
 import CategoryIcon from '@mui/icons-material/Category'
+import FolderOpenIcon from '@mui/icons-material/FolderOpen'
 import MovieFilterIcon from '@mui/icons-material/MovieFilter'
 import GraphicEqIcon from '@mui/icons-material/GraphicEq'
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary'
@@ -154,6 +155,12 @@ export function NavRail({
         </List>
         <Divider />
         <List sx={{ flexGrow: 1 }}>
+          <ListItemButton onClick={() => setSwitcherOpen(true)} sx={{ mx: 1, borderRadius: 2 }}>
+            <ListItemIcon>
+              <FolderOpenIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="切换 / 新建项目" secondary="项目之间互不影响" />
+          </ListItemButton>
           <ListItemButton onClick={() => setAiOpen(true)} sx={{ mx: 1, borderRadius: 2 }}>
             <ListItemIcon>
               <AutoAwesomeIcon fontSize="small" />
