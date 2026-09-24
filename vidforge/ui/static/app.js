@@ -792,7 +792,8 @@ function viewVisuals(v) {
     <select id="autoSrc" class="small"></select>
     <label class="small"><input type="checkbox" id="autoOver"> 已有画面的段也重配</label>
     <label class="small">每段 <input type="number" id="autoMin" value="3" min="1" max="15" style="width:44px"> – <input type="number" id="autoMax" value="10" min="1" max="15" style="width:44px"> 张</label>
-    <label class="small"><input type="checkbox" id="autoVision"> 逐段视觉核对（每段约 1 分钟，慢）</label>
+    <label class="small"><input type="checkbox" id="autoSmart" checked> 让模型核对图片是否切题（更准，约慢 3 倍）</label>
+    <label class="small"><input type="checkbox" id="autoVision"> 逐段视觉核对水印（每段约 1 分钟，最慢）</label>
     <select id="autoSite" class="small"><option value="">搜索词：本地模型（快）</option></select>
     <button class="small" id="autoStop" style="display:none">停止</button>
     <span id="autoProg" class="muted"></span>`;
@@ -824,7 +825,8 @@ function viewVisuals(v) {
     $('#autoStop').style.display = '';
     try {
       const st0 = await api(`/api/autofill?lang=${lang}`, { source: $('#autoSrc').value, kind: $('#autoKind').value, overwrite: $('#autoOver').checked, vision: $('#autoVision').checked, site: $('#autoSite').value,
-        min_per_segment: +$('#autoMin').value || 3, max_per_segment: +$('#autoMax').value || 10 });
+        min_per_segment: +$('#autoMin').value || 3, max_per_segment: +$('#autoMax').value || 10,
+        smart_match: $('#autoSmart').checked });
       if (!st0.total) { $('#autoProg').textContent = ''; autoBtn.disabled = false; return alert('没有需要配图的段落。勾上「已有画面的段也重配」可以全部重来。'); }
       let st = { state: 'running', done: 0, total: st0.total };
       const t0 = Date.now();

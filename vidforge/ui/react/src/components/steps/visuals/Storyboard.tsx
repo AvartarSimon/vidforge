@@ -79,6 +79,9 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
   const [vision, setVision] = useState(false)
   const [perSeg, setPerSeg] = useState<[number, number]>([3, 10])
   const [stopping, setStopping] = useState(false)
+  // the text model reads each segment and throws out hits that only match by wording; it roughly
+  // triples the run time on a machine without a GPU, so it can be turned off
+  const [smart, setSmart] = useState(true)
   // who writes the search phrases: the local 3B model is instant but weak on abstract narration,
   // a full-size model in the user's own browser is much better (one question, 30-120 s)
   const [site, setSite] = useState('')
@@ -123,6 +126,7 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
         site,
         min_per_segment: perSeg[0],
         max_per_segment: perSeg[1],
+        smart_match: smart,
       })
       if (!start.total) {
         setMsg('没有需要配图的段落。勾上「已有画面的段也重配」可以全部重来。')
@@ -208,8 +212,12 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
           />
         </Box>
         <FormControlLabel
+          control={<Checkbox size="small" checked={smart} onChange={(e) => setSmart(e.target.checked)} disabled={busy} />}
+          label={<Typography variant="caption">让模型核对图片是否切题（更准，约慢 3 倍）</Typography>}
+        />
+        <FormControlLabel
           control={<Checkbox size="small" checked={vision} onChange={(e) => setVision(e.target.checked)} disabled={busy} />}
-          label={<Typography variant="caption">逐段视觉核对（本地模型，每段约 1 分钟，慢）</Typography>}
+          label={<Typography variant="caption">逐段视觉核对水印（每段约 1 分钟，最慢）</Typography>}
         />
         <Select size="small" value={site} onChange={(e) => setSite(e.target.value)} disabled={busy} sx={{ fontSize: 12, minWidth: 170 }}>
           <MenuItem value="" sx={{ fontSize: 12 }}>
