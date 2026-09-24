@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { Box, Button, Checkbox, FormControlLabel, LinearProgress, MenuItem, Select, Stack, Typography } from '@mui/material'
+import {
+  Box,
+  Button,
+  Checkbox,
+  FormControlLabel,
+  LinearProgress,
+  MenuItem,
+  Select,
+  Slider,
+  Stack,
+  Typography,
+} from '@mui/material'
 import { apiGet, apiPost } from '../../../api/client'
 import { useProject } from '../../../state/ProjectContext'
 import { fileUrl, fmtDuration } from '../../../utils'
@@ -12,6 +23,7 @@ type AutofillStatus = {
   result: {
     filled: number
     resolved: number
+    segments_with_pictures: number
     failed: { id: string; query: string }[]
     source: string
     kind: string
@@ -53,7 +65,10 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
   const [kind, setKind] = useState<'image' | 'video'>('image')
   const [source, setSource] = useState<string>(DEFAULT_SOURCE.image)
   const [overwrite, setOverwrite] = useState(false)
-  const [vision, setVision] = useState(true)
+  // The vision check costs about a minute per picture on a machine without a GPU, and a run now
+  // fetches dozens of them — so it is off by default and the text filters do the work.
+  const [vision, setVision] = useState(false)
+  const [perSeg, setPerSeg] = useState<[number, number]>([3, 10])
   // who writes the search phrases: the local 3B model is instant but weak on abstract narration,
   // a full-size model in the user's own browser is much better (one question, 30-120 s)
   const [site, setSite] = useState('')
@@ -89,7 +104,15 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
     setMsg(null)
     progressStart.current = Date.now()
     try {
-      const start = await apiPost<{ started: boolean; total: number }>('/api/autofill', { source, kind, overwrite, vision, site })
+      const start = await apiPost<{ started: boolean; total: number }>('/api/autofill', {
+        source,
+        kind,
+        overwrite,
+        vision,
+        site,
+        min_per_segment: perSeg[0],
+        max_per_segment: perSeg[1],
+      })
       if (!start.total) {
         setMsg('没有需要配图的段落。勾上「已有画面的段也重配」可以全部重来。')
         setBusy(false)
@@ -113,13 +136,15 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
           ? `；${r.failed.length} 段没有准确的素材，留空了（${r.failed.map((f) => f.id).join('、')}），点开手动选`
           : ''
         const who = r.site ? `搜索词来自 ${r.site}` : r.llm ? '搜索词来自本地模型' : '搜索词来自关键词提取'
-        const how = `${r.source}，${who}${r.vision ? `，${r.vision} 已核对水印和内容` : '，未装视觉模型（ollama pull qwen2.5vl:3b 可自动识别水印）'}`
+        const how = `${r.source}，${who}${r.vision ? `，${r.vision} 已核对水印和内容` : ''}`
         // segments whose narration is abstract got a picture of the video's subject instead —
         // on-topic but generic, so say which ones deserve a look
         const generic = r.generic?.length
-          ? `；其中 ${r.generic.length} 段（${r.generic.join('、')}）旁白太抽象，用的是主题素材（${r.topic_pool.join('、')}），建议自己换`
+          ? `；其中 ${r.generic.length} 段旁白太抽象或搜不到，用主题素材补足（${r.topic_pool.join('、')}），建议自己换`
           : ''
-        setMsg(`已为 ${r.filled} 段配好 ${r.resolved} ${unit}（${how}）${generic}${failed}。不满意的段点开重选。`)
+        setMsg(
+          `已为 ${r.segments_with_pictures}/${r.filled} 段配好 ${r.resolved} ${unit}（${how}）${generic}${failed}。不满意的段点开重选。`,
+        )
       }
       await reload()
     } catch (e) {
@@ -153,9 +178,24 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
           control={<Checkbox size="small" checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} disabled={busy} />}
           label={<Typography variant="caption">已有画面的段也重配</Typography>}
         />
+        <Box sx={{ width: 210 }}>
+          <Typography variant="caption">
+            每段 {perSeg[0]}–{perSeg[1]} 张（约每 5 秒旁白一张）
+          </Typography>
+          <Slider
+            size="small"
+            min={1}
+            max={15}
+            step={1}
+            value={perSeg}
+            disabled={busy}
+            onChange={(_, v) => setPerSeg(v as [number, number])}
+            valueLabelDisplay="auto"
+          />
+        </Box>
         <FormControlLabel
           control={<Checkbox size="small" checked={vision} onChange={(e) => setVision(e.target.checked)} disabled={busy} />}
-          label={<Typography variant="caption">视觉核对水印/内容（本地模型，每张约 1 分钟）</Typography>}
+          label={<Typography variant="caption">逐段视觉核对（本地模型，每段约 1 分钟，慢）</Typography>}
         />
         <Select size="small" value={site} onChange={(e) => setSite(e.target.value)} disabled={busy} sx={{ fontSize: 12, minWidth: 170 }}>
           <MenuItem value="" sx={{ fontSize: 12 }}>

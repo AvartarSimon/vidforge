@@ -106,39 +106,74 @@ class UiApi(unittest.TestCase):
         self.assertIn("Pexels License", j["credit"])
         self.assertTrue((Path(self.td) / "assets" / "index.json").exists())
 
-    def test_autofill_picks_a_picture_right_away(self):
-        """One click gives every clip-less segment a downloaded image (spec kept for re-pick),
-        remotion/existing segments untouched, and a segment nothing is found for is reported."""
+    def test_autofill_gives_each_segment_several_pictures(self):
+        """One click downloads 3-10 real files per segment (a picture per ~5 s of narration),
+        writes their paths straight into the project, varies the camera move, and leaves a segment
+        empty rather than filling it with something that does not match."""
         raw = self.state.read_raw()
-        raw["segments"].append({"id": "s3", "text": "The Battle of Lexington began the war."})
+        long_text = "The Battle of Lexington began the war. " * 20        # long enough to want many
+        raw["segments"].append({"id": "s3", "text": long_text})
         raw["segments"].append({"id": "s4", "text": "Nothing matches this."})
         self.state.write_raw(raw)
         try:
-            cand = Candidate(provider="commons", id="9", kind="image", thumb_url="t", preview_url="p", download_url="http://x/lex.jpg",
-                             width=3000, height=2000, duration=None, author="A", license="Public domain", page_url="pg", title="Battle of Lexington.jpg")
+            def cand(i, title):
+                return Candidate(provider="commons", id=str(i), kind="image", thumb_url="t", preview_url="p",
+                                 download_url=f"http://x/lex{i}.jpg", width=3000, height=2000, duration=None,
+                                 author="A", license="Public domain", page_url="pg", title=title)
+            hits = [cand(i, f"Battle of Lexington {i}.jpg") for i in range(12)]
+            hits.append(cand(99, "Battle of Lexington logo.png"))          # branded: must be skipped
 
             def fake_search(root, provider, query, kind, page=1, relax=True):
-                return [cand] if "Lexington" in query else []
+                return list(hits) if "Lexington" in query else []
             fake_dl = lambda url, dest, referer=None, retries=3: (dest.parent.mkdir(parents=True, exist_ok=True), dest.write_bytes(b"jpg"), dest)[2]
             with mock.patch("vidforge.assets.search", fake_search), mock.patch("vidforge.assets.wikimedia.download", fake_dl), \
                     mock.patch("vidforge.llm.available", return_value=None), mock.patch.dict("os.environ", {"PEXELS_API_KEY": "", "PIXABAY_API_KEY": ""}):
-                st, j = self.call("/api/autofill", {"source": "commons", "sync": True})
+                st, j = self.call("/api/autofill", {"source": "commons", "sync": True, "vision": False})
             self.assertEqual(st, 200)
-            self.assertEqual((j["filled"], j["resolved"]), (2, 1))
             self.assertEqual([f["id"] for f in j["failed"]], ["s4"])
-            raw = self.state.read_raw()
-            segs = {s["id"]: s for s in raw["segments"]}
-            self.assertEqual(segs["s3"]["clips"], [{"image": "commons:Battle Lexington", "motion": "zoom_in"}])
-            self.assertEqual(segs["s1"]["clips"], [{"image": "assets/a.jpg"}])      # untouched
-            self.assertNotIn("clips", segs["s2"])                                   # remotion segment untouched
+            segs = {s["id"]: s for s in self.state.read_raw()["segments"]}
+            clips = segs["s3"]["clips"]
+            self.assertGreaterEqual(len(clips), 3)
+            self.assertLessEqual(len(clips), 10)
+            self.assertEqual(j["resolved"], len(clips))
+            for c in clips:                                               # real files, not specs
+                self.assertTrue(c["image"].startswith("assets/commons/"), c)
+                self.assertTrue((Path(self.td) / c["image"]).is_file())
+            self.assertNotIn("logo", " ".join(c["image"] for c in clips))
+            self.assertEqual(len(clips), len({c["image"] for c in clips}))  # no duplicates
+            self.assertGreater(len({c["motion"] for c in clips}), 1)        # camera move varies
+            self.assertEqual(segs["s1"]["clips"], [{"image": "assets/a.jpg"}])   # untouched
+            self.assertNotIn("clips", segs["s2"])                               # remotion untouched
+            self.assertEqual(segs["s4"]["clips"], [])                           # 宁缺: left empty
             st, j = self.call("/api/project")
-            self.assertEqual(j["resolved"]["s3"]["clips"][0]["path"], "assets/commons/battle-of-lexington-9.jpg")
-            self.assertEqual(j["resolved"]["s4"]["clips"], [])                     # nothing accurate: left empty, no spec
-            st, j = self.call("/api/autofill")
-            self.assertEqual(j["state"], "done")
+            self.assertEqual(j["resolved"]["s3"]["clips"][0]["path"], clips[0]["image"])
         finally:
             raw = self.state.read_raw()
             raw["segments"] = [s for s in raw["segments"] if s["id"] not in ("s3", "s4")]
+            self.state.write_raw(raw)
+
+    def test_autofill_caps_a_short_segment_at_the_minimum(self):
+        """A two-second line still gets the floor of 3, not one picture per five seconds."""
+        raw = self.state.read_raw()
+        raw["segments"].append({"id": "s5", "text": "Lexington."})
+        self.state.write_raw(raw)
+        try:
+            hits = [Candidate(provider="commons", id=str(i), kind="image", thumb_url="t", preview_url="p",
+                              download_url=f"http://x/a{i}.jpg", width=3000, height=2000, duration=None, author="A",
+                              license="Public domain", page_url="pg", title=f"Lexington green {i}.jpg") for i in range(9)]
+            fake_dl = lambda url, dest, referer=None, retries=3: (dest.parent.mkdir(parents=True, exist_ok=True), dest.write_bytes(b"jpg"), dest)[2]
+            with mock.patch("vidforge.assets.search", lambda *a, **k: list(hits)), \
+                    mock.patch("vidforge.assets.wikimedia.download", fake_dl), \
+                    mock.patch("vidforge.llm.available", return_value=None), \
+                    mock.patch("vidforge.keywords.suggest", return_value=["Lexington", "green"]), \
+                    mock.patch.dict("os.environ", {"PEXELS_API_KEY": "", "PIXABAY_API_KEY": ""}):
+                st, _ = self.call("/api/autofill", {"source": "commons", "sync": True, "vision": False})
+            self.assertEqual(st, 200)
+            segs = {s["id"]: s for s in self.state.read_raw()["segments"]}
+            self.assertEqual(len(segs["s5"]["clips"]), 3)
+        finally:
+            raw = self.state.read_raw()
+            raw["segments"] = [s for s in raw["segments"] if s["id"] != "s5"]
             self.state.write_raw(raw)
 
     def test_upload_asset(self):

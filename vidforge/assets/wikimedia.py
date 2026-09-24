@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import html
 import re
+import threading
 import time
 import urllib.parse
 from pathlib import Path
@@ -95,7 +96,8 @@ class CommonsProvider:
         name = f"{slug(Path(cand.title).stem or 'commons')}-{cand.id}{cand.ext or '.jpg'}"
         _pace()
         try:
-            return download(cand.download_url, Path(folder) / name, retries=0)
+            with _slots:
+                return download(cand.download_url, Path(folder) / name, retries=0)
         except AssetError as e:
             # originals are what Commons throttles ("use thumbnail images in sizes listed");
             # the 1920 px rendition comes from the thumb cache and is plenty for 1080p
@@ -105,12 +107,18 @@ class CommonsProvider:
 
 
 _last_fetch = 0.0
+_pace_lock = threading.Lock()
+# Commons 429s a burst, but it does not need a full second between files: spacing requests a third
+# of a second apart (and letting at most a few run at once) keeps it happy while autofill fetches
+# dozens of pictures for a whole script.
+_slots = threading.Semaphore(3)
 
 
-def _pace(gap: float = 1.0) -> None:   # noqa: D401  (used by search() above and fetch() below)
-    """Commons rate-limits bursts (autofill fetches one file per segment back to back)."""
+def _pace(gap: float = 0.34) -> None:
+    """Space out requests to Commons; safe to call from several threads."""
     global _last_fetch
-    wait = _last_fetch + gap - time.time()
-    if wait > 0:
-        time.sleep(wait)
-    _last_fetch = time.time()
+    with _pace_lock:
+        wait = _last_fetch + gap - time.time()
+        if wait > 0:
+            time.sleep(wait)
+        _last_fetch = time.time()

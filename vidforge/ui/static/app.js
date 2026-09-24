@@ -770,7 +770,8 @@ function viewVisuals(v) {
     <select id="autoKind" class="small"><option value="image">图片</option><option value="video">视频</option></select>
     <select id="autoSrc" class="small"></select>
     <label class="small"><input type="checkbox" id="autoOver"> 已有画面的段也重配</label>
-    <label class="small"><input type="checkbox" id="autoVision" checked> 视觉核对水印/内容（每张约 1 分钟）</label>
+    <label class="small">每段 <input type="number" id="autoMin" value="3" min="1" max="15" style="width:44px"> – <input type="number" id="autoMax" value="10" min="1" max="15" style="width:44px"> 张</label>
+    <label class="small"><input type="checkbox" id="autoVision"> 逐段视觉核对（每段约 1 分钟，慢）</label>
     <select id="autoSite" class="small"><option value="">搜索词：本地模型（快）</option></select>
     <button class="small" id="autoStop" style="display:none">停止</button>
     <span id="autoProg" class="muted"></span>`;
@@ -798,7 +799,8 @@ function viewVisuals(v) {
     autoBtn.disabled = true;
     $('#autoStop').style.display = '';
     try {
-      const st0 = await api(`/api/autofill?lang=${lang}`, { source: $('#autoSrc').value, kind: $('#autoKind').value, overwrite: $('#autoOver').checked, vision: $('#autoVision').checked, site: $('#autoSite').value });
+      const st0 = await api(`/api/autofill?lang=${lang}`, { source: $('#autoSrc').value, kind: $('#autoKind').value, overwrite: $('#autoOver').checked, vision: $('#autoVision').checked, site: $('#autoSite').value,
+        min_per_segment: +$('#autoMin').value || 3, max_per_segment: +$('#autoMax').value || 10 });
       if (!st0.total) { $('#autoProg').textContent = ''; autoBtn.disabled = false; return alert('没有需要配图的段落。勾上「已有画面的段也重配」可以全部重来。'); }
       let st = { state: 'running', done: 0, total: st0.total };
       const t0 = Date.now();
@@ -819,9 +821,9 @@ function viewVisuals(v) {
       const unit = r.kind === 'video' ? '段视频' : '张图';
       const failed = (r.failed || []).length ? `；${r.failed.length} 段没有准确的素材，留空了（${r.failed.map(f => f.id).join('、')}），点开手动选` : '';
       const who = r.site ? `搜索词来自 ${r.site}` : r.llm ? '搜索词来自本地模型' : '搜索词来自关键词提取';
-      const how = `${r.source}，${who}${r.vision ? `，${r.vision} 已核对水印和内容` : '，未装视觉模型（ollama pull qwen2.5vl:3b 可自动识别水印）'}`;
-      const generic = (r.generic || []).length ? `；其中 ${r.generic.length} 段（${r.generic.join('、')}）旁白太抽象，用的是主题素材（${(r.topic_pool || []).join('、')}），建议自己换` : '';
-      $('#issues').innerHTML = `<div class="banner info">已为 ${r.filled} 段配好 ${r.resolved} ${unit}（${how}）${generic}${failed}。不满意的段点开重选。</div>`;
+      const how = `${r.source}，${who}${r.vision ? `，${r.vision} 已核对水印和内容` : ''}`;
+      const generic = (r.generic || []).length ? `；其中 ${r.generic.length} 段旁白太抽象或搜不到，用主题素材补足（${(r.topic_pool || []).join('、')}），建议自己换` : '';
+      $('#issues').innerHTML = `<div class="banner info">已为 ${r.segments_with_pictures}/${r.filled} 段配好 ${r.resolved} ${unit}（${how}）${generic}${failed}。不满意的段点开重选。</div>`;
     } catch (e) {
       // a backend started before the last update has no GET /api/autofill -> "not found"
       alert(/not found/i.test(e.message) ? '后端是旧版本（没有这个接口）：关掉 vidforge 的黑窗口，重新双击 start-vidforge 再试。' : e.message);

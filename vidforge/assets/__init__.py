@@ -19,9 +19,11 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import threading
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -312,10 +314,38 @@ def relevant(c: Candidate, query: str) -> bool:
     return any((a, b) in pairs for a, b in zip(q, q[1:]))
 
 
+MAX_EDGE = 2560          # a 1080p render never needs more; museum TIFFs arrive at 7000 px+
+
+
+def normalise(dest: Path) -> Path:
+    """Shrink a downloaded picture that is far larger than any render needs.
+
+    Archives hand out museum masters: three Cleveland Art TIFFs in one test run were 120, 89 and
+    57 MB, i.e. most of the project's disk and a slow Ken Burns pass each. Anything over MAX_EDGE
+    is rewritten as a 1920 px JPEG; small files and videos are left alone."""
+    dest = Path(dest)
+    if dest.suffix.lower() in (".mp4", ".mov", ".webm", ".mkv", ".m4v", ".gif", ".svg"):
+        return dest
+    try:
+        from PIL import Image
+        with Image.open(dest) as im:
+            if max(im.size) <= MAX_EDGE and dest.stat().st_size < 8_000_000:
+                return dest
+            im = im.convert("RGB")
+            im.thumbnail((1920, 1920), Image.LANCZOS)
+            out = dest.with_suffix(".jpg")
+            im.save(out, "JPEG", quality=88, optimize=True)
+    except Exception:  # noqa: BLE001  unreadable/odd formats stay as they are; the build will complain
+        return dest
+    if out != dest:
+        dest.unlink(missing_ok=True)
+    return out
+
+
 def fetch(root: Path, cand: Candidate, library: Library | None = None) -> Path:
     prov = get_provider(cand.provider)
     lib = library or Library(root)
-    dest = prov.fetch(cand, root / "assets" / prov.name)
+    dest = normalise(prov.fetch(cand, root / "assets" / prov.name))
     lib.remember(cand, dest)
     lib.save()
     return dest
@@ -382,6 +412,74 @@ def vision_verdict(root: Path, cand: Candidate, subject: str | None, log=None) -
     return None
 
 
+# Titles/descriptions that mean "this file is a graphic with a mark on it", not a photograph of
+# the thing. Autofill must never insert these; the user can still pick one by hand.
+_BRANDED = re.compile(r"(?i)\b(logo|logos|wordmark|trademark|watermark|screenshot|advert|advertisement|"
+                      r"billboard|banner|poster|flyer|leaflet|brochure|letterhead|business ?card|"
+                      r"book ?cover|album ?cover|dvd|packaging|mockup|template|infographic|"
+                      r"stock ?photo|getty|shutterstock|alamy)\b")
+
+
+def branded(c: Candidate) -> bool:
+    """Does this candidate look like a logo / advert / watermarked graphic rather than a picture?"""
+    return bool(_BRANDED.search(f"{c.title} {c.desc}"))
+
+
+_pool_lock = threading.Lock()
+
+
+def pick_many(root: Path, lib: Library, prov_name: str, kind: str, query: str, n: int,
+              need: float = 0.0, log=None, vision_first: bool = False, pool: int = 4) -> list[Path]:
+    """Up to `n` different accurate files for one query, downloaded in parallel.
+
+    One search yields a page of candidates; taking several of them is far cheaper than searching
+    once per picture, and it is what makes "3–10 pictures per segment" affordable. Candidates are
+    filtered exactly as the single-pick path filters them (licence host, `relevant`, `branded`),
+    so a segment ends up with fewer pictures rather than wrong ones.
+
+    vision_first: run the (slow, ~1 min on CPU) vision check on the first accepted candidate only —
+    enough to catch a query whose whole result page is off-topic, without paying for every file."""
+    prov_name = {"wikimedia": "commons"}.get(prov_name, prov_name)
+    cands = [c for c in rank(search(root, prov_name, query, kind), query)
+             if (c.landscape or kind == "image") and not blocked_host(c.download_url)
+             and not branded(c) and relevant(c, query)]
+    if kind == "video":
+        cands = [c for c in cands if (c.duration or 0) >= need] or cands
+    with _pool_lock:
+        used = lib.used_ids(prov_name)
+    fresh = [c for c in cands if c.id not in used]
+    chosen = (fresh or cands)[:n]
+    if not chosen:
+        raise AssetError(f"no accurate {kind} for {query!r} on {prov_name}")
+    if vision_first:
+        why = vision_verdict(root, chosen[0], query, log)
+        if why:
+            raise AssetError(f"{query!r}: {why}")
+    out: list[Path] = []
+    with ThreadPoolExecutor(max_workers=max(1, pool)) as ex:
+        for cand, result in zip(chosen, ex.map(lambda c: _fetch_safe(root, c, lib, log), chosen)):
+            if result is not None:
+                out.append(result)
+    if not out:
+        raise AssetError(f"{query!r}: 候选都下载失败")
+    return out
+
+
+def _fetch_safe(root: Path, cand: Candidate, lib: Library, log=None):
+    """fetch() for a worker thread: never raises, and the shared Library is only touched under a lock."""
+    try:
+        prov = get_provider(cand.provider)
+        dest = normalise(prov.fetch(cand, Path(root) / "assets" / prov.name))
+    except Exception as e:  # noqa: BLE001  one bad file must not sink the segment
+        if log:
+            log(f"    下载失败 {cand.title[:40]}: {e}")
+        return None
+    with _pool_lock:
+        lib.remember(cand, dest)
+        lib.save()
+    return dest
+
+
 def pick_for_spec(root: Path, lib: Library, prov_name: str, kind: str, query: str, need: float = 0.0,
                   strict: bool = False, log=None, tries: int = 4, vision: bool = True,
                   unique_key: str | None = None) -> Path:
@@ -400,7 +498,7 @@ def pick_for_spec(root: Path, lib: Library, prov_name: str, kind: str, query: st
     if dest is not None:
         return dest
     cands = [c for c in rank(search(root, prov_name, query, kind), query)
-             if (c.landscape or kind == "image") and not blocked_host(c.download_url)]
+             if (c.landscape or kind == "image") and not blocked_host(c.download_url) and not branded(c)]
     used = lib.used_ids(prov_name)
     fresh = [c for c in cands if c.id not in used]
     pool = fresh or cands

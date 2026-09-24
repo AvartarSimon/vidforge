@@ -15,7 +15,7 @@ User-facing manual: `QUICKSTART.zh.md`. Roadmap: `docs/roadmap-v0.4-plan.md`.
 | CLI | `vidforge/cli.py` | `vidforge start|ui|build|doctor|voices|assets|upload|i18n|browser|chat|voice|me|category|remotion|shortcut` |
 | Pipeline | `pipeline.py`, `render.py`, `subtitles.py`, `thumbnail.py`, `ffmpeg.py` | staged build with per-segment clip cache `build/clips/<seg>.<hash>.mp4`; encoder auto-pick (nvenc/qsv/amf/videotoolbox/libx264) |
 | Project model | `project.py` (`Project`, `Segment`, `Clip`, `Overlay`) | `Clip.source` = unresolved spec `"commons:Battle of Lexington 1775"`, resolved at build or by autofill |
-| Assets | `assets/` — `pexels.py`, `pixabay.py`, `wikimedia.py`, `openverse.py`, `archive.py`, `google_images.py`, `baidu.py` | `Library` = `assets/index.json` (licence, credits, picks, vision-check verdicts). `pick_for_spec(strict=)` is the one chooser; `relevant()` + `vision_verdict()` gate accuracy |
+| Assets | `assets/` — `pexels.py`, `pixabay.py`, `wikimedia.py`, `openverse.py`, `archive.py`, `google_images.py`, `baidu.py` | `Library` = `assets/index.json` (licence, credits, picks, vision-check verdicts). `pick_many()` is what autofill uses (one search → several files, downloaded in parallel); `relevant()` (contiguous content-word bigram) + `branded()` + `blocked_host()` gate accuracy, `vision_verdict()` is the optional slow check; `normalise()` shrinks museum-sized downloads |
 | TTS | `tts/` (edge-tts default, ElevenLabs, VoxCPM) | word timings drive `final.srt` |
 | Local LLM | `llm.py` (Ollama, optional) | text: `qwen2.5:3b` keywords/translation/chapter names, batched `keywords_batch()`; vision: `qwen2.5vl:3b` `vision_check()` (watermark / text overlay / depicts) |
 | Browser bridge | `browser/` (Playwright on the user's own Chrome/Edge profile) | types prompts into ChatGPT/Claude/DeepSeek/… web UIs for script generation; no API keys |
@@ -26,7 +26,7 @@ User-facing manual: `QUICKSTART.zh.md`. Roadmap: `docs/roadmap-v0.4-plan.md`.
 | Remotion | `remotion/` | animated TitleCard / Timeline / BarChart at exact narration length; needs Node |
 | Video tools | `video/heads.py`, `video/face.py` | heads: detect (OpenCV YuNet, weights auto-downloaded to `~/.vidforge/models/`) → track/smooth → cover each face with a still **or an animated head** (`cover_video=`, oval-masked, frame-locked). face: photo → talking head, `motion` (audio-envelope puppet, no GPU) or `cmd` (`PHOTO_TALK_CMD` → SadTalker/EchoMimic/Hallo, needs a GPU). `vidforge video heads|detect|face` + `/api/video/heads/*`, `/api/video/face`. UI: the 视频 section |
 | Presenter | `me.py`, `lipsync.py`, `avatar/` | own-footage library `~/.vidforge/me/`, optional lip-sync providers |
-| Tests | `tests/` — `python -m unittest discover -s tests` (124 tests, offline; providers/TTS mocked) | e2e browser test skips without playwright |
+| Tests | `tests/` — `python -m unittest discover -s tests` (125 tests, offline; providers/TTS mocked) | e2e browser test skips without playwright |
 
 Data locations: projects `~/vidforge-projects/` (`VIDFORGE_WORKSPACE`), per-project `assets/`, `build*/`,
 `.history/`; user-wide `~/.vidforge/` (browser profile, `me/`, `categories/`, `voices/`, YouTube

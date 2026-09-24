@@ -770,8 +770,8 @@ def make_handler(state: State):
             """Give segments a first picture (or video clip) right now, not at render time.
 
             body: source (any provider the search tab offers), kind (image|video), overwrite (redo
-            segments that already have a real file too), resolve (default True: search + download so
-            the storyboard shows a real thumbnail), vision (look at each candidate), sync (tests).
+            segments that already have a real file too), min/max_per_segment (3–10 pictures each,
+            one per ~5 s of narration), workers (segments fetched in parallel), vision, sync (tests).
 
             A segment counts as needing a picture when it has no clips at all *or* only unresolved
             "provider:query" specs — earlier versions wrote those specs without downloading anything,
@@ -789,10 +789,13 @@ def make_handler(state: State):
                               "pixabay" if os.environ.get("PIXABAY_API_KEY") else "commons")
             source = body.get("source") or (default_source if kind == "video" or has_stock else "commons")
             overwrite = bool(body.get("overwrite"))
-            resolve = body.get("resolve", True)
             vision = body.get("vision", True)          # ~1 min per picture on a CPU-only machine: can be turned off
             site = (body.get("site") or "").strip()    # browser AI for the search phrases; "" = local model
             topic_fallback = body.get("topic_fallback", True)
+            # A segment holds one picture for ~5 s of narration; fewer than 3 looks like a slideshow,
+            # more than 10 nobody watches. Both ends are overridable.
+            per_min, per_max = max(1, int(body.get("min_per_segment", 3))), max(1, int(body.get("max_per_segment", 10)))
+            workers = max(1, min(8, int(body.get("workers", 5))))
             raw = state.read_raw()
             base = raw.get("language", "en")
             lib = Library(state.root)
@@ -828,8 +831,9 @@ def make_handler(state: State):
             log = state.autofill["lines"].append
 
             def run():
+                from concurrent.futures import ThreadPoolExecutor
                 from .. import llm
-                from ..assets import AssetError, pick_for_spec
+                from ..assets import AssetError, pick_many
                 phrases: dict[str, str] = {}
                 used_llm = False
                 title = raw.get("title", "")
@@ -874,7 +878,6 @@ def make_handler(state: State):
                 failed: list[dict] = []
                 resolved = 0
                 generic: list[str] = []
-                seen_queries: set[str] = set()
                 first_write = [True]
 
                 def flush(done_seg: dict) -> None:
@@ -899,57 +902,104 @@ def make_handler(state: State):
                     state.write_raw(cur, snapshot=first_write[0])
                     first_write[0] = False
 
-                for seg, text in pending:
-                    query = phrases.get(seg["id"]) or ""
-                    if not query:
-                        heuristic = " ".join(keywords.suggest(text, 2))
-                        if heuristic and any("一" <= ch <= "鿿" for ch in heuristic) and llm.available():
-                            try:                                   # archives answer English, not 中文
-                                heuristic = llm.translate_query(heuristic) or ""
-                            except llm.LlmError:
-                                heuristic = ""
-                        query = llm._clean_phrase(heuristic) or ""
-                    if not query and topic_pool:
-                        query = topic_pool[len(generic) % len(topic_pool)]   # rotate: not the same picture每段
-                        generic.append(seg["id"])
-                    if not query:
-                        failed.append({"id": seg["id"], "query": "(没有可搜索的关键词)"})
-                        seg["clips"] = []
+                lock = threading.Lock()
+
+                def segment_query(seg: dict, text: str) -> str:
+                    """This segment's own search phrase, or "" when the narration gives nothing."""
+                    q = phrases.get(seg["id"]) or ""
+                    if q:
+                        return q
+                    heuristic = " ".join(keywords.suggest(text, 2))
+                    if heuristic and any("一" <= ch <= "鿿" for ch in heuristic) and llm.available():
+                        try:                                       # archives answer English, not 中文
+                            heuristic = llm.translate_query(heuristic) or ""
+                        except llm.LlmError:
+                            heuristic = ""
+                    return llm._clean_phrase(heuristic) or ""
+
+                topic_words = {w.lower() for q in topic_pool for w in re.findall(r"[A-Za-z0-9]+", q) if len(w) > 2}
+
+                def on_topic(q: str) -> bool:
+                    """Does this phrase name something from the video's subject, or a year?
+
+                    A phrase that shares nothing with the topic ("Dangerous country", "Lion and the
+                    cave") still matches *something* in a big archive — a Scottish hillside, a
+                    children's story — and that picture is worse than a generic one of the actual
+                    subject. Such phrases are therefore only tried on the curated source."""
+                    words = {w.lower() for w in re.findall(r"[A-Za-z0-9]+", q)}
+                    return (not topic_words) or bool(words & topic_words) or any(w.isdigit() for w in words)
+
+                def take(seg_id: str, query: str, n: int, need: float, provs: list[str], vision_first: bool):
+                    """Files for one query, trying each provider in turn; [] if none are accurate."""
+                    for prov in provs:
+                        try:
+                            files = pick_many(state.root, lib, prov, kind, query, n, need=need, log=log,
+                                              vision_first=vision_first)
+                            log(f"{seg_id}: {prov} '{query}' -> {len(files)} 张")
+                            return files
+                        except AssetError as e:
+                            log(f"{seg_id}: {e}")
+                        except Exception as e:  # noqa: BLE001  network / provider quirks: try the next
+                            log(f"{seg_id}: {prov} 出错 {e}")
+                    return []
+
+                def do_segment(item):
+                    """Search + download one segment's pictures. Runs in a worker thread: it only
+                    touches its own segment dict; the shared Library locks inside assets."""
+                    seg, text = item
+                    if state.autofill.get("cancel"):
+                        return seg, [], None
+                    want = max(per_min, min(per_max, round(estimate_seconds(text) / 5.0))) if kind == "image" else 1
+                    need = estimate_seconds(text) if kind == "video" else 0.0
+                    files: list = []
+                    query = segment_query(seg, text)
+                    if query:
+                        provs = providers if on_topic(query) else providers[:1]
+                        files = take(seg["id"], query, want, need, provs, vision and kind == "image")
+                    # Top up to the floor with pictures of the video's own subject: on-topic and
+                    # accurate, if unspecific — better than a segment with one picture or none.
+                    if kind == "image" and len(files) < per_min and topic_pool:
+                        with lock:
+                            start_at = len(generic)
+                            if seg["id"] not in generic:
+                                generic.append(seg["id"])
+                        for k in range(len(topic_pool)):
+                            if len(files) >= max(per_min, want if not files else per_min):
+                                break
+                            extra = take(seg["id"], topic_pool[(start_at + k) % len(topic_pool)],
+                                         per_min - len(files), need, providers, False)
+                            files += [f for f in extra if f not in files]
+                    if not files:
+                        with lock:
+                            if seg["id"] in generic:
+                                generic.remove(seg["id"])
+                        return seg, [], f"{query!r} 没有合适的素材" if query else "(没有可搜索的关键词)"
+                    return seg, [state.rel(f) for f in files], None
+
+                # The whole job is network-bound, so segments are fetched in parallel; results are
+                # written as each one lands, which is what makes the storyboard fill up visibly.
+                MOTIONS = ("zoom_in", "zoom_out", "pan_right", "pan_left")
+                with ThreadPoolExecutor(max_workers=workers) as ex:
+                    for seg, rels, err in ex.map(do_segment, pending):
+                        if rels:
+                            seg["clips"] = [
+                                ({kind: r, "motion": MOTIONS[i % len(MOTIONS)]} if kind == "image" else {kind: r})
+                                for i, r in enumerate(rels)
+                            ]
+                            resolved += len(rels)
+                        else:
+                            seg["clips"] = []
+                            failed.append({"id": seg["id"], "query": err or ""})
+                        for k in ("image", "video"):
+                            seg.pop(k, None)
                         state.autofill["done"] += 1
                         flush(seg)
-                        continue
-                    # several segments often land on one query ("Qin State"); without a per-segment
-                    # slot in the pick memory they would all show the identical file
-                    repeat = query in seen_queries
-                    seen_queries.add(query)
-                    clip = {kind: f"{source}:{query}", "motion": "zoom_in"} if kind == "image" else {kind: f"{source}:{query}"}
-                    if resolve:
-                        need = estimate_seconds(text) if kind == "video" else 0.0
-                        for prov in providers:
-                            try:
-                                dest = pick_for_spec(state.root, lib, prov, kind, query, need=need,
-                                                     strict=True, log=log, vision=vision,
-                                                     unique_key=seg["id"] if (repeat or seg["id"] in generic) else None)
-                                clip[kind] = f"{prov}:{query}"
-                                resolved += 1
-                                log(f"{seg['id']}: {prov} '{query}' -> {dest.name}")
-                                break
-                            except AssetError as e:
-                                log(f"{seg['id']}: {e}")
-                            except Exception as e:  # noqa: BLE001  (network, provider quirks) — keep going
-                                log(f"{seg['id']}: {prov} 出错 {e}")
-                        else:
-                            failed.append({"id": seg["id"], "query": query})
-                            clip = None                      # nothing accurate: leave the slot empty, no spec either
-                    seg["clips"] = [clip] if clip else []
-                    for k in ("image", "video"):
-                        seg.pop(k, None)
-                    state.autofill["done"] += 1
-                    flush(seg)
-                    if state.autofill.get("cancel"):
-                        log("已停止。已经配好的段落都保留了。")
-                        break
+                        if state.autofill.get("cancel"):
+                            log("已停止。已经配好的段落都保留了。")
+                            break
+
                 state.autofill["result"] = {"filled": state.autofill["done"], "resolved": resolved, "failed": failed,
+                                            "segments_with_pictures": state.autofill["done"] - len(failed),
                                             "source": source, "kind": kind, "llm": used_llm, "site": site,
                                             "generic": generic, "topic_pool": topic_pool,
                                             "vision": llm.vision_model() if vision else None}
