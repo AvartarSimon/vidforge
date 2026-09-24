@@ -16,180 +16,466 @@
   "thumbnail_text": "THE YEAR\nWITHOUT A SUMMER",
   "segments": [
     {
-      "id": "hook",
-      "text": "In 1815, a volcano on the far side of the world took away Europe's entire summer. This is the story of the year without a summer.",
-      "pause_after": 0.6,
-      "text_zh": "一八一五年，地球另一端的一座火山，让整个欧洲失去了夏天。这就是“没有夏天的一年”的故事。",
+      "id": "seg1",
+      "text": "What if summer simply stopped coming? Imagine June arriving, but instead of sunshine, snow begins to fall. Imagine farmers watching their crops freeze, while people put on winter coats in the middle of the year. This sounds impossible, but in eighteen sixteen, something remarkably close to it happened.",
       "clips": [
         {
-          "image": "assets/commons/pangu-3128968.jpg",
+          "image": "assets/commons/djupvasshytta-snow-june-19919931.jpg",
           "motion": "zoom_in",
-          "credit": "Wang Qi — Public domain — https://commons.wikimedia.org/wiki/File:Pangu.jpg"
+          "credit": "Younger — CC BY-SA 3.0 — https://commons.wikimedia.org/wiki/File:Djupvasshytta_snow_june.jpg"
         },
         {
-          "image": "assets/commons/20250122-158568137.jpg",
+          "image": "assets/commons/dalsnibba-lake-left-june-2010-147896164.jpg",
           "motion": "zoom_in",
-          "credit": "阿道 — CC BY-SA 4.0 — https://commons.wikimedia.org/wiki/File:%E4%B8%89%E9%87%8D%E5%85%88%E5%97%87%E5%AE%AE%E7%9B%A4%E5%8F%A4%E5%A4%A7%E5%B8%9D_20250122.jpg"
-        }
-      ]
-    },
-    {
-      "id": "eruption",
-      "text": "Mount Tambora, on the island of Sumbawa, erupted with a force ten times greater than Krakatoa. It threw so much ash into the stratosphere that sunlight itself dimmed.",
-      "pause_after": 0.6,
-      "text_zh": "松巴哇岛上的坦博拉火山爆发，威力是喀拉喀托火山的十倍。它把大量火山灰抛入平流层，连阳光都黯淡了。",
-      "clips": [
-        {
-          "image": "assets/02_eruption.jpg",
-          "motion": "pan_right"
+          "credit": "JopkeB — CC BY-SA 4.0 — https://commons.wikimedia.org/wiki/File:Dalsnibba_lake_(left)_June_2010.jpg"
         },
         {
-          "image": "assets/commons/eth-bib-rar-5880-karte-der-insel-sumbawa-154249356.jpg",
+          "image": "assets/commons/frozen-snow-touching-a-blue-cloudy-sky-u-62220009.jpg",
           "motion": "zoom_in",
-          "credit": "Rudolf Leuzinger / Jakob Melchior Ziegler — Public domain — https://commons.wikimedia.org/wiki/File:ETH-Bib_RAR_5880_Karte_der_Insel_Sumbawa_und_Tambora_1855.jpg"
+          "credit": "Daniela Cuevas danielacuevas — CC0 — https://commons.wikimedia.org/wiki/File:Frozen_snow_touching_a_blue_cloudy_sky_(Unsplash).jpg"
+        },
+        {
+          "image": "assets/commons/houses-by-frozen-lake-monona-6992043.jpg",
+          "motion": "zoom_in",
+          "credit": "DrStarbuck from Madison, WI, USA — CC BY 2.0 — https://commons.wikimedia.org/wiki/File:Houses_by_frozen_Lake_Monona.jpg"
+        },
+        {
+          "image": "assets/commons/frozen-lake-shinko-la-lahaul-jun24-a7cr--149397817.jpg",
+          "motion": "zoom_in",
+          "credit": "This Photo was taken by Timothy A. Gonsalves.  Feel free to use my photos, but please mention me as the author.  I would much appreciate if you send me an email tagooty@yahoo.com or write on my talk page, for my information.  Please contact me before commercial use.\n\n\n\nPlease do not upload an edited image here without consulting me.  I would like to make corrections only at my own source to ensure that the changes improve the image and are preserved.Otherwise you may upload an edited image with a new name. Please use one of the templates derivative or extract. — CC BY-SA 4.0 — https://commons.wikimedia.org/wiki/File:Frozen_Lake_Shinko_La_Lahaul_Jun24_A7CR_00315.jpg"
+        },
+        {
+          "image": "assets/commons/frozen-ice-49794801.jpg",
+          "motion": "zoom_in",
+          "credit": "Navneet kaur saini — CC BY-SA 4.0 — https://commons.wikimedia.org/wiki/File:Frozen_ice.jpg"
         }
-      ]
+      ],
+      "label": "The Summer That Disappeared",
+      "visual_hint": "June snow, frozen farmland, nineteenth century village",
+      "overlays": []
     },
     {
-      "id": "timeline",
-      "label": "From eruption to famine",
-      "text": "April 1815, the eruption. June 1816, snow in New England. July, the harvest fails across France. By 1817, bread riots.",
-      "text_zh": "一八一五年四月，火山喷发。一八一六年六月，新英格兰下雪。七月，法国粮食绝收。到一八一七年，面包暴动。",
-      "label_zh": "从喷发到饥荒",
+      "id": "seg2",
+      "text": "Eighteen sixteen became known as the Year Without a Summer. Parts of North America and Europe experienced an unusually cold, wet, and gloomy summer, with frost and snow damaging crops. It was not literally winter everywhere, but in some regions, normal summer weather seemed to disappear. ([Smithsonian Institution][1])",
       "clips": [
         {
-          "remotion": {
-            "composition": "Timeline",
-            "props": {
-              "title": {
-                "en": "From eruption to famine",
-                "zh": "从喷发到饥荒"
-              },
-              "events": [
-                {
-                  "date": {
-                    "en": "Apr 1815",
-                    "zh": "1815年4月"
-                  },
-                  "text": {
-                    "en": "Tambora erupts",
-                    "zh": "坦博拉喷发"
-                  }
-                },
-                {
-                  "date": {
-                    "en": "Jun 1816",
-                    "zh": "1816年6月"
-                  },
-                  "text": {
-                    "en": "Snow in New England",
-                    "zh": "新英格兰下雪"
-                  }
-                },
-                {
-                  "date": {
-                    "en": "Jul 1816",
-                    "zh": "1816年7月"
-                  },
-                  "text": {
-                    "en": "Harvest fails in France",
-                    "zh": "法国绝收"
-                  }
-                },
-                {
-                  "date": {
-                    "en": "1817",
-                    "zh": "1817年"
-                  },
-                  "text": {
-                    "en": "Bread riots",
-                    "zh": "面包暴动"
-                  }
-                }
-              ]
-            }
-          }
+          "image": "assets/commons/frankford-creek-and-vicinity-winter-9101-41584198.jpg",
+          "motion": "zoom_in",
+          "credit": "Library Company of Philadelphia — No restrictions — https://commons.wikimedia.org/wiki/File:Frankford_Creek_and_Vicinity,_Winter_(9101202385).jpg"
+        },
+        {
+          "image": "assets/commons/eastern-portal-oblique-perspective-looki-34283295.org&utm_campaign=imageinfo&utm_content=thumbnail",
+          "motion": "zoom_in",
+          "credit": "Lowe, Jet\nRelated names:\n\nTown, Ithiel\nSnow, J P\nMarston, Christopher, project manager\nChristianson, Justine, transmitter\nSpivey, Justin, consultant\nFederal Highway Administration, sponsor — Public domain — https://commons.wikimedia.org/wiki/File:EASTERN_PORTAL,_OBLIQUE_PERSPECTIVE_LOOKING_NORTH_NORTHWEST._-_Contoocook_Railroad_Bridge,_Spanning_Contoocook_River_at_former_Boston_and_Maine_Railroad_(originally_Concord_and_Claremont_HAER_NH-38-3.tif"
+        },
+        {
+          "image": "assets/commons/eastern-portal-view-i-beam-to-be-used-in-34283298.org&utm_campaign=imageinfo&utm_content=thumbnail",
+          "motion": "zoom_in",
+          "credit": "Lowe, Jet\nRelated names:\n\nTown, Ithiel\nSnow, J P\nMarston, Christopher, project manager\nChristianson, Justine, transmitter\nSpivey, Justin, consultant\nFederal Highway Administration, sponsor — Public domain — https://commons.wikimedia.org/wiki/File:EASTERN_PORTAL_VIEW,_I-BEAM_TO_BE_USED_IN_REPAIRS_OF_THE_BRIDGE._-_Contoocook_Railroad_Bridge,_Spanning_Contoocook_River_at_former_Boston_and_Maine_Railroad_(originally_Concord_and_HAER_NH-38-4.tif"
         }
-      ]
+      ],
+      "label": "The Year Without a Summer",
+      "visual_hint": "snow covered fields, nineteenth century farmers, summer snowfall"
     },
     {
-      "id": "europe",
-      "text": "By the following June, snow was falling in New England and crops were failing across France and Germany. Bread riots followed. Nobody yet understood why.",
-      "pause_after": 0.6,
-      "text_zh": "第二年六月，新英格兰在下雪，法国和德国的庄稼纷纷绝收。随之而来的是面包暴动。没有人知道为什么。",
+      "id": "seg3",
+      "text": "The strange summer did not begin in America or Europe. The story started thousands of kilometres away, on Sumbawa Island in Indonesia. There stood Mount Tambora, a huge volcano that was about to produce one of the most powerful eruptions in recorded history.",
       "clips": [
         {
-          "image": "assets/03_europe.jpg",
-          "motion": "zoom_out"
+          "image": "assets/commons/1815-tambora-explosion-1266774.png",
+          "motion": "zoom_in",
+          "credit": "myself — CC BY-SA 3.0 — https://commons.wikimedia.org/wiki/File:1815_tambora_explosion.png"
+        },
+        {
+          "image": "assets/commons/mount-tambora-relief-map-srtm-1-47424472.jpg",
+          "motion": "zoom_in",
+          "credit": "Batholith — Public domain — https://commons.wikimedia.org/wiki/File:Mount_Tambora_Relief_Map,_SRTM-1.jpg"
+        },
+        {
+          "image": "assets/commons/iss059-e-61824-view-of-indonesia-104151822.jpg",
+          "motion": "zoom_in",
+          "credit": "Earth Science and Remote Sensing Unit, NASA Johnson Space Center — Public domain — https://commons.wikimedia.org/wiki/File:ISS059-E-61824_-_View_of_Indonesia.jpg"
+        },
+        {
+          "image": "assets/commons/iss065-e-1476-view-of-indonesia-119667819.jpg",
+          "motion": "zoom_in",
+          "credit": "Earth Science and Remote Sensing Unit, Lyndon B. Johnson Space Center — Public domain — https://commons.wikimedia.org/wiki/File:ISS065-E-1476_-_View_of_Indonesia.jpg"
+        },
+        {
+          "image": "assets/commons/iss020-e-6562-view-of-indonesia-111151367.jpg",
+          "motion": "zoom_in",
+          "credit": "Earth Science and Remote Sensing Unit, Lyndon B. Johnson Space Center — Public domain — https://commons.wikimedia.org/wiki/File:ISS020-E-6562_-_View_of_Indonesia.jpg"
+        },
+        {
+          "image": "assets/commons/iss059-e-61825-view-of-indonesia-104151875.jpg",
+          "motion": "zoom_in",
+          "credit": "Earth Science and Remote Sensing Unit, NASA Johnson Space Center — Public domain — https://commons.wikimedia.org/wiki/File:ISS059-E-61825_-_View_of_Indonesia.jpg"
         }
-      ]
+      ],
+      "label": "The Disaster Started Far Away",
+      "visual_hint": "Indonesia map, Mount Tambora, tropical volcano"
     },
     {
-      "id": "legacy",
-      "text": "Out of that cold, wet summer came Frankenstein, written by Mary Shelley while trapped indoors by the rain. One eruption, one lost harvest, one monster that never died.",
-      "pause_after": 0.6,
-      "text_zh": "在那个又冷又湿的夏天，玛丽·雪莱被雨困在屋里，写出了《弗兰肯斯坦》。一次喷发，一季绝收，一个不死的怪物。",
+      "id": "seg4",
+      "text": "In April eighteen fifteen, Tambora began a catastrophic eruption. The major explosions peaked around April tenth and eleventh, sending enormous amounts of volcanic material high into the atmosphere. The eruption devastated communities around the mountain, while the climate effects would travel much farther. ([USGS][2])",
       "clips": [
         {
-          "image": "assets/04_legacy.jpg",
-          "motion": "pan_left"
+          "image": "assets/commons/lahar-footprints-in-mt-pinatubo-91749928.jpg",
+          "motion": "zoom_in",
+          "credit": "Chancharanchan — CC BY-SA 4.0 — https://commons.wikimedia.org/wiki/File:Lahar_Footprints_in_Mt._Pinatubo.jpg"
+        },
+        {
+          "image": "assets/commons/footprints-in-the-lahar-of-mt-pinatubo-91749925.jpg",
+          "motion": "zoom_in",
+          "credit": "Chancharanchan — CC BY-SA 4.0 — https://commons.wikimedia.org/wiki/File:Footprints_in_the_Lahar_of_Mt._Pinatubo.jpg"
+        },
+        {
+          "image": "assets/archive/the-2023-grindavik-iceland-volcanic-erup-the-2023-grindavik-iceland-volcanic-erup.png",
+          "motion": "zoom_in",
+          "credit": "Humanity — CC BY-SA 4.0 — https://archive.org/details/the-2023-grindavik-iceland-volcanic-eruption-taken-by-halldor-bjornsson-2023-endlos"
+        },
+        {
+          "image": "assets/baidu/hawaii-s-volcanic-eruption-draws-scienti-1bc39d3de2bf.jpg",
+          "motion": "zoom_in",
+          "credit": "news.wbfo.org — 版权未知（百度网页图片，使用前请到来源页确认） — http://news.wbfo.org/post/hawaiis-volcanic-eruption-draws-scientific-interest"
+        },
+        {
+          "image": "assets/baidu/4449116035-0931e954fbc8.jpg",
+          "motion": "zoom_in",
+          "credit": "huaban.com — 版权未知（百度网页图片，使用前请到来源页确认） — http://huaban.com/pins/5387146899/"
+        },
+        {
+          "image": "assets/baidu/the-active-stratovolcano-of-mount-mayon-948e87e4212d.jpg",
+          "motion": "zoom_in",
+          "credit": "charismaticplanet.com — 版权未知（百度网页图片，使用前请到来源页确认） — http://charismaticplanet.com/stratovolcano-of-mount-mayon/"
         }
-      ]
+      ],
+      "label": "April Eighteen Fifteen",
+      "visual_hint": "volcanic eruption, giant ash cloud, Mount Tambora"
     },
     {
-      "id": "vei",
-      "label": "How big was it",
-      "text": "On the Volcanic Explosivity Index, Tambora scores a seven. Krakatoa, the eruption everyone remembers, only a six.",
-      "text_zh": "在火山爆发指数上，坦博拉是七级。而人人都记得的喀拉喀托，只有六级。",
-      "label_zh": "它有多大",
+      "id": "seg5",
+      "text": "The most important material was not the ash falling onto the ground. It was sulfur dioxide that reached the upper atmosphere. There, chemical reactions produced tiny sulfate aerosols that spread through the atmosphere and reduced the amount of sunlight reaching Earth's surface. ([Smithsonian Magazine][3])",
       "clips": [
         {
-          "remotion": {
-            "composition": "BarChart",
-            "props": {
-              "title": {
-                "en": "Volcanic Explosivity Index",
-                "zh": "火山爆发指数"
-              },
-              "max": 8,
-              "items": [
-                {
-                  "label": {
-                    "en": "Tambora 1815",
-                    "zh": "坦博拉 1815"
-                  },
-                  "value": 7
-                },
-                {
-                  "label": {
-                    "en": "Krakatoa 1883",
-                    "zh": "喀拉喀托 1883"
-                  },
-                  "value": 6
-                },
-                {
-                  "label": {
-                    "en": "Pinatubo 1991",
-                    "zh": "皮纳图博 1991"
-                  },
-                  "value": 6
-                },
-                {
-                  "label": {
-                    "en": "St. Helens 1980",
-                    "zh": "圣海伦斯 1980"
-                  },
-                  "value": 5
-                }
-              ],
-              "source": {
-                "en": "Source: Global Volcanism Program",
-                "zh": "来源：全球火山活动项目"
-              }
-            }
-          }
+          "image": "assets/openverse/noaa-shares-first-infrared-imagery-from--6e3825b4-8520-4b.jpg",
+          "motion": "zoom_in",
+          "credit": "NOAASatellites — Public Domain Mark 1.0 — https://www.flickr.com/photos/125201706@N06/43904870711"
+        },
+        {
+          "video": "assets/archive/fixed-view-of-hurricane-jeanne-s-progres-flickr-7142186675.mp4",
+          "in": 0,
+          "out": 4.01,
+          "credit": "NASA Goddard Space Flight Center — CC BY 2.0 — https://archive.org/details/Flickr-7142186675"
+        },
+        {
+          "image": "assets/baidu/sw-7402edc36817.jpg",
+          "motion": "zoom_in",
+          "credit": "huaban.com — 版权未知（百度网页图片，使用前请到来源页确认） — http://huaban.com/pins/5820355879"
+        },
+        {
+          "video": "assets/archive/fixed-view-of-hurricane-jeanne-s-progres-flickr-7142186675.mp4",
+          "in": 0,
+          "out": 4.01,
+          "credit": "NASA Goddard Space Flight Center — CC BY 2.0 — https://archive.org/details/Flickr-7142186675"
         }
-      ]
+      ],
+      "label": "The Invisible Cloud",
+      "visual_hint": "volcanic aerosols, atmosphere animation, sunlight"
+    },
+    {
+      "id": "seg6",
+      "text": "The effects became especially obvious in eighteen sixteen. In parts of New England, snow fell during June, and repeated frosts damaged crops during what should have been the growing season. Across parts of Europe, heavy rain and cold weather also contributed to poor harvests and food shortages. ([Smithsonian Magazine][4])",
+      "clips": [
+        {
+          "image": "assets/commons/d-lmen-wildpark-teich-2026-0080-182669717.jpg",
+          "motion": "zoom_in",
+          "credit": "Dietmar Rabich — CC BY-SA 4.0 — https://commons.wikimedia.org/wiki/File:D%C3%BClmen,_Wildpark,_Teich_--_2026_--_0080.jpg"
+        },
+        {
+          "image": "assets/baidu/in-rural-new-england-with-farm-buildings-f62269df1d81.jpg",
+          "motion": "zoom_in",
+          "credit": "www.ebay.com.hk — 版权未知（百度网页图片，使用前请到来源页确认） — http://www.ebay.com.hk/itm/Covered-Bridge-Winter-Snow-New-England-Stretched-20X24-Oil-On-Canvas-Painting-/231247479387?pt=Art_Paintings&hash=item35d76c825b"
+        },
+        {
+          "image": "assets/baidu/snow-covered-and-frozen-farm-fields-b8066ecaa456.jpg",
+          "motion": "zoom_in",
+          "credit": "www.vjshi.com — 版权未知（百度网页图片，使用前请到来源页确认） — http://www.vjshi.com/watch/40152542.html"
+        },
+        {
+          "image": "assets/baidu/frozencountrysidefieldsnearforestwithfre-63260c81e2f1.jpg",
+          "motion": "zoom_in",
+          "credit": "www.hellorf.com — 版权未知（百度网页图片，使用前请到来源页确认） — http://www.hellorf.com/image/show/1181879107?statisticsType=False&term=50"
+        },
+        {
+          "image": "assets/baidu/winter-in-high-atlas-mountain-frozen-nat-abd7833b501b.jpg",
+          "motion": "zoom_in",
+          "credit": "www.hellorf.com — 版权未知（百度网页图片，使用前请到来源页确认） — http://www.hellorf.com/image/show/2477443477?statisticsType=False"
+        },
+        {
+          "image": "assets/baidu/snow-barn-farm-sprout-creek-7cfbf2f6fd6c.jpg",
+          "motion": "zoom_in",
+          "credit": "www.upstater.com — 版权未知（百度网页图片，使用前请到来源页确认） — http://www.upstater.com/big-gay-hudson-valleys-first-ever-baby-goat-weekend-sprout-creek-farm/"
+        },
+        {
+          "image": "assets/baidu/frozen-warmth-by-wildwoodfarm-photo-weat-6ffab5c068bb.jpg",
+          "motion": "zoom_in",
+          "credit": "www.wunderground.com — 版权未知（百度网页图片，使用前请到来源页确认） — http://www.wunderground.com/wximage/wildwoodfarm/176"
+        },
+        {
+          "image": "assets/baidu/custom-frozen-temperature-7aeab00ae9a3.jpg",
+          "motion": "zoom_in",
+          "credit": "news.sohu.com — 版权未知（百度网页图片，使用前请到来源页确认） — http://news.sohu.com/a/962916723_649240"
+        },
+        {
+          "image": "assets/baidu/wukong-financial-868f99809291.jpg",
+          "motion": "zoom_in",
+          "credit": "ec2-18-214-124-153.compute-1.amazonaws.com — 版权未知（百度网页图片，使用前请到来源页确认） — http://ec2-18-214-124-153.compute-1.amazonaws.com/"
+        }
+      ],
+      "label": "When Summer Failed",
+      "visual_hint": "New England snow, frozen crops, nineteenth century farm"
+    },
+    {
+      "id": "seg7",
+      "text": "A bad summer quickly becomes more than a weather story. When crops fail, food becomes scarce, prices rise, and families struggle to afford basic supplies. In Europe and North America, the disruption affected farming, trade, migration, and everyday life, although the severity varied greatly from place to place. ([Smithsonian Magazine][5])",
+      "clips": [
+        {
+          "image": "assets/baidu/colorful-pumpkins-on-the-market-harvest--d05f59c3d593.jpg",
+          "motion": "zoom_in",
+          "credit": "www.hellorf.com — 版权未知（百度网页图片，使用前请到来源页确认） — http://www.hellorf.com/image/show/1198438510?statisticsType=False&term=50"
+        },
+        {
+          "image": "assets/commons/famine-victims-0-117287036.jpg",
+          "motion": "zoom_in",
+          "credit": "Paper Jewels — CC BY 4.0 — https://commons.wikimedia.org/wiki/File:Famine-victims_0.jpg"
+        },
+        {
+          "video": "assets/archive/city-the-part-i-citythep1939.mp4",
+          "in": 0,
+          "out": 10.3,
+          "credit": "American Documentary Films, Inc. — CC — https://archive.org/details/CityTheP1939"
+        }
+      ],
+      "label": "When Food Becomes Scarce",
+      "visual_hint": "nineteenth century food market, failed harvest, hungry families"
+    },
+    {
+      "id": "seg8",
+      "text": "There was also a strange cultural consequence. During the cold and rainy summer of eighteen sixteen, Mary Shelley, Percy Bysshe Shelley, and Lord Byron were staying near Lake Geneva in Switzerland. The gloomy weather kept them indoors, where ghost stories and conversations helped inspire Mary Shelley to develop Frankenstein. ([Smithsonian Magazine][5])",
+      "clips": [
+        {
+          "image": "assets/commons/incoming-storm-18211845.jpg",
+          "motion": "zoom_in",
+          "credit": "Daniel Mitchell — CC BY 2.0 — https://commons.wikimedia.org/wiki/File:Incoming_Storm.jpg"
+        },
+        {
+          "image": "assets/commons/geneva-lake-40047943.jpg",
+          "motion": "zoom_in",
+          "credit": "AnhMinhPHAM — CC BY-SA 3.0 — https://commons.wikimedia.org/wiki/File:Geneva_Lake.jpg"
+        },
+        {
+          "image": "assets/baidu/elle-fanning-as-mary-shelley-ba400ddca4c4.jpg",
+          "motion": "zoom_in",
+          "credit": "byronsmuse.wordpress.com — 版权未知（百度网页图片，使用前请到来源页确认） — http://byronsmuse.wordpress.com/2017/05/"
+        },
+        {
+          "video": "assets/archive/fdr-to-operation-gladio-fdr-to-operation-gladio.mp4",
+          "in": 585,
+          "out": 597,
+          "credit": "HateTheMachine — Public Domain Mark — https://archive.org/details/fdr-to-operation-gladio"
+        }
+      ],
+      "label": "A Summer That Created Frankenstein",
+      "visual_hint": "Lake Geneva storm, Mary Shelley, candlelit writing"
+    },
+    {
+      "id": "seg9",
+      "text": "Today, we understand the basic chain of events. A massive volcanic eruption injected sulfur gases into the atmosphere, those gases formed aerosols, and the aerosols altered sunlight and climate. But people in eighteen sixteen did not have satellites, climate models, or modern atmospheric science to connect the strange weather to a volcano thousands of kilometres away.",
+      "clips": [
+        {
+          "image": "assets/baidu/spaceweather-2619d7a1f532.jpg",
+          "motion": "zoom_in",
+          "credit": "mbd.baidu.com — 版权未知（百度网页图片，使用前请到来源页确认） — http://mbd.baidu.com/newspage/data/dtlandingsuper?nid=dt_4779618235606863607"
+        },
+        {
+          "image": "assets/baidu/spaceweather-811030665035.jpg",
+          "motion": "zoom_in",
+          "credit": "weibo.com — 版权未知（百度网页图片，使用前请到来源页确认） — http://weibo.com/1808449333/O6kLCEd8z"
+        },
+        {
+          "image": "assets/baidu/spaceweather-bd4e42e16e02.jpg",
+          "motion": "zoom_in",
+          "credit": "weibo.com — 版权未知（百度网页图片，使用前请到来源页确认） — http://weibo.com/1808449333/O7NR9nG7P"
+        },
+        {
+          "image": "assets/baidu/my-rig-has-taken-me-to-firefly-parties-i-dd67ca70d2b7.jpg",
+          "motion": "zoom_in",
+          "credit": "urbantimes.co — 版权未知（百度网页图片，使用前请到来源页确认） — http://urbantimes.co/2014/06/panoramas-of-stars-dancing-all-over-the-sky-will-get-you-off-your-chair/"
+        }
+      ],
+      "label": "The World Had No Explanation",
+      "visual_hint": "nineteenth century scientist, weather instruments, dark sky"
+    },
+    {
+      "id": "seg10",
+      "text": "There is an important detail behind the dramatic name. The entire planet did not suddenly become cold, and every region was not affected in the same way. The strongest documented effects were concentrated across parts of the Northern Hemisphere, especially North America and Europe. ([Smithsonian Magazine][5])",
+      "clips": [
+        {
+          "image": "assets/baidu/global-extreme-warming-ac1ffc75b47b.jpg",
+          "motion": "zoom_in",
+          "credit": "zhuanlan.zhihu.com — 版权未知（百度网页图片，使用前请到来源页确认） — http://zhuanlan.zhihu.com/p/711782271"
+        },
+        {
+          "image": "assets/commons/disturbed-tropical-forest-patch-sizes-es-181499900.jpg",
+          "motion": "zoom_in",
+          "credit": "European Space Agency — CC BY-SA 3.0 igo — https://commons.wikimedia.org/wiki/File:Disturbed_tropical_forest_patch_sizes_ESA516640.jpg"
+        },
+        {
+          "video": "assets/archive/global-carbon-dioxide-with-winds-july-20-flickr-8270769846.mp4",
+          "in": 0,
+          "out": 1,
+          "credit": "AIRS, the Atmospheric Infrared Sounder is a spaceborne instrument onboard NASA's Aqua satellite whose data are being used to improve our understanding of Earth's weather and climate. — CC BY 2.0 — https://archive.org/details/Flickr-8270769846"
+        },
+        {
+          "video": "assets/archive/global-carbon-dioxide-2002-2009-with-mau-flickr-8270737830.mp4",
+          "in": 4.9,
+          "out": 13.6,
+          "credit": "AIRS, the Atmospheric Infrared Sounder is a spaceborne instrument onboard NASA's Aqua satellite whose data are being used to improve our understanding of Earth's weather and climate. — CC BY 2.0 — https://archive.org/details/Flickr-8270737830"
+        }
+      ],
+      "label": "Not Literally a World Without Summer",
+      "visual_hint": "global climate map, Earth from space, contrasting landscapes"
+    },
+    {
+      "id": "seg11",
+      "text": "That is what makes eighteen sixteen so fascinating. One geological event in Indonesia was followed by unusual weather, crop failures, food shortages, economic pressure, and cultural changes thousands of kilometres away. The atmosphere had connected places that people at the time could barely imagine were connected.",
+      "clips": [
+        {
+          "image": "assets/commons/atmosphere-geo5-2018235-eq-89525891.jpg",
+          "motion": "zoom_in",
+          "credit": "NASA Earth Observatory images by Joshua Stevens, using GEOS data from the Global Modeling and Assimilation Office at NASA GSFC. Story by Adam Voiland. — Public domain — https://commons.wikimedia.org/wiki/File:Atmosphere_geo5_2018235_eq.jpg"
+        },
+        {
+          "image": "assets/baidu/query-78f4c2747421.jpg",
+          "motion": "zoom_in",
+          "credit": "www.zhihu.com — 版权未知（百度网页图片，使用前请到来源页确认） — http://www.zhihu.com/question/478911666/answer/1987482450495039218"
+        },
+        {
+          "image": "assets/baidu/com-science-atmospheric-circulationatmos-54f2ddd41809.jpg",
+          "motion": "zoom_in",
+          "credit": "blog.sciencenet.cn — 版权未知（百度网页图片，使用前请到来源页确认） — http://blog.sciencenet.cn/blog-107667-1346438.html"
+        },
+        {
+          "video": "assets/archive/military-bases-on-antarctica-militarybasesonantarctica720.mp4",
+          "in": 75.4,
+          "out": 89.1,
+          "credit": "elperfecto.com — Public Domain Mark — https://archive.org/details/MilitaryBasesOnAntarctica720"
+        }
+      ],
+      "label": "One Volcano, Many Consequences",
+      "visual_hint": "volcano to global map, farmers, atmospheric circulation"
+    },
+    {
+      "id": "seg12",
+      "text": "The Year Without a Summer was a dramatic demonstration of how strongly the atmosphere can influence climate. It also showed how vulnerable societies can become when a critical season suddenly stops behaving normally. The eruption ended, the aerosols gradually disappeared, and the climate eventually recovered.",
+      "clips": [
+        {
+          "video": "assets/archive/the-endless-voyage-lost-telecourse-on-oc-the-endless-voyage-01-the-water-planet.mp4",
+          "in": 80.5,
+          "out": 92.1,
+          "credit": "Intelecom — Public Domain Mark — https://archive.org/details/the-endless-voyage-01-the-water-planet"
+        },
+        {
+          "image": "assets/commons/sulfur-dioxide-from-okmok-volcano-july-2-138075152.jpg",
+          "motion": "zoom_in",
+          "credit": "Atmospheric Infrared Sounder — Public domain — https://commons.wikimedia.org/wiki/File:Sulfur_Dioxide_from_Okmok_Volcano,_July_2008_(8270041127).jpg"
+        },
+        {
+          "image": "assets/commons/sulfur-dioxide-plume-from-mt-etna-erupti-138075006.jpg",
+          "motion": "zoom_in",
+          "credit": "Atmospheric Infrared Sounder — Public domain — https://commons.wikimedia.org/wiki/File:Sulfur_Dioxide_Plume_from_Mt_Etna_Eruption_2002_(8261811561).jpg"
+        },
+        {
+          "image": "assets/commons/tracking-the-sulfur-dioxide-from-calbuco-39954638.jpg",
+          "motion": "zoom_in",
+          "credit": "NASA Earth Observatory images by Jesse Allen, using data from the the Aura science team (top) and EO-1 ALI data (bottom) provided courtesy of the NASA EO-1 team. Caption by Michael Carlowicz. \n\nInstrument(s): EO-1 - ALIAura - OMI — Public domain — https://commons.wikimedia.org/wiki/File:Tracking_the_Sulfur_Dioxide_from_Calbuco,_acquired_April_25,_2015.jpg"
+        },
+        {
+          "image": "assets/commons/aerosols-over-north-america-modis-2025-0-172341011.jpg",
+          "motion": "zoom_in",
+          "credit": "MODIS Land Rapid Response Team, NASA GSFC — Public domain — https://commons.wikimedia.org/wiki/File:Aerosols_over_North_America_(MODIS_2025-08-12).jpg"
+        },
+        {
+          "image": "assets/commons/shiveluch-volcano-nasa-450825262-97553804.jpg",
+          "motion": "zoom_in",
+          "credit": "pingnews.com — Public domain — https://commons.wikimedia.org/wiki/File:Shiveluch_Volcano_(NASA)_(450825262).jpg"
+        }
+      ],
+      "label": "What Eighteen Sixteen Tells Us",
+      "visual_hint": "Earth atmosphere, climate science, volcanic plume"
+    },
+    {
+      "id": "seg13",
+      "text": "So the story begins with a volcano, but it ends with a lesson about an interconnected planet. In eighteen sixteen, people looked at snow-covered fields and wondered where their summer had gone. The answer was thousands of kilometres away, hidden high in the atmosphere.",
+      "clips": [
+        {
+          "image": "assets/commons/the-national-parks-portfolio-1917-148026-43663414.jpg",
+          "motion": "zoom_in",
+          "credit": "Internet Archive Book Images — No restrictions — https://commons.wikimedia.org/wiki/File:The_national_parks_portfolio_(1917)_(14802661753).jpg"
+        },
+        {
+          "image": "assets/commons/the-national-parks-portfolio-1921-147691-43661454.jpg",
+          "motion": "zoom_in",
+          "credit": "Internet Archive Book Images — No restrictions — https://commons.wikimedia.org/wiki/File:The_national_parks_portfolio_(1921)_(14769114925).jpg"
+        },
+        {
+          "video": "assets/archive/sunrise-in-new-mexico-sunrise-in-new-mexico-202211.mp4",
+          "in": 0,
+          "out": 16,
+          "credit": "Peter Rimar — Public Domain Mark — https://archive.org/details/sunrise-in-new-mexico_202211"
+        }
+      ],
+      "label": "The Summer That Never Came",
+      "visual_hint": "sunrise over Earth, volcanic mountain, green fields"
+    },
+    {
+      "id": "seg14",
+      "text": "And Tambora was not the largest volcanic climate event in Earth's history. Far more enormous eruptions happened long before modern civilization existed. In the next episode, we go back tens of thousands of years to investigate one of the most extraordinary volcanic events humanity has ever survived.",
+      "clips": [
+        {
+          "image": "assets/commons/pay-n-volcanic-field-8347075230-51484430.jpg",
+          "motion": "zoom_in",
+          "credit": "NASA Goddard Space Flight Center from Greenbelt, MD, USA — Public domain — https://commons.wikimedia.org/wiki/File:Pay%C3%BAn_Volcanic_Field_(8347075230).jpg"
+        },
+        {
+          "image": "assets/commons/fogo-cape-verde-islands-7046419.jpg",
+          "motion": "zoom_in",
+          "credit": "Jesse AllenImage created using data from instrument EO-1 ALI, provided courtesy of the NASA EO-1 Team. — Public domain — https://commons.wikimedia.org/wiki/File:Fogo,_Cape_Verde_Islands.jpg"
+        },
+        {
+          "image": "assets/commons/themis-views-mars-arsia-mons-volcano-pia-196662595.org&utm_campaign=imageinfo&utm_content=thumbnail",
+          "motion": "zoom_in",
+          "credit": "NASA/JPL-Caltech/ASU — Public domain — https://commons.wikimedia.org/wiki/File:THEMIS_Views_Mars%E2%80%99_Arsia_Mons_Volcano_(PIA26557).tiff"
+        },
+        {
+          "image": "assets/commons/lassen-volcanic-national-park-6240-193432901.jpg",
+          "motion": "zoom_in",
+          "credit": "NASA image created by Jesse Allen, Earth Observatory, using data obtained from the University of Maryland’s Global Land Cover Facility. — Public domain — https://commons.wikimedia.org/wiki/File:Lassen_Volcanic_National_Park_(6240).jpg"
+        },
+        {
+          "image": "assets/commons/kohala-mountains-state-route-19-near-kaw-17824327.jpg",
+          "motion": "zoom_in",
+          "credit": "Ken Lund from Las Vegas, Nevada, USA — CC BY-SA 2.0 — https://commons.wikimedia.org/wiki/File:Kohala_Mountains,_State_Route_19,_near_Kawaihae,_Hawaii.jpg"
+        },
+        {
+          "image": "assets/commons/columnar-jointed-porphyritic-phonolite-e-191459532.jpg",
+          "motion": "zoom_in",
+          "credit": "James St. John — CC BY 4.0 — https://commons.wikimedia.org/wiki/File:Columnar-jointed_porphyritic_phonolite_(Eocene,_49_Ma;_Devils_Tower,_Wyoming,_USA)_48.jpg"
+        }
+      ],
+      "label": "Next Episode",
+      "visual_hint": "ancient Earth, massive volcano, prehistoric landscape"
     }
   ],
   "variants": {
