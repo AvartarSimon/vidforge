@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from vidforge.video.heads import Box, track
 
@@ -47,6 +48,34 @@ class Track(unittest.TestCase):
         jumps = [abs(b - a) for a, b in zip(xs, xs[1:])]
         self.assertLess(max(jumps), 25)
 
+
+
+class Mask(unittest.TestCase):
+    def test_oval_mask_is_opaque_in_the_middle_and_clear_at_the_corners(self):
+        """A talking head is a rectangle; pasted as one it reads as a sticker, so it gets an oval."""
+        from vidforge.video.heads import _oval_mask
+        m = _oval_mask((120, 120))
+        self.assertGreater(m.getpixel((60, 60)), 250)
+        self.assertLess(m.getpixel((2, 2)), 5)
+        self.assertLess(m.getpixel((117, 117)), 5)
+
+
+class Face(unittest.TestCase):
+    def test_talk_rejects_an_unknown_engine_and_missing_files(self):
+        from vidforge.video import VideoToolError, face
+        with self.assertRaises(VideoToolError):
+            face.talk(__file__, __file__, "out.mp4", provider="nope")
+        with self.assertRaises(VideoToolError):
+            face.talk("no-such-photo.png", __file__, "out.mp4")
+
+    def test_cmd_engine_explains_how_to_set_it_up_when_unconfigured(self):
+        from unittest import mock
+        from vidforge.video import VideoToolError, face
+        with mock.patch.dict("os.environ", {face.CMD_ENV: ""}):
+            self.assertFalse(face.available()["cmd"])
+            with self.assertRaises(VideoToolError) as cm:
+                face._cmd(Path(__file__), Path(__file__), Path("out.mp4"), log=lambda *_: None)
+        self.assertIn(face.CMD_ENV, str(cm.exception))
 
 if __name__ == "__main__":
     unittest.main()

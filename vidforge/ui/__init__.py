@@ -617,6 +617,8 @@ def make_handler(state: State):
                     return self.heads_detect(body)
                 if path == "/api/video/heads/cover":
                     return self.heads_cover(body)
+                if path == "/api/video/face":
+                    return self.face_talk(body)
                 if path == "/api/autofill/cancel":
                     state.autofill["cancel"] = True
                     return self._json({"cancelling": state.autofill["state"] == "running"})
@@ -1000,6 +1002,12 @@ def make_handler(state: State):
                     image = (state.root / body["image"]).resolve()
                     if not image.is_file():
                         return self._error(f"找不到遮挡图片：{body['image']}")
+            cover_video = None
+            if body.get("cover_video"):
+                try:
+                    cover_video = self._video_path(body["cover_video"])
+                except FileNotFoundError:
+                    return self._error(f"找不到遮挡视频：{body['cover_video']}")
             out = state.root / "assets" / "covered" / f"{pipeline._safe(src.stem)}-covered.mp4"
             state.heads = {"state": "running", "lines": [], "result": None, "error": None}
             log = state.heads["lines"].append
@@ -1009,9 +1017,50 @@ def make_handler(state: State):
                     r = heads.cover(src, out, image=image, scale=float(body.get("scale", 1.5)),
                                     y_offset=float(body.get("y_offset", -0.08)),
                                     every=int(body.get("every", 1)),
-                                    min_score=float(body.get("min_score", 0.85)), log=log)
+                                    min_score=float(body.get("min_score", 0.85)),
+                                    cover_video=cover_video, log=log)
                     r["path"] = state.rel(out)
                     state.heads["result"] = r
+                except (VideoToolError, ffmpeg.FfmpegError, OSError) as e:
+                    state.heads["error"] = str(e)
+                finally:
+                    state.heads["state"] = "done"
+
+            if body.get("sync"):
+                run()
+                return self._json({"started": True, **(state.heads["result"] or {"error": state.heads["error"]})})
+            threading.Thread(target=run, daemon=True).start()
+            return self._json({"started": True})
+
+        def face_talk(self, body: dict):
+            """Photo + narration -> a talking head clip, in a thread (the built-in puppet is fast,
+            an external model is not). `segment` uses that segment's rendered narration."""
+            from ..video import VideoToolError, face
+            if state.heads["state"] == "running":
+                return self._error("正在处理上一个视频")
+            try:
+                image = self._video_path(body.get("image", ""))
+            except FileNotFoundError as e:
+                return self._error(f"找不到图片：{e}")
+            audio_rel = body.get("audio") or ""
+            if body.get("segment"):
+                audio = state.build_dir(body.get("lang")) / "audio" / f"{pipeline._safe(body['segment'])}.mp3"
+                if not audio.is_file():
+                    return self._error(f"这一段还没有配音：先在第 2 步试听一次 {body['segment']}")
+            else:
+                try:
+                    audio = self._video_path(audio_rel)
+                except FileNotFoundError:
+                    return self._error(f"找不到音频：{audio_rel}")
+            out = state.root / "assets" / "heads" / f"{pipeline._safe(image.stem)}-talking.mp4"
+            state.heads = {"state": "running", "lines": [], "result": None, "error": None}
+            log = state.heads["lines"].append
+
+            def run():
+                try:
+                    r = face.talk(image, audio, out, provider=body.get("provider", "motion"),
+                                  crop=body.get("crop", True), log=log)
+                    state.heads["result"] = {"path": state.rel(Path(r)), "faces": 1, "frames": 0, "covered": 0}
                 except (VideoToolError, ffmpeg.FfmpegError, OSError) as e:
                     state.heads["error"] = str(e)
                 finally:

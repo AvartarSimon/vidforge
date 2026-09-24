@@ -15,6 +15,7 @@ import {
   Typography,
 } from '@mui/material'
 import { apiGet, apiPost } from '../../api/client'
+import { useProject } from '../../state/ProjectContext'
 import { fileUrl } from '../../utils'
 
 type MeItem = { name: string; tags?: string[]; talking?: boolean; duration?: number; uses?: number }
@@ -28,10 +29,15 @@ type HeadsJob = {
 // Everything that takes a finished clip and gives a clip back lives here, so video work does not
 // have to be done segment by segment inside the 5-step wizard.
 export function VideoSection() {
+  const { raw } = useProject()
   const [items, setItems] = useState<MeItem[]>([])
   const [folder, setFolder] = useState('')
   const [video, setVideo] = useState('')
   const [image, setImage] = useState('')
+  const [coverVideo, setCoverVideo] = useState('')
+  const [photo, setPhoto] = useState('')
+  const [segment, setSegment] = useState('')
+  const [provider, setProvider] = useState<'motion' | 'cmd'>('motion')
   const [scale, setScale] = useState(1.5)
   const [yOffset, setYOffset] = useState(-0.08)
   const [every, setEvery] = useState(1)
@@ -60,7 +66,14 @@ export function VideoSection() {
         const j = await apiPost<{ path: string }>('/api/video/heads/detect', { video, at })
         setDetectPng(`${fileUrl(j.path)}?t=${Date.now()}`)
       } else {
-        await apiPost('/api/video/heads/cover', { video, image: image || null, scale, y_offset: yOffset, every })
+        await apiPost('/api/video/heads/cover', {
+          video,
+          image: coverVideo ? null : image || null,
+          cover_video: coverVideo || null,
+          scale,
+          y_offset: yOffset,
+          every,
+        })
         let s: HeadsJob
         do {
           await new Promise((r) => setTimeout(r, 1500))
@@ -74,7 +87,27 @@ export function VideoSection() {
     setBusy(false)
   }
 
+  // photo + this segment's narration -> a head that talks, ready to paste onto tracked heads
+  const makeHead = async () => {
+    setError(null)
+    setBusy(true)
+    try {
+      await apiPost('/api/video/face', { image: photo, segment: segment || null, provider })
+      let s: HeadsJob
+      do {
+        await new Promise((r) => setTimeout(r, 1500))
+        s = await apiGet<HeadsJob>('/api/video/heads')
+        setJob(s)
+      } while (s.state === 'running')
+      if (s.result?.path) setCoverVideo(s.result.path)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+    setBusy(false)
+  }
+
   const videos = items.map((i) => i.name)
+  const segments = raw?.segments || []
 
   return (
     <Stack spacing={2}>
@@ -119,14 +152,26 @@ export function VideoSection() {
               />
             </Stack>
 
-            <TextField
-              size="small"
-              label="遮挡图片（留空 = 半透明圆形）"
-              value={image}
-              onChange={(e) => setImage(e.target.value)}
-              placeholder="assets/avatar.png"
-              sx={{ maxWidth: 480 }}
-            />
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <TextField
+                size="small"
+                label="遮挡图片（留空 = 半透明圆形）"
+                value={image}
+                onChange={(e) => setImage(e.target.value)}
+                placeholder="assets/avatar.png"
+                disabled={!!coverVideo}
+                sx={{ minWidth: 320 }}
+              />
+              <TextField
+                size="small"
+                label="或：会说话的头（换头，优先于图片）"
+                value={coverVideo}
+                onChange={(e) => setCoverVideo(e.target.value)}
+                placeholder="assets/heads/xxx-talking.mp4"
+                sx={{ minWidth: 340 }}
+                helperText="用下面「照片变成会说话的头」生成，身体动作还是你自己的"
+              />
+            </Stack>
 
             <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap>
               <Box sx={{ width: 200 }}>
@@ -189,6 +234,54 @@ export function VideoSection() {
                 <Box component="video" src={fileUrl(job.result.path) || undefined} controls sx={{ maxWidth: '100%', borderRadius: 1 }} />
               </Box>
             )}
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card variant="outlined">
+        <CardContent>
+          <Typography variant="subtitle1" gutterBottom>
+            🗣 照片变成会说话的头
+          </Typography>
+          <Typography variant="body2" color="text.secondary" gutterBottom>
+            一张正面照 + 某一段的旁白 → 一段会开口、会点头眨眼的头部视频。生成后会自动填进上面的「换头」框，
+            再对你自己的镜头跑一次遮挡，就得到「身体动作是我的、脸不是我的」的画面。
+            <br />
+            <b>内置「动态」引擎</b>不需要显卡：按语音的响度驱动嘴和头，对的是说话节奏而不是每个音节。
+            <b>开源模型</b>（SadTalker / EchoMimic / Hallo）能真正对上音节，但要 NVIDIA 显卡，装好后把命令写进环境变量{' '}
+            <code>PHOTO_TALK_CMD</code>（占位符 {'{image} {audio} {out} {outdir}'}）。
+          </Typography>
+          <Stack spacing={1.5} sx={{ mt: 1 }}>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <TextField
+                size="small"
+                label="照片（项目内路径）"
+                value={photo}
+                onChange={(e) => setPhoto(e.target.value)}
+                placeholder="assets/local/me.jpg"
+                sx={{ minWidth: 300 }}
+                helperText="会自动裁成头部特写"
+              />
+              <Select size="small" value={segment} displayEmpty onChange={(e) => setSegment(e.target.value)} sx={{ minWidth: 220 }}>
+                <MenuItem value="">用哪一段的旁白…</MenuItem>
+                {segments.map((sg) => (
+                  <MenuItem key={sg.id} value={sg.id}>
+                    {sg.id}
+                  </MenuItem>
+                ))}
+              </Select>
+              <Select size="small" value={provider} onChange={(e) => setProvider(e.target.value as 'motion' | 'cmd')} sx={{ minWidth: 200 }}>
+                <MenuItem value="motion">动态（内置，无需显卡）</MenuItem>
+                <MenuItem value="cmd">开源模型（PHOTO_TALK_CMD）</MenuItem>
+              </Select>
+              <Button size="small" variant="contained" onClick={makeHead} disabled={!photo || !segment || busy}>
+                生成会说话的头
+              </Button>
+            </Stack>
+            <Typography variant="caption" color="text.secondary">
+              这一段要先在第 2 步试听过（需要已经生成的配音文件）。用真人照片做的说话头属于合成内容，
+              发布时按平台要求声明。
+            </Typography>
           </Stack>
         </CardContent>
       </Card>

@@ -141,9 +141,23 @@ vidforge i18n import my-video --lang zh
 
 五步向导之外，左侧栏下半部分是按**素材种类**分的三个区，随时可进：
 
-- **视频**：① 用头像盖住视频里的人脸——逐帧检测并跟踪人脸，把你给的 PNG（卡通头、logo）贴上去跟着头动；不给图片就用半透明圆形。先点「先看检测结果」确认框对不对，再生成。② 我的镜头库一览。
-  命令行同样可用：`vidforge video detect take.mp4 --at 2` / `vidforge video heads take.mp4 --image avatar.png -o out.mp4`。
+- **视频**：
+  ① **用头像盖住人脸**——逐帧检测并跟踪人脸，把你给的 PNG（卡通头、logo）贴上去跟着头动；不给图片就用半透明圆形。先点「先看检测结果」确认框对不对，再生成。
+  ② **照片变成会说话的头**——一张正面照 + 某一段的旁白 → 会开口、点头、眨眼的头部视频。两个引擎：
+     **动态**（内置，不需要显卡）按语音响度驱动嘴和头，对的是说话节奏不是音节；
+     **开源模型**（SadTalker / EchoMimic / Hallo，需 NVIDIA 显卡）真正对口型——装好后把命令写进环境变量 `PHOTO_TALK_CMD`，占位符 `{image} {audio} {out} {outdir}`。
+     两者都只动头和肩膀，不会产生肢体动作。
+  ③ **换头**：把 ② 生成的头填进 ① 的「会说话的头」框，对自己录的镜头跑一次——**身体、手势、节奏都还是你自己的，只有脸被换掉**，而且因为用的是同一段旁白，嘴和声音是对上的。
+  ④ 我的镜头库一览。
+  命令行同样可用：
+  ```powershell
+  vidforge video detect take.mp4 --at 2                       # 看检测到哪些脸
+  vidforge video heads take.mp4 --image avatar.png -o out.mp4 # 贴静态头像
+  vidforge video face me.jpg --audio build/audio/seg1.mp3 -o head.mp4   # 照片说话
+  vidforge video heads take.mp4 --cover-video head.mp4 -o out.mp4       # 换头
+  ```
   首次使用会自动装 `opencv-python`（约 40 MB）并下载人脸检测模型 YuNet（约 230 KB）。
+  ⚠️ 用真人照片做的说话头属于**合成内容**，YouTube 要勾 synthetic 声明、国内平台要打 AI 标；纯遮挡（卡通头/圆形）不触发这条。
 - **声音**：列出 Edge / VoxCPM2 / ElevenLabs 下所有可用声音，试听、一键设为本项目声音；VoxCPM2 的声音说明它是「描述 + 种子」两个值，怎么搬机器。
 - **图片**：这个项目下载过的全部素材，带授权、作者、出处链接、视觉核对警告，以及被哪些段落用到；可筛「没被用到」和「有水印警告」。
 

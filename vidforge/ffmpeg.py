@@ -81,6 +81,19 @@ def duration(path: str | Path) -> float:
     return float(json.loads(proc.stdout)["format"]["duration"])
 
 
+def video_size(path: str | Path) -> tuple[int, int]:
+    """(width, height) of a file's first video stream, via ffprobe."""
+    cmd = [find_binary("ffprobe"), "-v", "error", "-select_streams", "v:0",
+           "-show_entries", "stream=width,height", "-of", "json", str(path)]
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if proc.returncode != 0:
+        raise FfmpegError(f"ffprobe failed on {path}:\n{proc.stderr.strip()}")
+    streams = json.loads(proc.stdout).get("streams") or []
+    if not streams:
+        raise FfmpegError(f"no video stream in {path}")
+    return int(streams[0]["width"]), int(streams[0]["height"])
+
+
 def filter_path(path: str | Path) -> str:
     """Escape a filesystem path for use inside an ffmpeg filter option (e.g. subtitles=)."""
     p = str(Path(path).resolve()).replace("\\", "/")

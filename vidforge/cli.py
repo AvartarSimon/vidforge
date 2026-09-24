@@ -164,11 +164,20 @@ def cmd_me(args: argparse.Namespace) -> int:
 
 def cmd_video(args: argparse.Namespace) -> int:
     """Tools that take a clip and give a clip back, independent of any project.
-    `heads`: cover every face with a picture (or a blurred disc) that follows it."""
+    `heads` covers every face with a picture (or an animated head) that follows it; `face` turns a
+    photo into a head that talks along with an audio file."""
     from .video import heads
     src = Path(args.input).resolve()
     if not src.is_file():
         raise SystemExit(f"找不到视频：{src}")
+    if args.action == "face":
+        from .video import face
+        if not args.audio:
+            raise SystemExit("`vidforge video face <图片> --audio <音频> [-o head.mp4]`")
+        out = Path(args.out) if args.out else src.with_name(src.stem + "_talking.mp4")
+        r = face.talk(src, Path(args.audio).resolve(), out, provider=args.provider, crop=not args.no_crop)
+        print(f"完成：{r}")
+        return 0
     if args.action == "detect":
         out = Path(args.out) if args.out else src.with_name(src.stem + "_faces.png")
         heads.preview_frame(src, out, at=args.at)
@@ -178,7 +187,8 @@ def cmd_video(args: argparse.Namespace) -> int:
     image = Path(args.image).resolve() if args.image else None
     if image and not image.is_file():
         raise SystemExit(f"找不到遮挡图片：{image}")
-    r = heads.cover(src, out, image=image, scale=args.scale, y_offset=args.y_offset, every=args.every)
+    r = heads.cover(src, out, image=image, scale=args.scale, y_offset=args.y_offset, every=args.every,
+                    cover_video=Path(args.cover_video).resolve() if args.cover_video else None)
     print(f"完成：{r['out']}（{r['faces']} 张脸，{r['covered']}/{r['frames']} 帧）")
     return 0
 
@@ -400,15 +410,22 @@ def main(argv: list[str] | None = None) -> int:
     s.set_defaults(fn=cmd_me)
 
     s = sub.add_parser("video", help="clip tools: 'heads' covers every face with a picture that follows it")
-    s.add_argument("action", choices=["heads", "detect"],
-                   help="heads: render the covered clip · detect: one frame showing what was found")
-    s.add_argument("input", help="the video file")
+    s.add_argument("action", choices=["heads", "detect", "face"],
+                   help="heads: render the covered clip · detect: one frame showing what was found · "
+                        "face: animate a photo to talk along with an audio file")
+    s.add_argument("input", help="the video file (or, for `face`, the photo)")
     s.add_argument("-o", "--out", help="output file (default: alongside the input)")
     s.add_argument("--image", help="picture to paste over each face (PNG with transparency is best); omit for a blurred disc")
     s.add_argument("--scale", type=float, default=1.5, help="cover size as a multiple of the face box (default 1.5)")
     s.add_argument("--y-offset", dest="y_offset", type=float, default=-0.08, help="move the cover up by this fraction of its size")
     s.add_argument("--every", type=int, default=1, help="detect every Nth frame (2-3 is much faster on long clips)")
     s.add_argument("--at", type=float, default=0.0, help="detect: which second to look at")
+    s.add_argument("--cover-video", dest="cover_video",
+                   help="heads: an animated head to paste instead of a still (换头: keeps your body and gestures)")
+    s.add_argument("--audio", help="face: the narration that drives the head")
+    s.add_argument("--provider", default="motion", choices=["motion", "cmd"],
+                   help="face: motion = built-in puppet (no GPU) · cmd = the model set in PHOTO_TALK_CMD")
+    s.add_argument("--no-crop", dest="no_crop", action="store_true", help="face: do not auto-crop the photo to the head")
     s.set_defaults(fn=cmd_video)
 
     s = sub.add_parser("category", help="topic-vertical presets (platforms/sources/banned keywords/defaults): plain JSON files, not a database")

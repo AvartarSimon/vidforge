@@ -4,8 +4,14 @@ Why: showing your own footage is the cheapest way to look human next to AI-assem
 plenty of people do not want their face on YouTube. Detect the head in each frame, then paint a
 cartoon head / avatar / logo / blurred disc over it, moving and resizing with the real one.
 
-    vidforge video heads cover take.mp4 --image avatar.png -o out.mp4
-    vidforge video heads cover take.mp4 --blur -o out.mp4        # no picture: blurred disc
+    vidforge video heads take.mp4 --image avatar.png -o out.mp4      # still picture
+    vidforge video heads take.mp4 -o out.mp4                         # no picture: blurred disc
+    vidforge video heads take.mp4 --cover-video head.mp4 -o out.mp4  # 换头: an animated head
+
+The third form is the useful one for "my own gestures, not my own face": record yourself talking
+and moving, generate a talking head from a photo or the drawn host (`vidforge face`), then paste
+that head onto your tracked one. The body, the gestures and the timing stay real — only the head
+is replaced, and it lip-syncs because it was driven by the same narration.
 
 How it works, and what each step is for:
 
@@ -225,6 +231,62 @@ def track(boxes: list[Box], frames: int, max_gap: int = 12, smooth: float = 0.35
     return [t for t in out if t.last < frames + 1]
 
 
+class CoverFrames:
+    """Frames of a video to paste over the head, decoded as RGBA and looped if it runs short.
+
+    ffmpeg does the decoding (not OpenCV) because it is the only one of the two that gives us the
+    alpha channel of a webm/mov, which is what a head cut out of its background arrives as."""
+
+    def __init__(self, path: Path, log=print):
+        self.path = Path(path)
+        w, h = ffmpeg.video_size(self.path)
+        self.w, self.h = w, h
+        self.bytes_per_frame = w * h * 4
+        self.proc = None
+        self.frames = 0
+        self._open()
+        log(f"  cover video {self.path.name} {w}x{h}")
+
+    def _open(self):
+        self.close()
+        self.proc = subprocess.Popen(
+            [ffmpeg.find_binary("ffmpeg"), "-hide_banner", "-loglevel", "error", "-i", str(self.path),
+             "-f", "rawvideo", "-pix_fmt", "rgba", "-"],
+            stdout=subprocess.PIPE)
+
+    def next(self):
+        """Next frame as a PIL image, looping back to the start at the end of the file."""
+        from PIL import Image
+        buf = self.proc.stdout.read(self.bytes_per_frame)
+        if len(buf) < self.bytes_per_frame:
+            if self.frames == 0:
+                raise VideoToolError(f"读不到遮挡视频的画面：{self.path}")
+            self._open()                                  # loop
+            buf = self.proc.stdout.read(self.bytes_per_frame)
+            if len(buf) < self.bytes_per_frame:
+                raise VideoToolError(f"遮挡视频读取失败：{self.path}")
+        self.frames += 1
+        return Image.frombytes("RGBA", (self.w, self.h), buf)
+
+    def close(self):
+        if self.proc is not None:
+            try:
+                self.proc.stdout.close()
+                self.proc.terminate()
+            except OSError:
+                pass
+            self.proc = None
+
+
+def _oval_mask(size: tuple[int, int], feather: int = 6):
+    """Soft-edged oval. A talking head rendered on a solid background is a rectangle; pasted as a
+    rectangle it reads as a sticker, as an oval it reads as a head."""
+    from PIL import Image, ImageDraw, ImageFilter
+    m = Image.new("L", size, 0)
+    ImageDraw.Draw(m).ellipse((0, 0, size[0] - 1, size[1] - 1), fill=255)
+    return m.filter(ImageFilter.GaussianBlur(feather))
+
+
 def _cover_image(path: Path, size: int):
     from PIL import Image
     img = Image.open(path).convert("RGBA")
@@ -240,13 +302,20 @@ def _blur_disc(size: int):
 
 
 def cover(video: Path, out: Path, image: Path | None = None, scale: float = 1.5,
-          y_offset: float = -0.08, every: int = 1, min_score: float = 0.85, log=print) -> dict:
+          y_offset: float = -0.08, every: int = 1, min_score: float = 0.85,
+          cover_video: Path | None = None, oval: bool = True, log=print) -> dict:
     """Write `out`: the same clip with every tracked face covered.
 
-    scale:    cover size as a multiple of the detected face box (a face box is the face, a head
-              with hair is bigger, so the default overshoots on purpose).
-    y_offset: move the cover up by this fraction of its size — detectors box the face, while a
-              head sits higher.
+    image:       a still to paste (PNG with transparency is best); None and no cover_video gives
+                 a translucent disc.
+    cover_video: an animated head to paste instead — its frames advance with the clip, so a
+                 lip-synced talking head stays in sync. Looped if it is shorter.
+    oval:        soften the cover into an oval (only sensible for a video/photo with a background;
+                 a PNG that already has transparency keeps its own shape).
+    scale:       cover size as a multiple of the detected face box (a face box is the face, a head
+                 with hair is bigger, so the default overshoots on purpose).
+    y_offset:    move the cover up by this fraction of its size — detectors box the face, while a
+                 head sits higher.
     """
     from PIL import Image
     video, out = Path(video), Path(out)
@@ -264,36 +333,60 @@ def cover(video: Path, out: Path, image: Path | None = None, scale: float = 1.5,
            "-map", "[v]", "-map", "0:a?", "-c:a", "copy",
            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", str(out)]
     out.parent.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     blank = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     cache: dict[int, object] = {}
+    masks: dict[tuple[int, int], object] = {}
+    frames_src = CoverFrames(cover_video, log) if cover_video else None
     covered = 0
     try:
         for f in range(meta["frames"]):
             layer = None
+            # one frame of the head video per frame of the clip, whether or not a face was found:
+            # skipping it while the face is hidden would put the head out of sync afterwards
+            head = frames_src.next() if frames_src else None
             for t in tracks:
                 b = t.boxes.get(f)
                 if b is None:
                     continue
                 size = max(8, int(round(max(b.w, b.h) * scale)))
-                art = cache.get(size)
-                if art is None:
-                    art = _cover_image(image, size) if image else _blur_disc(size)
-                    cache[size] = art
-                    if len(cache) > 64:
-                        cache.pop(next(iter(cache)))
+                if head is not None:
+                    hw = max(8, int(round(size * head.width / max(1, head.height))))
+                    art = head.resize((hw, size), Image.LANCZOS)
+                    if oval:
+                        m = masks.get(art.size) or _oval_mask(art.size)
+                        masks[art.size] = m
+                        art = art.copy()
+                        art.putalpha(m if art.mode != "RGBA" else
+                                     Image.composite(art.getchannel("A"), m, m).point(lambda v: v))
+                else:
+                    art = cache.get(size)
+                    if art is None:
+                        art = _cover_image(image, size) if image else _blur_disc(size)
+                        cache[size] = art
+                        if len(cache) > 64:
+                            cache.pop(next(iter(cache)))
                 if layer is None:
                     layer = blank.copy()
                 layer.alpha_composite(art, (int(round(b.cx - art.width / 2)),
                                             int(round(b.cy - art.height / 2 + art.height * y_offset))))
             if layer is not None:
                 covered += 1
-            proc.stdin.write((layer or blank).tobytes())
+            try:
+                proc.stdin.write((layer or blank).tobytes())
+            except BrokenPipeError:
+                break
     finally:
-        proc.stdin.close()
+        if frames_src:
+            frames_src.close()
+        try:
+            proc.stdin.close()
+        except BrokenPipeError:
+            pass
+        err = proc.stderr.read().decode("utf-8", "replace").strip()
         proc.wait()
     if proc.returncode != 0:
-        raise VideoToolError(f"ffmpeg 失败（退出码 {proc.returncode}）")
+        raise VideoToolError(f"ffmpeg 失败（退出码 {proc.returncode}）：{err[:400]}")
     log(f"  {covered}/{meta['frames']} 帧盖住了人脸 -> {out.name}")
     return {"out": str(out), "faces": len(tracks), "frames": meta["frames"], "covered": covered}
 

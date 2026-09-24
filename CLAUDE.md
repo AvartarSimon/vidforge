@@ -24,9 +24,9 @@ User-facing manual: `QUICKSTART.zh.md`. Roadmap: `docs/roadmap-v0.4-plan.md`.
 | UI sections | `ui/react/src/components/sections/` | 视频 / 声音 / 图片 — material-centred pages beside the 5-step wizard (React UI only; the old static UI has no nav rail) |
 | Web UI frontends | `ui/static/app.js` (vanilla, served by the backend — what the launchers open) **and** `ui/react/` (Vite + MUI, `npm run dev` on 5175 proxying to 8765) | **Every UI change must be made in both** until the React one replaces the old |
 | Remotion | `remotion/` | animated TitleCard / Timeline / BarChart at exact narration length; needs Node |
-| Video tools | `video/heads.py` | face detect (OpenCV YuNet, weights auto-downloaded to `~/.vidforge/models/`) → track/smooth → cover each face with a picture; `vidforge video heads` + `/api/video/heads/*`. UI: the 视频 section |
+| Video tools | `video/heads.py`, `video/face.py` | heads: detect (OpenCV YuNet, weights auto-downloaded to `~/.vidforge/models/`) → track/smooth → cover each face with a still **or an animated head** (`cover_video=`, oval-masked, frame-locked). face: photo → talking head, `motion` (audio-envelope puppet, no GPU) or `cmd` (`PHOTO_TALK_CMD` → SadTalker/EchoMimic/Hallo, needs a GPU). `vidforge video heads|detect|face` + `/api/video/heads/*`, `/api/video/face`. UI: the 视频 section |
 | Presenter | `me.py`, `lipsync.py`, `avatar/` | own-footage library `~/.vidforge/me/`, optional lip-sync providers |
-| Tests | `tests/` — `python -m unittest discover -s tests` (115 tests, offline; providers/TTS mocked) | e2e browser test skips without playwright |
+| Tests | `tests/` — `python -m unittest discover -s tests` (124 tests, offline; providers/TTS mocked) | e2e browser test skips without playwright |
 
 Data locations: projects `~/vidforge-projects/` (`VIDFORGE_WORKSPACE`), per-project `assets/`, `build*/`,
 `.history/`; user-wide `~/.vidforge/` (browser profile, `me/`, `categories/`, `voices/`, YouTube
