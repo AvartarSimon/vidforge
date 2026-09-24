@@ -26,6 +26,17 @@ vidforge 把"脚本 → 成片 → 发布"做成一条流水线，配一个本�
 vidforge start              # 打开上次的项目；没有就进"项目页"新建/选择
 vidforge shortcut           # 在桌面生成 vidforge 快捷方式，以后双击即开（Windows .lnk / Mac .command）
 ```
+**关掉它**：关浏览器页面**不会**停掉 vidforge（后台可能正在配图或渲染）。点界面里的「**退出 vidforge**」，
+或关掉那个黑窗口。没人用满 60 分钟且没有任务在跑时会自动退出（`VIDFORGE_IDLE_EXIT=0` 可关闭，单位分钟）。
+
+**`vidforge` 命令找不到？** 说明 Python 的 Scripts 目录不在 PATH 里。两个办法：
+```powershell
+python -m vidforge.cli ui <项目目录> --port 8765 --no-browser   # 不改环境，直接能用
+# 或把这个目录加进用户 PATH（之后新开的终端才生效）：
+#   %LOCALAPPDATA%\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\Scripts
+```
+注意 `vidforge ui` 后面要跟**项目目录**（里面有 project.json），不是代码仓库目录。
+
 项目默认放在 `~/vidforge-projects/`（设 `VIDFORGE_WORKSPACE` 可换）。左侧栏点项目名可随时切换项目。
 
 **界面**：左侧是五步导航（完成的步骤变绿）；左下角切主题——跟随系统 / 亮色 / 暗色 / **护眼**（暖色低蓝光）；右上角「✦ AI 助手」打开侧栏。

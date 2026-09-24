@@ -86,6 +86,8 @@ def workspace_dir() -> Path:
 
 
 class State:
+    IDLE_EXIT_MIN = float(os.environ.get("VIDFORGE_IDLE_EXIT", "60"))   # 0 = never exit on its own
+
     def __init__(self, project_path: Path | None):
         self.project_path: Path | None = None
         self.root: Path = workspace_dir()
@@ -93,6 +95,7 @@ class State:
         self.build = {"state": "idle", "lines": [], "lang": None, "started": None, "finished": None, "error": None}
         self.autofill = {"state": "idle", "done": 0, "total": 0, "lines": [], "result": None, "cancel": False}
         self.heads = {"state": "idle", "lines": [], "result": None, "error": None}
+        self.last_request = time.time()
         self.checks: list[str] = []          # hand-picked files waiting for the (slow) vision check
         self.check_current: str | None = None
         self._check_worker: threading.Thread | None = None
@@ -113,6 +116,11 @@ class State:
     @property
     def has_project(self) -> bool:
         return self.project_path is not None
+
+    @property
+    def busy(self) -> bool:
+        """Is something running that must not be interrupted?"""
+        return "running" in (self.build["state"], self.autofill["state"], self.heads["state"])
 
     def enqueue_check(self, rel: str) -> None:
         """Vision-check a downloaded picture in the background; the verdict lands in assets/index.json
@@ -313,6 +321,7 @@ def make_handler(state: State):
 
         # -- routing ----------------------------------------------------------------
         def do_GET(self):
+            state.last_request = time.time()
             url = urllib.parse.urlparse(self.path)
             q = dict(urllib.parse.parse_qsl(url.query))
             path = url.path
@@ -409,6 +418,7 @@ def make_handler(state: State):
                 return self._error(str(e), HTTPStatus.INTERNAL_SERVER_ERROR)
 
         def do_POST(self):
+            state.last_request = time.time()
             url = urllib.parse.urlparse(self.path)
             q = dict(urllib.parse.parse_qsl(url.query))
             path = url.path
@@ -622,7 +632,9 @@ def make_handler(state: State):
                 if path == "/api/autofill/cancel":
                     state.autofill["cancel"] = True
                     return self._json({"cancelling": state.autofill["state"] == "running"})
-                if path == "/api/shutdown":              # a newer launcher replacing this (older) copy
+                if path == "/api/shutdown":              # the UI's 退出, or a newer launcher replacing this copy
+                    if state.busy and not body.get("force"):
+                        return self._error("还有任务在跑（配图/渲染），确定要退出吗？", HTTPStatus.CONFLICT, busy=True)
                     threading.Thread(target=self.server.shutdown, daemon=True).start()
                     return self._json({"bye": True})
                 if path == "/api/build/cancel":
@@ -758,7 +770,7 @@ def make_handler(state: State):
             return {
                 "ffmpeg": {"ok": ff_ok, "path": ff}, "encoder": enc, "encoders": ["libx264", *hw],
                 "node": bool(shutil.which("node")), "remotion": (APP_DIR / "node_modules").exists(),
-                "stamp": STAMP,
+                "stamp": STAMP, "busy": state.busy, "idle_exit_min": State.IDLE_EXIT_MIN,
                 "keys": {k: bool(os.environ.get(k)) for k in env.KEYS},
                 "youtube_secret": (Path.home() / ".vidforge" / "client_secret.json").exists()
                                   or bool(os.environ.get("YOUTUBE_CLIENT_SECRET")),
@@ -1547,6 +1559,28 @@ def serve(project: str | Path | None, port: int = 8765, open_browser: bool = Tru
                 raise SystemExit(f"could not find a free port near {requested_port}")
             print(f"port {requested_port} busy (not vidforge); using {port} instead.")
     httpd.daemon_threads = True
+
+    def idle_watch():
+        """Quit after IDLE_EXIT_MIN with no request and nothing running.
+
+        Closing the browser tab does not stop a server, so one could sit on port 8765 for days —
+        and because the page is read from disk on every request while the Python stays as it was
+        at startup, that stale process serves a new UI over old routes. Exiting when nobody is
+        using it removes the whole class of problem. Never fires during a build or a picture run."""
+        limit = State.IDLE_EXIT_MIN * 60
+        if limit <= 0:
+            return
+        while True:
+            time.sleep(30)
+            if state.busy:
+                state.last_request = time.time()
+                continue
+            if time.time() - state.last_request > limit:
+                print(f"[vidforge] {State.IDLE_EXIT_MIN:.0f} 分钟没有人用，自动退出（设 VIDFORGE_IDLE_EXIT=0 可关闭）。")
+                httpd.shutdown()
+                return
+
+    threading.Thread(target=idle_watch, daemon=True).start()
     url = f"http://127.0.0.1:{port}/"
     print(f"vidforge ui · {project_path or 'project picker'}\n  {url}   (Ctrl+C to stop)")
     if open_browser:

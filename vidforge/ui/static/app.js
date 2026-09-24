@@ -227,12 +227,33 @@ $('#history').onchange = async e => {
   if (!confirm(`回到 ${name.replace('project-', '').replace('.json', '')} 的整份项目？当前状态会先存一份历史。`)) return;
   await api('/api/history/restore', { name }); await load();
 };
+// Closing the browser tab leaves the server running (that is how a days-old instance ends up
+// serving today's page over yesterday's routes), so give it an explicit off switch.
+async function quitVidforge(force) {
+  try {
+    await api('/api/shutdown', force ? { force: true } : {});
+  } catch (e) {
+    if (e.data && e.data.busy && !force) {
+      if (confirm(e.message)) return quitVidforge(true);
+      return;
+    }
+  }
+  document.body.innerHTML = '<div class="banner info" style="margin:40px auto;max-width:520px">vidforge 已退出，可以关掉这个页面了。<br>再次使用请双击桌面的 vidforge 图标。</div>';
+}
+
 async function refreshHealth() {
   try {
     const h = await api('/api/health'); H = h;
     // This page is served from disk on every request, so a server started before an update hands
     // you today's UI while still answering yesterday's routes ("not found" on a button you can see).
     // Old builds have no `stamp` in /api/health — say so up front instead of at the first click.
+    if (!$('#quitBtn') && $('#health')) {
+      const b = document.createElement('button');
+      b.id = 'quitBtn'; b.className = 'small'; b.textContent = '退出'; b.title = '停掉 vidforge（关网页不会停）';
+      b.style.marginLeft = '10px';
+      b.onclick = () => quitVidforge(false);
+      $('#health').after(b);
+    }
     if (!h.stamp) $('#issues').innerHTML = '<div class="banner err">后端是旧版本（在这次更新之前启动的），新功能会报 “not found”。关掉 vidforge 的黑窗口，重新双击 start-vidforge 即可（新版会自动替换旧进程）。</div>';
     if (!h.keys.PEXELS_API_KEY && picker.source === 'pexels' && !picker.cands.length) picker.source = h.keys.PIXABAY_API_KEY ? 'pixabay' : 'commons';
     const dot = (ok, label, title) => `<span title="${esc(title || '')}"><span class="dot ${ok ? 'ok' : 'err'}"></span>${label}</span>`;
