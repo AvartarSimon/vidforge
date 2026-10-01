@@ -297,3 +297,27 @@ export interface SearchCandidate {
   ext: string
   desc: string
 }
+
+export interface StructureTemplate {
+  id: string
+  name: string
+  about: string
+  beats: { id: string; name: string; role: string }[]
+}
+
+export interface StructureRow {
+  id: string
+  label: string
+  role: string
+  seconds: number
+  segments: number
+  zh_words: number
+  en_words: number
+}
+
+export interface StructureIssue {
+  level: 'problem' | 'advice'
+  where: string
+  what: string
+  fix: string
+}

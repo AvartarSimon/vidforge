@@ -441,6 +441,33 @@ def make_handler(state: State):
                     return self._json(state.heads)
                 if path == "/api/assets/library":
                     return self._json(self.asset_library())
+                if path == "/api/structure/templates":
+                    from .. import structure as st
+                    return self._json({"templates": st.list_templates()})
+                if path == "/api/structure/outline":
+                    from .. import structure as st
+                    try:
+                        tid = q.get("template", "data_explainer")
+                        mins = float(q.get("minutes", 10))
+                        zh = q.get("zh", "1") not in ("0", "false")
+                        return self._json({"rows": st.outline(tid, mins),
+                                           "prompt": st.prompt_block(tid, mins, zh=zh)})
+                    except (KeyError, ValueError) as e:
+                        return self._error(str(e))
+                if path == "/api/structure/check":
+                    from .. import structure as st
+                    raw = state.read_raw()
+                    durations = {}
+                    tl = state.build_dir(q.get("lang")) / "timeline.json"
+                    if tl.is_file():
+                        try:
+                            durations = {t["id"]: t["end"] - t["start"]
+                                         for t in json.loads(tl.read_text(encoding="utf-8"))}
+                        except (json.JSONDecodeError, KeyError):
+                            durations = {}
+                    issues = st.check(raw.get("segments") or [], durations or None)
+                    return self._json({"issues": [asdict(i) for i in issues],
+                                       "measured": bool(durations)})
                 if path == "/api/short/suggest":
                     from ..video import VideoToolError, vertical
                     try:
@@ -685,6 +712,21 @@ def make_handler(state: State):
                     return self.data_chart(body)
                 if path == "/api/short":
                     return self.make_short(body)
+                if path == "/api/structure/apply":
+                    from .. import structure as st
+                    try:
+                        skeleton = st.skeleton_segments(body.get("template", "data_explainer"),
+                                                        float(body.get("minutes", 10)))
+                    except KeyError as e:
+                        return self._error(str(e))
+                    raw = state.read_raw()
+                    if raw.get("segments") and not body.get("replace"):
+                        return self._error("这个项目已经有段落了；要用骨架覆盖请勾选「替换现有段落」",
+                                           HTTPStatus.CONFLICT, has_segments=True)
+                    raw["segments"] = [{k: v for k, v in s2.items() if not k.startswith("_")}
+                                       for s2 in skeleton]
+                    state.write_raw(raw, snapshot=True)
+                    return self._json({"segments": skeleton})
                 if path == "/api/autofill/cancel":
                     state.autofill["cancel"] = True
                     return self._json({"cancelling": state.autofill["state"] == "running"})

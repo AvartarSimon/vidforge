@@ -68,10 +68,12 @@ export function AiGeneratePanel({
   categories,
   points,
   onPointsChange,
+  template,
 }: {
   categories: Category[]
   points: string
   onPointsChange: (v: string) => void
+  template?: string
 }) {
   const { raw, patch } = useProject()
   const [sites, setSites] = useState<ChatSite[]>([])
@@ -107,13 +109,28 @@ export function AiGeneratePanel({
     })
   }
 
+  // The skeleton text is built server-side (vidforge/structure.py) so the CLI, the prompt and the
+  // retention check can never drift apart.
+  const fullPrompt = async () => {
+    const base = buildPrompt({ zh, topic, mins, audience, points, note: categoryNote(categories, raw.category) })
+    if (!template) return base
+    try {
+      const j = await apiGet<{ prompt: string }>(
+        `/api/structure/outline?template=${template}&minutes=${mins}&zh=${zh ? 1 : 0}`,
+      )
+      return base + j.prompt
+    } catch {
+      return base
+    }
+  }
+
   const doGenerate = async (retry = false) => {
     localStorage.setItem('vf.site', site)
     setBusy(true)
     setLoginWall(false)
     setStatus(`正在 ${sites.find((s) => s.id === site)?.label || site} 里提问并等待回答（通常 30–120 秒）…`)
     try {
-      const prompt = buildPrompt({ zh, topic, mins, audience, points, note: categoryNote(categories, raw.category) })
+      const prompt = await fullPrompt()
       const j = await apiPost<{ text: string }>('/api/chat', { site, prompt })
       setScript(j.text)
       setStatus(`收到 ${j.text.length} 字，点「拆成段落」。`)
@@ -126,8 +143,7 @@ export function AiGeneratePanel({
   }
 
   const copyPrompt = async () => {
-    const prompt = buildPrompt({ zh, topic, mins, audience, points, note: categoryNote(categories, raw.category) })
-    await navigator.clipboard.writeText(prompt)
+    await navigator.clipboard.writeText(await fullPrompt())
     setStatus('提示词已复制，贴到任意 AI，再把回答贴回下面的框。')
   }
 

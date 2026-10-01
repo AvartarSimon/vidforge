@@ -163,6 +163,47 @@ def cmd_me(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_structure(args: argparse.Namespace) -> int:
+    """段落骨架与留存体检：决定先说什么，再去想怎么说。"""
+    from . import structure as st
+
+    if args.action == "list":
+        for t in st.list_templates():
+            print(f"  {t['id']:<18} {t['name']}")
+            print(f"  {'':<18} {t['about']}")
+        return 0
+
+    if args.action == "outline":
+        for i, r in enumerate(st.outline(args.template, args.minutes), 1):
+            print(f"  {i}. {r['label']:<10} 约 {r['seconds']:>3}s / {r['zh_words']:>4}字 · {r['role']}")
+        return 0
+
+    if args.action == "prompt":
+        print(st.prompt_block(args.template, args.minutes, zh=not args.en))
+        return 0
+
+    # check
+    if not args.project:
+        raise SystemExit("`vidforge structure check <项目>`")
+    root = Path(args.project).resolve()
+    path = root / "project.json" if root.is_dir() else root
+    if not path.is_file():
+        raise SystemExit(f"找不到项目：{path}")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    durations = {}
+    tl = path.parent / "build" / "timeline.json"
+    if tl.is_file():
+        durations = {t["id"]: t["end"] - t["start"] for t in json.loads(tl.read_text(encoding="utf-8"))}
+    issues = st.check(raw.get("segments") or [], durations or None)
+    if not issues:
+        print("没发现问题。")
+        return 0
+    for i in issues:
+        mark = "✗" if i.level == "problem" else "·"
+        print(f"  {mark} {i.where or '整体':<8} {i.what}\n      → {i.fix}")
+    return 0
+
+
 def cmd_short(args: argparse.Namespace) -> int:
     """Cut a vertical clip out of the finished long video — one topic, two platforms."""
     from . import project as proj
@@ -552,6 +593,14 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--tags", help="tag: comma-separated tags, e.g. backyard,glasses")
     s.add_argument("--talking", choices=["true", "false"], help="tag: mark as a speaking take or silent B-roll")
     s.set_defaults(fn=cmd_me)
+
+    s = sub.add_parser("structure", help="段落骨架（钩子-背景-数据-转折-回扣）与留存体检")
+    s.add_argument("action", choices=["list", "outline", "prompt", "check"])
+    s.add_argument("project", nargs="?", help="check: project.json or its directory")
+    s.add_argument("--template", default="data_explainer", help="outline/prompt: 模板 id（list 可查）")
+    s.add_argument("--minutes", type=float, default=10.0)
+    s.add_argument("--en", action="store_true", help="prompt: 输出英文版")
+    s.set_defaults(fn=cmd_structure)
 
     s = sub.add_parser("short", help="cut a vertical clip out of the finished video (小红书 / 抖音 / Shorts)")
     s.add_argument("project", help="project.json or its directory")

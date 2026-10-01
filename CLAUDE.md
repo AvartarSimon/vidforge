@@ -12,13 +12,14 @@ User-facing manual: `QUICKSTART.zh.md`. Roadmap: `docs/roadmap-v0.4-plan.md`.
 
 | Layer | Where | Notes |
 |---|---|---|
-| CLI | `vidforge/cli.py` | `vidforge start|ui|build|doctor|voices|assets|upload|i18n|browser|chat|voice|me|category|remotion|shortcut` |
+| CLI | `vidforge/cli.py` | `vidforge start|ui|build|doctor|voices|assets|upload|i18n|browser|chat|voice|me|category|remotion|structure|short|brand|data|shortcut` |
 | Pipeline | `pipeline.py`, `render.py`, `subtitles.py`, `thumbnail.py`, `ffmpeg.py` | staged build with per-segment clip cache `build/clips/<seg>.<hash>.mp4`; encoder auto-pick (nvenc/qsv/amf/videotoolbox/libx264) |
 | Project model | `project.py` (`Project`, `Segment`, `Clip`, `Overlay`) | `Clip.source` = unresolved spec `"commons:Battle of Lexington 1775"`, resolved at build or by autofill |
 | Assets | `assets/` — `pexels.py`, `pixabay.py`, `wikimedia.py`, `openverse.py`, `archive.py`, `google_images.py`, `baidu.py` | `Library` = `assets/index.json` (licence, credits, picks, vision-check verdicts). `pick_many()` is what autofill uses (one search → several files, downloaded in parallel); `relevant()` (contiguous content-word bigram) + `branded()` + `blocked_host()` gate accuracy, `vision_verdict()` is the optional slow check; `normalise()` shrinks museum-sized downloads |
 | TTS | `tts/` (edge-tts default, ElevenLabs, VoxCPM) | word timings drive `final.srt` |
 | Local LLM | `llm.py` (Ollama, optional) | text: `qwen2.5:3b` keywords/translation/chapter names, batched `keywords_batch()`; vision: `qwen2.5vl:3b` `vision_check()` (watermark / text overlay / depicts) |
 | Browser bridge | `browser/` (Playwright on the user's own Chrome/Edge profile) | types prompts into ChatGPT/Claude/DeepSeek/… web UIs for script generation; no API keys |
+| Structure | `structure.py` | retention skeletons (钩子-背景-数据-转折-回扣) + `check()`; feeds the script prompt, the CLI (`vidforge structure`) and `/api/structure/*` |
 | Script parsing | `script_parser.py` | pasted AI text → segments; strips chatter/notes/stage directions; `language_issues()` flags mixed language |
 | Web UI backend | `ui/__init__.py` (stdlib `ThreadingHTTPServer`, `/api/*`, port 8765) | `State` holds project path, build status, autofill job, background vision-check queue. `STAMP` = code mtime; a stale running copy is replaced on start |
 | UI sections | `ui/react/src/components/sections/` | 视频 / 声音 / 图片 — material-centred pages beside the 5-step wizard (React UI only; the old static UI has no nav rail) |

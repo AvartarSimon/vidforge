@@ -6,11 +6,18 @@ import { useProject } from '../../state/ProjectContext'
 import { AiGeneratePanel } from './script/AiGeneratePanel'
 import { ResearchPanel } from './script/ResearchPanel'
 import { ScriptEditorPanel } from './script/ScriptEditorPanel'
+import { StructurePanel } from './script/StructurePanel'
 
 export function ScriptStep() {
   const { raw, patch } = useProject()
   const [categories, setCategories] = useState<Category[]>([])
   const [points, setPoints] = useState('')
+  const [template, setTemplate] = useState(() => localStorage.getItem('vf.structure') ?? 'data_explainer')
+
+  const pickTemplate = (v: string) => {
+    setTemplate(v)
+    localStorage.setItem('vf.structure', v)
+  }
 
   useEffect(() => {
     apiGet<{ categories: Category[] }>('/api/categories')
@@ -61,7 +68,8 @@ export function ScriptStep() {
         </CardContent>
       </Card>
       <ResearchPanel onUseAngle={(angle) => setPoints((p) => `视角：${angle}\n${p}`)} />
-      <AiGeneratePanel categories={categories} points={points} onPointsChange={setPoints} />
+      <StructurePanel template={template} onTemplate={pickTemplate} />
+      <AiGeneratePanel categories={categories} points={points} onPointsChange={setPoints} template={template} />
       <ScriptEditorPanel />
     </Stack>
   )
