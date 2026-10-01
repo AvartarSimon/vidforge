@@ -441,6 +441,13 @@ def make_handler(state: State):
                     return self._json(state.heads)
                 if path == "/api/assets/library":
                     return self._json(self.asset_library())
+                if path == "/api/short/suggest":
+                    from ..video import VideoToolError, vertical
+                    try:
+                        tl = vertical.read_timeline(state.build_dir(q.get("lang")))
+                    except VideoToolError as e:
+                        return self._error(str(e))
+                    return self._json({"cuts": vertical.suggest(tl, float(q.get("seconds", 55)))})
                 if path == "/api/data/search":
                     from ..data import DataError, worldbank
                     try:
@@ -676,6 +683,8 @@ def make_handler(state: State):
                     return self.face_talk(body)
                 if path == "/api/data/chart":
                     return self.data_chart(body)
+                if path == "/api/short":
+                    return self.make_short(body)
                 if path == "/api/autofill/cancel":
                     state.autofill["cancel"] = True
                     return self._json({"cancelling": state.autofill["state"] == "running"})
@@ -1341,6 +1350,48 @@ def make_handler(state: State):
                     r = face.talk(image, audio, out, provider=body.get("provider", "motion"),
                                   crop=body.get("crop", True), log=log)
                     state.heads["result"] = {"path": state.rel(Path(r)), "faces": 1, "frames": 0, "covered": 0}
+                except (VideoToolError, ffmpeg.FfmpegError, OSError) as e:
+                    state.heads["error"] = str(e)
+                finally:
+                    state.heads["state"] = "done"
+
+            if body.get("sync"):
+                run()
+                return self._json({"started": True, **(state.heads["result"] or {"error": state.heads["error"]})})
+            threading.Thread(target=run, daemon=True).start()
+            return self._json({"started": True})
+
+        def make_short(self, body: dict):
+            """Vertical cut from the finished video — a trim and a reframe, not another render."""
+            from ..video import VideoToolError, vertical
+            if state.heads["state"] == "running":
+                return self._error("正在处理上一个视频")
+            bd = state.build_dir(body.get("lang"))
+            try:
+                timeline = vertical.read_timeline(bd)
+                ids = [x for x in (body.get("segments") or []) if x]
+                if ids:
+                    cut = vertical.range_from_segments(timeline, ids)
+                else:
+                    start = vertical._parse_time(body.get("at", 0))
+                    cut = vertical.Cut(start, start + float(body.get("seconds", 55)))
+                p = state.load(body.get("lang"))
+                source = vertical.pick_source(bd, p.subtitles.burn)
+            except (VideoToolError, proj.ProjectError) as e:
+                return self._error(str(e))
+
+            out = bd / "shorts" / f"{state.root.name}-{int(cut.start)}s.mp4"
+            state.heads = {"state": "running", "lines": [], "result": None, "error": None}
+            log = state.heads["lines"].append
+
+            def run():
+                try:
+                    r = vertical.make(source, out, cut, mode=body.get("mode", "blur"),
+                                      ratio=body.get("ratio", "9:16"),
+                                      srt=(bd / "final.srt") if body.get("subtitles", True) else None,
+                                      font=p.subtitles.font, subtitles=body.get("subtitles", True), log=log)
+                    state.heads["result"] = {"path": state.rel(out), "faces": 0,
+                                             "frames": 0, "covered": 0, **r}
                 except (VideoToolError, ffmpeg.FfmpegError, OSError) as e:
                     state.heads["error"] = str(e)
                 finally:

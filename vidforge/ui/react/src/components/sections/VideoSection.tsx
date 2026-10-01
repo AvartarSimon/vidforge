@@ -19,6 +19,7 @@ import { useProject } from '../../state/ProjectContext'
 import { fileUrl } from '../../utils'
 
 type MeItem = { name: string; tags?: string[]; talking?: boolean; duration?: number; uses?: number }
+type ShortCut = { ids: string[]; label: string; start: number; seconds: number }
 type HeadsJob = {
   state: 'idle' | 'running' | 'done'
   lines: string[]
@@ -38,6 +39,10 @@ export function VideoSection() {
   const [photo, setPhoto] = useState('')
   const [segment, setSegment] = useState('')
   const [provider, setProvider] = useState<'motion' | 'cmd'>('motion')
+  const [cuts, setCuts] = useState<ShortCut[]>([])
+  const [cutIds, setCutIds] = useState<string[]>([])
+  const [ratio, setRatio] = useState('9:16')
+  const [shortMode, setShortMode] = useState<'blur' | 'crop'>('blur')
   const [scale, setScale] = useState(1.5)
   const [yOffset, setYOffset] = useState(-0.08)
   const [every, setEvery] = useState(1)
@@ -100,6 +105,37 @@ export function VideoSection() {
         setJob(s)
       } while (s.state === 'running')
       if (s.result?.path) setCoverVideo(s.result.path)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+    setBusy(false)
+  }
+
+  // One topic, two platforms: the long video is already rendered and its subtitles already have
+  // the timings, so a vertical cut is a trim and a reframe rather than another render.
+  const loadCuts = async () => {
+    setError(null)
+    try {
+      const j = await apiGet<{ cuts: ShortCut[] }>('/api/short/suggest?seconds=55')
+      setCuts(j.cuts)
+      if (j.cuts.length && !cutIds.length) setCutIds(j.cuts[0].ids)
+    } catch (e) {
+      setCuts([])
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const makeShort = async () => {
+    setError(null)
+    setBusy(true)
+    try {
+      await apiPost('/api/short', { segments: cutIds, ratio, mode: shortMode })
+      let s2: HeadsJob
+      do {
+        await new Promise((r) => setTimeout(r, 1200))
+        s2 = await apiGet<HeadsJob>('/api/video/heads')
+        setJob(s2)
+      } while (s2.state === 'running')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -234,6 +270,56 @@ export function VideoSection() {
                 <Box component="video" src={fileUrl(job.result.path) || undefined} controls sx={{ maxWidth: '100%', borderRadius: 1 }} />
               </Box>
             )}
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card variant="outlined">
+        <CardContent>
+          <Typography variant="subtitle1" gutterBottom>
+            📱 切一条竖版（小红书 / 抖音 / Shorts）
+          </Typography>
+          <Typography variant="body2" color="text.secondary" gutterBottom>
+            从已经渲染好的长视频里剪，不重新渲染：字幕按切点重新计时并加大、上移（手机拇指会挡住最下面一条）。
+            一个段落就是一个完整的意思，所以候选直接按段落给。
+          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
+            <Button size="small" onClick={loadCuts} disabled={busy}>
+              找可切的片段
+            </Button>
+            <Select
+              size="small"
+              value={cuts.findIndex((c) => c.ids.join() === cutIds.join())}
+              onChange={(e) => setCutIds(cuts[Number(e.target.value)]?.ids || [])}
+              displayEmpty
+              sx={{ minWidth: 300, fontSize: 13 }}
+            >
+              <MenuItem value={-1} sx={{ fontSize: 13 }}>
+                先点「找可切的片段」
+              </MenuItem>
+              {cuts.map((c, i) => (
+                <MenuItem key={c.ids.join()} value={i} sx={{ fontSize: 13 }}>
+                  {c.seconds.toFixed(0)}s · {c.label}
+                </MenuItem>
+              ))}
+            </Select>
+            <Select size="small" value={ratio} onChange={(e) => setRatio(e.target.value)} sx={{ fontSize: 13 }}>
+              <MenuItem value="9:16" sx={{ fontSize: 13 }}>9:16 竖版</MenuItem>
+              <MenuItem value="4:5" sx={{ fontSize: 13 }}>4:5</MenuItem>
+              <MenuItem value="1:1" sx={{ fontSize: 13 }}>1:1 方形</MenuItem>
+            </Select>
+            <Select
+              size="small"
+              value={shortMode}
+              onChange={(e) => setShortMode(e.target.value as 'blur' | 'crop')}
+              sx={{ minWidth: 190, fontSize: 13 }}
+            >
+              <MenuItem value="blur" sx={{ fontSize: 13 }}>留全画面（图表不被切）</MenuItem>
+              <MenuItem value="crop" sx={{ fontSize: 13 }}>裁满屏（两侧会丢）</MenuItem>
+            </Select>
+            <Button size="small" variant="contained" onClick={makeShort} disabled={!cutIds.length || busy}>
+              生成竖版
+            </Button>
           </Stack>
         </CardContent>
       </Card>

@@ -163,6 +163,40 @@ def cmd_me(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_short(args: argparse.Namespace) -> int:
+    """Cut a vertical clip out of the finished long video — one topic, two platforms."""
+    from . import project as proj
+    from .video import vertical as vert
+    root = Path(args.project).resolve()
+    path = root / "project.json" if root.is_dir() else root
+    if not path.is_file():
+        raise SystemExit(f"找不到项目：{path}")
+    p = proj.load(path)
+    bd = path.parent / ("build" if not args.lang else f"build_{args.lang}")
+    timeline = vert.read_timeline(bd)
+
+    if args.list:
+        for s2 in vert.suggest(timeline, args.seconds):
+            print(f"  {s2['seconds']:5.1f}s  --segments {','.join(s2['ids']):<20} {s2['label']}")
+        return 0
+
+    if args.segments:
+        cut = vert.range_from_segments(timeline, [x.strip() for x in args.segments.replace("，", ",").split(",") if x.strip()])
+    elif args.at is not None:
+        start = vert._parse_time(args.at)
+        cut = vert.Cut(start, start + args.seconds)
+    else:
+        raise SystemExit("用 --segments seg3,seg4 或 --at 1:30 指定要切哪一段（--list 看建议）")
+
+    source = vert.pick_source(bd, p.subtitles.burn)
+    out = Path(args.out) if args.out else bd / "shorts" / f"{path.parent.name}-{int(cut.start)}s.mp4"
+    r = vert.make(source, out, cut, mode=args.mode, ratio=args.ratio,
+                  srt=(bd / "final.srt") if not args.no_subtitles else None,
+                  font=p.subtitles.font, subtitles=not args.no_subtitles)
+    print(f"完成：{r['path']}（{r['seconds']:.1f}s · {r['ratio']} · {r['mode']}）")
+    return 0
+
+
 def cmd_brand(args: argparse.Namespace) -> int:
     """The channel's own look: name, slogan, colours, logo, opener and end card."""
     from . import brand as kitmod
@@ -518,6 +552,20 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--tags", help="tag: comma-separated tags, e.g. backyard,glasses")
     s.add_argument("--talking", choices=["true", "false"], help="tag: mark as a speaking take or silent B-roll")
     s.set_defaults(fn=cmd_me)
+
+    s = sub.add_parser("short", help="cut a vertical clip out of the finished video (小红书 / 抖音 / Shorts)")
+    s.add_argument("project", help="project.json or its directory")
+    s.add_argument("--list", action="store_true", help="show the cuts worth making and exit")
+    s.add_argument("--segments", help="which chapters, e.g. seg3,seg4")
+    s.add_argument("--at", help="or a start time: 90 / 1:30 / 00:01:30")
+    s.add_argument("--seconds", type=float, default=55.0, help="length when using --at (default 55)")
+    s.add_argument("--ratio", default="9:16", choices=["9:16", "1:1", "4:5"])
+    s.add_argument("--mode", default="blur", choices=["blur", "crop"],
+                   help="blur: keep the whole frame over a blurred fill (charts stay readable) · crop: fill, losing the sides")
+    s.add_argument("--no-subtitles", dest="no_subtitles", action="store_true")
+    s.add_argument("--lang", help="use build_<lang>/ instead of build/")
+    s.add_argument("-o", "--out")
+    s.set_defaults(fn=cmd_short)
 
     s = sub.add_parser("brand", help="channel look: name, slogan, logo, 1s opener, end card, audio mark")
     s.add_argument("action", choices=["init", "show", "preview", "sting", "slogans"])
