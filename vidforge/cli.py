@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -338,6 +339,10 @@ def cmd_start(args: argparse.Namespace) -> int:
             rec = recent_projects()
             if rec:
                 target = rec[0]["path"]
+                # The remembered project may have been deleted, moved, or be on a drive that is
+                # not plugged in. Opening the picker is always better than refusing to start.
+                if not (Path(target) / "project.json").is_file():
+                    target = None
         ui.serve(target, port=args.port, open_browser=True)
         return 0
     except BaseException as e:  # noqa: BLE001
@@ -347,7 +352,11 @@ def cmd_start(args: argparse.Namespace) -> int:
         log_file = log_dir / f"start-error-{int(time.time())}.log"
         log_file.write_text(traceback.format_exc(), encoding="utf-8")
         msg = f"vidforge 启动失败：\n\n{e}\n\n详情见：\n{log_file}"
-        if sys.platform == "win32":
+        # The message box exists for the desktop shortcut, which runs under pythonw with no
+        # console to print to. Where there is a console, printing is visible and does not block —
+        # a modal dialog in a terminal or a CI run just sits there waiting for a click.
+        headless = not sys.stderr or not sys.stderr.isatty()
+        if sys.platform == "win32" and headless and not os.environ.get("VIDFORGE_NO_DIALOG"):
             try:
                 import ctypes
                 ctypes.windll.user32.MessageBoxW(0, msg, "vidforge", 0x10)  # MB_ICONERROR
@@ -438,7 +447,9 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(prog="vidforge", description="script-to-video assembly line")
     ap.add_argument("--version", action="version", version=__version__)
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    # Bare `vidforge` opens the app. A tool whose normal use is "open it and work" should not
+    # demand a subcommand before it will do the obvious thing.
+    sub = ap.add_subparsers(dest="cmd", required=False)
 
     s = sub.add_parser("init", help="create an empty project.json + assets/ in DIR")
     s.add_argument("dir")
@@ -592,6 +603,8 @@ def main(argv: list[str] | None = None) -> int:
     s.set_defaults(fn=cmd_doctor)
 
     args = ap.parse_args(argv)
+    if not getattr(args, "fn", None):
+        return cmd_start(argparse.Namespace(project=None, picker=False, port=8765))
     try:
         return args.fn(args)
     except RuntimeError as e:          # missing API key, provider HTTP error, ffmpeg failure

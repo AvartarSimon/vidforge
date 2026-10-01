@@ -209,6 +209,8 @@ class SubtitleStyle:
     style: str = "outline"           # outline | box (semi-transparent background, YouTube-style)
     bilingual: bool = False          # second line in `bilingual_lang` (learner edition)
     bilingual_lang: str = "zh"
+    highlight: str = "keywords"      # none | keywords | karaoke — colour the figures being said
+    highlight_colour: str = ""       # defaults to the brand accent
 
 
 @dataclass

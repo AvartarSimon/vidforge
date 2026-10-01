@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .tts import Word
@@ -20,6 +20,7 @@ class Cue:
     start: float
     end: float
     text: str
+    words: list[Word] = field(default_factory=list)     # absolute times; empty for synthetic cues
 
 
 def _is_cjk(s: str) -> bool:
@@ -112,7 +113,8 @@ def build_cues(words: list[Word], *, offset: float, max_chars: int, max_gap: flo
                 return
             start = line[0].start + offset
             end = max(line[-1].end + offset, start + min_duration)
-            cues.append(Cue(start, end, sep.join(w.text for w in line)))
+            timed = [Word(w.text, w.start + offset, w.duration) for w in line]
+            cues.append(Cue(start, end, sep.join(w.text for w in line), timed))
             line.clear()
             done += 1
 
@@ -183,6 +185,97 @@ def _ts(t: float) -> str:
     m, ms = divmod(ms, 60_000)
     s, ms = divmod(ms, 1000)
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+
+# What a data channel wants lit up: figures, years, percentages, money, and the units that carry
+# the point. Highlighting the number the narrator is saying is the cheapest retention trick we can
+# do that nobody else can, because we already know when every word is spoken.
+_KEY = re.compile(
+    r"^[^\w]*("
+    r"\d[\d,.]*\s*(?:%|％|万亿|亿|万|千|百分点|倍|年|月|日|美元|元|人|吨|公里|平方公里)"   # has a unit
+    r"|\d{2,}[\d,.]*"                                 # two digits or more
+    r"|\d+[.,]\d+"                                    # a decimal
+    r"|[一二三四五六七八九十百千万亿零两]{2,}(?:%|％|万亿|亿|万|倍|年|人)"
+    r"|[$€£]\d[\d,.]*"
+    r")[^\w]*$")
+
+
+def is_key_word(text: str) -> bool:
+    """Does this token carry a figure worth lighting up?"""
+    return bool(_KEY.match(text.strip()))
+
+
+def _ass_time(t: float) -> str:
+    cs = int(round(max(0.0, t) * 100))
+    h, cs = divmod(cs, 360_000)
+    m, cs = divmod(cs, 6000)
+    sec, cs = divmod(cs, 100)
+    return f"{h:d}:{m:02d}:{sec:02d}.{cs:02d}"
+
+
+def _bgr(hex_colour: str) -> str:
+    """#RRGGBB -> ASS &HBBGGRR (ASS stores colours the other way round)."""
+    h = hex_colour.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    return f"&H00{h[4:6]}{h[2:4]}{h[0:2]}".upper()
+
+
+def write_ass(cues: list[Cue], path: Path, *, font: str, font_size: int, margin_v: int,
+              box: bool, highlight: str = "keywords", colour: str = "#d4793a",
+              width: int = 1920, height: int = 1080) -> None:
+    """Burn-ready subtitles with the key words in the brand colour.
+
+    highlight:
+      keywords — figures stay coloured for the whole cue (one line per cue, cheapest, safest)
+      karaoke  — each word lights up as it is spoken, figures stay lit afterwards
+                 (one line per word; needs the word timings `build_cues` now keeps)
+    """
+    hi, white = _bgr(colour), "&H00FFFFFF"
+    border = "BorderStyle=4,Outline=2,Shadow=0" if box else "BorderStyle=1,Outline=2,Shadow=0"
+    head = [
+        "[Script Info]", "ScriptType: v4.00+", "WrapStyle: 2", "ScaledBorderAndShadow: yes",
+        f"PlayResX: {width}", f"PlayResY: {height}", "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
+        "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, "
+        "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+        f"Style: Main,{font},{font_size},{white},{hi},&H00000000,&H99000000,0,0,0,0,100,100,0,0,"
+        f"{'4' if box else '1'},2,0,2,60,60,{margin_v},1", "",
+        "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+    ]
+
+    def esc(t: str) -> str:
+        return t.replace("\\", "\\\\").replace("{", "(").replace("}", ")").replace("\n", " ")
+
+    lines: list[str] = []
+    for cue in cues:
+        words = cue.words
+        if highlight == "none" or not words:
+            lines.append(f"Dialogue: 0,{_ass_time(cue.start)},{_ass_time(cue.end)},Main,,0,0,0,,{esc(cue.text)}")
+            continue
+        sep = "" if _is_cjk(cue.text) else " "
+        keys = [is_key_word(w.text) for w in words]
+        if highlight == "karaoke":
+            # one line per word: everything up to the current word is lit, the rest is plain —
+            # a figure that has been said stays lit so it can still be read a beat later
+            for i, w in enumerate(words):
+                start = max(cue.start, w.start)
+                end = min(cue.end, words[i + 1].start if i + 1 < len(words) else cue.end)
+                if end <= start:
+                    continue
+                parts = []
+                for j, w2 in enumerate(words):
+                    lit = keys[j] and j <= i
+                    parts.append(f"{{\\c{hi}}}{esc(w2.text)}{{\\c{white}}}" if lit else esc(w2.text))
+                lines.append(f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Main,,0,0,0,,{sep.join(parts)}")
+        else:
+            parts = [f"{{\\c{hi}}}{esc(w.text)}{{\\c{white}}}" if keys[i] else esc(w.text)
+                     for i, w in enumerate(words)]
+            lines.append(f"Dialogue: 0,{_ass_time(cue.start)},{_ass_time(cue.end)},Main,,0,0,0,,{sep.join(parts)}")
+
+    Path(path).write_text("\n".join(head + lines) + "\n", encoding="utf-8")
 
 
 def write_srt(cues: list[Cue], path: Path) -> None:

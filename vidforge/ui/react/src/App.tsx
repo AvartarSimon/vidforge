@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Box, CircularProgress, CssBaseline, Stack, ThemeProvider, Toolbar, Typography } from '@mui/material'
+import { Alert, Box, Button, CircularProgress, CssBaseline, Stack, ThemeProvider, Toolbar, Typography } from '@mui/material'
 import type { PaletteMode } from '@mui/material'
 import { apiGet } from './api/client'
-import { NavRail, DRAWER_WIDTH, SECTIONS } from './components/nav/NavRail'
+import { NavRail, DRAWER_WIDTH, SECTIONS, stepDone } from './components/nav/NavRail'
 import type { SectionId } from './components/nav/NavRail'
 import { VideoSection } from './components/sections/VideoSection'
 import { VoiceSection } from './components/sections/VoiceSection'
@@ -128,6 +128,35 @@ function Shell({ mode, onToggleMode }: { mode: PaletteMode; onToggleMode: () => 
           {!loading && !error && raw && !section && step === 3 && <VisualsStep key={stepKey} />}
           {!loading && !error && raw && !section && step === 4 && <RenderStep key={stepKey} />}
           {!loading && !error && raw && !section && step === 5 && <PublishStep key={stepKey} />}
+
+          {/* The wizard is a sequence, so it needs a way forward that is not "find it in the
+              sidebar". The hint says what the next step expects, which is the question people
+              actually have at the bottom of a step. */}
+          {!loading && !error && raw && !section && (
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              sx={{ mt: 4, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}
+            >
+              <Button size="small" disabled={step <= 1} onClick={() => setStep(step - 1)}>
+                ← 上一步
+              </Button>
+              <Typography variant="caption" color="text.secondary" sx={{ flexGrow: 1 }}>
+                {step < 5
+                  ? `${stepDone(step, raw, view) ? '这一步完成了。' : ''}下一步：${STEP_LABELS[step + 1]}`
+                  : '最后一步'}
+              </Typography>
+              <Button
+                size="small"
+                variant={stepDone(step, raw, view) ? 'contained' : 'outlined'}
+                disabled={step >= 5}
+                onClick={() => setStep(step + 1)}
+              >
+                下一步：{STEP_LABELS[step + 1] || ''} →
+              </Button>
+            </Stack>
+          )}
         </Box>
       </Box>
     </Box>

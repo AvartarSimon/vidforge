@@ -381,7 +381,12 @@ def finalize(project: Project, merged: Path, srt: Path | None, total: float, out
     filters: list[str] = []
     maps: list[str] = []
 
-    if srt is not None and project.subtitles.burn:
+    if srt is not None and project.subtitles.burn and srt.suffix == ".ass":
+        # ASS carries its own style block (and the per-word colours), so force_style would only
+        # fight it; libass is the same renderer either way.
+        filters.append(f"[0:v]subtitles='{ffmpeg.filter_path(srt)}'[v]")
+        maps += ["-map", "[v]", *video_codec_args(project)]
+    elif srt is not None and project.subtitles.burn:
         st = project.subtitles
         if st.style == "box":       # semi-transparent box behind the text (BorderStyle 3 uses BackColour)
             style = (f"FontName={st.font},FontSize={st.font_size},BorderStyle=4,Outline=2,Shadow=0,"
@@ -390,7 +395,9 @@ def finalize(project: Project, merged: Path, srt: Path | None, total: float, out
             style = (f"FontName={st.font},FontSize={st.font_size},Outline=1,Shadow=0,"
                      f"MarginV={st.margin_v},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000")
         filters.append(f"[0:v]subtitles='{ffmpeg.filter_path(srt)}':force_style='{style}'[v]")
-        maps += ["-map", "[v]", *video_codec_args(project, "libx264")]
+        # the encoder the project picked, not a hard-coded libx264: burning already costs a full
+        # re-encode, so doing it on the CPU when a GPU/QSV encoder is available is pure loss
+        maps += ["-map", "[v]", *video_codec_args(project)]
     else:
         maps += ["-map", "0:v", "-c:v", "copy"]
 

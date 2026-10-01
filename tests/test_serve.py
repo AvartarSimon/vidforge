@@ -8,6 +8,7 @@ falling back to the next free port instead of erroring or double-binding."""
 
 from __future__ import annotations
 
+import argparse
 import json
 import shutil
 import socket
@@ -137,3 +138,31 @@ class SpawnInstance(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StartFallsBack(unittest.TestCase):
+    """`vidforge` with no arguments must open, even when the last project is gone."""
+
+    def test_a_deleted_last_project_opens_the_picker_instead_of_crashing(self):
+        from vidforge import cli
+        gone = Path(tempfile.mkdtemp()) / "removed"
+        served = []
+        with mock.patch("vidforge.ui.recent_projects", return_value=[{"path": str(gone), "title": "T"}]), \
+                mock.patch("vidforge.ui.serve", side_effect=lambda t, **k: served.append(t)):
+            rc = cli.cmd_start(argparse.Namespace(project=None, picker=False, port=0))
+        self.assertEqual(rc, 0)
+        self.assertEqual(served, [None])          # the picker, not the missing path
+
+    def test_an_explicitly_named_missing_project_still_errors(self):
+        from vidforge import cli
+        missing = str(Path(tempfile.mkdtemp()) / "nope")
+        with mock.patch("vidforge.ui.serve", side_effect=SystemExit("project file not found")), \
+                mock.patch.dict("os.environ", {"VIDFORGE_NO_DIALOG": "1"}):
+            rc = cli.cmd_start(argparse.Namespace(project=missing, picker=False, port=0))
+        self.assertEqual(rc, 1)                   # reported, not silently swallowed
+
+    def test_bare_vidforge_routes_to_start(self):
+        from vidforge import cli
+        with mock.patch.object(cli, "cmd_start", return_value=0) as start:
+            self.assertEqual(cli.main([]), 0)
+        start.assert_called_once()

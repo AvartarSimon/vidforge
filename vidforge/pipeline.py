@@ -172,22 +172,41 @@ def _stage_vocab(project: Project) -> None:
     _log(f"vocab card: {len(items)} words")
 
 
+# How many voices to synthesise at once, per engine. edge and ElevenLabs are network calls, so
+# waiting for them one at a time is the single most wasteful thing a 40-segment build does; the
+# counts stay modest because edge-tts is an unofficial free endpoint and ElevenLabs charges and
+# rate-limits. VoxCPM runs the model on this machine, so parallel work would only fight itself.
+TTS_WORKERS = {"edge": 4, "elevenlabs": 2, "silent": 8, "voxcpm": 1}
+
+
 def _stage_tts(ctx: _Ctx) -> None:
-    """Serial (network-bound), cached by text/voice."""
+    """Cached by text/voice; synthesised in parallel for the network-backed engines."""
     p = ctx.project
     tts = get_provider(p.tts.provider, rate=p.rate, config=p.tts.__dict__)
     _log(f"{len(p.segments)} segments · tts {tts.name} · voice {p.voice} · {p.quality} · {ctx.encoder}")
     for w in p.warnings:
         _log(f"warning: {w}")
     _set_progress("tts", 0, len(p.segments))
-    for i, seg in enumerate(p.segments):
+    workers = min(TTS_WORKERS.get(tts.name, 1), max(1, len(p.segments)))
+
+    def one(seg):
         _check_cancel()
         audio = ctx.bd / "audio" / f"{_safe(seg.id)}.mp3"
         words = synthesize_cached(tts, seg.text, seg.voice or p.voice, audio)
-        ctx.words[seg.id] = subtitles.restore_punctuation(words, seg.text)
+        return seg, audio, subtitles.restore_punctuation(words, seg.text)
+
+    done = 0
+    if workers == 1:
+        results = (one(seg) for seg in p.segments)
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            results = list(ex.map(one, p.segments))     # order preserved, so the log reads in order
+    for seg, audio, words in results:
+        ctx.words[seg.id] = words
         ctx.audio[seg.id] = audio
         ctx.narration[seg.id] = ffmpeg.duration(audio) + seg.pause_after
-        _set_progress("tts", i + 1, len(p.segments))
+        done += 1
+        _set_progress("tts", done, len(p.segments))
         _log(f"  tts  {seg.id:<12} {len(words):>4} words  {ctx.narration[seg.id]:6.2f}s")
 
 
@@ -393,7 +412,21 @@ def _stage_assemble(ctx: _Ctx) -> tuple[Path, list[dict], float]:
                          "end": round(cursor + trail, 3)})
     (bd / "timeline.json").write_text(json.dumps(timeline, indent=1), encoding="utf-8")
     srt = bd / "final.srt"
-    subtitles.write_srt(cues, srt)
+    subtitles.write_srt(cues, srt)                       # the sidecar YouTube gets, always plain
+    burn_file = srt
+    if cues and p.subtitles.burn and p.subtitles.highlight != "none":
+        # Figures lit up as they are spoken: the one retention trick that falls out of the word
+        # timings we already have. Only the burned-in copy carries it — a caption file should stay
+        # plain text for the platform's own player and for translation.
+        from . import brand as brandkit
+        colour = p.subtitles.highlight_colour or brandkit.load(p.raw).accent
+        ass = bd / "final.ass"
+        subtitles.write_ass(cues, ass, font=p.subtitles.font, font_size=p.subtitles.font_size,
+                            margin_v=p.subtitles.margin_v, box=p.subtitles.style == "box",
+                            highlight=p.subtitles.highlight, colour=colour,
+                            width=p.width, height=p.height)
+        burn_file = ass
+        _log(f"  subtitles  {p.subtitles.highlight} highlight in {colour}")
     if not cues:
         _log("warning: no word timings received - subtitles skipped")
 
@@ -402,7 +435,7 @@ def _stage_assemble(ctx: _Ctx) -> tuple[Path, list[dict], float]:
     _set_progress("assemble", 1, 3)
     _check_cancel()
     final = bd / "final.mp4"
-    render.finalize(p, merged, srt if cues else None, cursor + trail, final)
+    render.finalize(p, merged, burn_file if cues else None, cursor + trail, final)
     _set_progress("assemble", 2, 3)
 
     thumb_src = next((s.image for s in p.segments if s.image), None)

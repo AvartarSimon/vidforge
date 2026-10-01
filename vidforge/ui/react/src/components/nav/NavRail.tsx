@@ -27,6 +27,7 @@ import MonitorHeartIcon from '@mui/icons-material/MonitorHeart'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
 import LightModeIcon from '@mui/icons-material/LightMode'
 import { ApiError, apiPost } from '../../api/client'
+import type { ProjectView, RawProject } from '../../api/types'
 import { useProject } from '../../state/ProjectContext'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { ProjectHistoryDialog } from './ProjectHistoryDialog'
@@ -54,6 +55,29 @@ export const SECTIONS = [
 ] as const
 
 export type SectionId = (typeof SECTIONS)[number]['id']
+
+// Which steps are finished, judged from the project itself rather than from a flag someone has
+// to remember to set. Without this the five steps look identical whether or not you have done
+// them, and on a project picked up a week later there is no way to tell where you stopped.
+export function stepDone(step: number, raw: RawProject | null, view: ProjectView | null): boolean {
+  const segs = raw?.segments || []
+  if (!segs.length) return false
+  const resolved = view?.resolved || {}
+  switch (step) {
+    case 1:
+      return segs.every((s) => (s.text || '').trim().length > 0)
+    case 2:
+      return segs.every((s) => resolved[s.id]?.audio_fresh)
+    case 3:
+      return segs.every((s) => s.remotion || (resolved[s.id]?.clips || []).some((c) => c.path || c.remotion))
+    case 4:
+      return Boolean(view?.outputs?.final)
+    case 5:
+      return Boolean(view?.outputs?.youtube)
+    default:
+      return false
+  }
+}
 
 export function NavRail({
   activeStep,
@@ -145,11 +169,19 @@ export function NavRail({
                     width: 30,
                     height: 30,
                     fontSize: 14,
-                    bgcolor: activeStep === s.n ? 'primary.main' : 'action.selected',
-                    color: activeStep === s.n ? 'primary.contrastText' : 'text.secondary',
+                    bgcolor:
+                      activeSection === null && activeStep === s.n
+                        ? 'primary.main'
+                        : stepDone(s.n, raw, view)
+                          ? 'success.main'
+                          : 'action.selected',
+                    color:
+                      (activeSection === null && activeStep === s.n) || stepDone(s.n, raw, view)
+                        ? 'primary.contrastText'
+                        : 'text.secondary',
                   }}
                 >
-                  {s.n}
+                  {stepDone(s.n, raw, view) ? '✓' : s.n}
                 </Avatar>
               </ListItemAvatar>
               <ListItemText primary={s.label} secondary={s.sub} />
