@@ -162,6 +162,60 @@ def cmd_me(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_brand(args: argparse.Namespace) -> int:
+    """The channel's own look: name, slogan, colours, logo, opener and end card."""
+    from . import brand as kitmod
+    kit = kitmod.load()
+
+    if args.action == "show":
+        print(json.dumps(kitmod.asdict(kit), ensure_ascii=False, indent=1))
+        print(f"\n配置文件：{kitmod.BRAND_FILE}")
+        return 0
+
+    if args.action == "slogans":
+        for line in kitmod.suggest_slogans(kit.name):
+            print("  " + line)
+        return 0
+
+    if args.action == "init":
+        for field_name in ("name", "slogan", "en_name", "mark", "bg", "fg", "accent",
+                           "subscribe", "next_hint", "sting"):
+            value = getattr(args, field_name, None)
+            if value:
+                setattr(kit, field_name, value)
+        if not kit.name:
+            raise SystemExit("`vidforge brand init --name <频道名> [--slogan ...]`")
+        if not kitmod.contrast_ok(kit.bg, kit.fg):
+            print("⚠ 前景色在背景上对比度不足 4.5:1，片尾的字会糊")
+        logos = kitmod.write_logos(kit)
+        path = kitmod.save(kit)
+        print(f"品牌配置：{path}")
+        for f in logos:
+            print(f"  标志：{f}")
+        print("\n换一个标志样式：vidforge brand init --name %s --mark line" % kit.name)
+        return 0
+
+    if args.action == "sting":
+        out = Path(args.out) if args.out else kitmod.BRAND_DIR / f"sting-{args.style}.m4a"
+        kitmod.sting(out, style=args.style, seconds=args.seconds)
+        kit.sting = str(out)
+        kitmod.save(kit)
+        print(f"音频标识：{out}（{args.style}，{args.seconds:.1f}s，纯合成音，无版权问题）")
+        return 0
+
+    # preview
+    if not kit.name:
+        raise SystemExit("先跑 `vidforge brand init --name <频道名>`")
+    out_dir = Path(args.out) if args.out else kitmod.BRAND_DIR / "preview"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    opener = kitmod.render_opener(kit, out_dir, args.width, args.height, args.fps)
+    if kit.sting:
+        opener = kitmod.with_audio(opener, Path(kit.sting), out_dir / "intro.mp4", kit.intro_seconds)
+    card = kitmod.render_endcard(kit, out_dir, args.width, args.height, args.fps)
+    print(f"片头：{opener}\n片尾：{card}")
+    return 0
+
+
 def cmd_data(args: argparse.Namespace) -> int:
     """Public datasets -> a chart segment. `search` finds an indicator code, `chart` renders one."""
     from .data import bar_props, big_number_props, compare_props, line_props, worldbank
@@ -453,6 +507,25 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--tags", help="tag: comma-separated tags, e.g. backyard,glasses")
     s.add_argument("--talking", choices=["true", "false"], help="tag: mark as a speaking take or silent B-roll")
     s.set_defaults(fn=cmd_me)
+
+    s = sub.add_parser("brand", help="channel look: name, slogan, logo, 1s opener, end card, audio mark")
+    s.add_argument("action", choices=["init", "show", "preview", "sting", "slogans"])
+    s.add_argument("--name", help="频道名，出现在片头片尾")
+    s.add_argument("--slogan", help="一句话，别超过 12 个字")
+    s.add_argument("--en-name", dest="en_name", help="副标题/英文名，可选")
+    s.add_argument("--mark", choices=["ticks", "line", "axis"], help="内置标志样式")
+    s.add_argument("--bg", help="背景色 #RRGGBB")
+    s.add_argument("--fg", help="主文字色")
+    s.add_argument("--accent", help="强调色（标志上的那一笔、订阅按钮）")
+    s.add_argument("--subscribe", help="片尾按钮上的字")
+    s.add_argument("--next-hint", dest="next_hint", help="片尾的「下期：…」")
+    s.add_argument("--style", default="rise", choices=["rise", "settle", "two"], help="sting: 音效走向")
+    s.add_argument("--seconds", type=float, default=1.4, help="sting: 时长")
+    s.add_argument("--out", help="sting/preview: 输出位置")
+    s.add_argument("--width", type=int, default=1920)
+    s.add_argument("--height", type=int, default=1080)
+    s.add_argument("--fps", type=int, default=30)
+    s.set_defaults(fn=cmd_brand)
 
     s = sub.add_parser("data", help="public datasets as charts: 'search' finds an indicator, 'chart' builds one")
     s.add_argument("action", choices=["search", "chart"])

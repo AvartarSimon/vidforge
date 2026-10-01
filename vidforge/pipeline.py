@@ -375,7 +375,12 @@ def _stage_assemble(ctx: _Ctx) -> tuple[Path, list[dict], float]:
     """Subtitles + timeline from REAL segment lengths, concat, BGM/burn, thumbnail, credits."""
     p, bd = ctx.project, ctx.bd
     _set_progress("assemble", 0, 3)
-    cues, timeline, cursor = [], [], 0.0
+    # The opener is rendered first because its length decides where the narration starts: a
+    # subtitle file written from zero would be early by exactly that much for the whole video.
+    branded, lead, trail = _with_brand(ctx, bd, [ctx.clips[s.id] for s in p.segments])
+    cues, timeline, cursor = [], [], lead
+    if lead:
+        timeline.append({"id": "__intro__", "label": None, "start": 0.0, "end": round(lead, 3)})
     for seg in p.segments:
         seg_cues = subtitles.build_cues(ctx.words[seg.id], offset=cursor, max_chars=p.subtitles.max_chars)
         if p.subtitles.bilingual and seg.alt_text:
@@ -383,6 +388,9 @@ def _stage_assemble(ctx: _Ctx) -> tuple[Path, list[dict], float]:
         cues += seg_cues
         timeline.append({"id": seg.id, "label": seg.label, "start": round(cursor, 3), "end": round(cursor + ctx.durations[seg.id], 3)})
         cursor += ctx.durations[seg.id]
+    if trail:
+        timeline.append({"id": "__outro__", "label": None, "start": round(cursor, 3),
+                         "end": round(cursor + trail, 3)})
     (bd / "timeline.json").write_text(json.dumps(timeline, indent=1), encoding="utf-8")
     srt = bd / "final.srt"
     subtitles.write_srt(cues, srt)
@@ -390,11 +398,11 @@ def _stage_assemble(ctx: _Ctx) -> tuple[Path, list[dict], float]:
         _log("warning: no word timings received - subtitles skipped")
 
     merged = bd / "merged.mp4"
-    render.concat([ctx.clips[s.id] for s in p.segments], merged)
+    render.concat(branded, merged)
     _set_progress("assemble", 1, 3)
     _check_cancel()
     final = bd / "final.mp4"
-    render.finalize(p, merged, srt if cues else None, cursor, final)
+    render.finalize(p, merged, srt if cues else None, cursor + trail, final)
     _set_progress("assemble", 2, 3)
 
     thumb_src = next((s.image for s in p.segments if s.image), None)
@@ -407,6 +415,42 @@ def _stage_assemble(ctx: _Ctx) -> tuple[Path, list[dict], float]:
         (bd / "credits.txt").write_text(credits, encoding="utf-8")
     _set_progress("assemble", 3, 3)
     return final, timeline, cursor
+
+
+def _with_brand(ctx, bd: Path, clips: list[Path]) -> tuple[list[Path], float, float]:
+    """Put the channel's opener in front and its end card at the back.
+
+    The opener goes *after* nothing — it is the first thing in the file — but it is kept to about
+    a second because an intro over ~5 s measurably lowers the share of viewers still there at
+    0:30. A channel that wants a cold open simply turns `brand.intro` off and starts on its hook.
+    Failures here never sink a render: the video is the point, the badge is not.
+
+    Returns (clips, opener seconds, end-card seconds). The opener length matters to the caller:
+    it pushes every word of narration later in the file, so subtitles and chapter marks have to
+    move with it or the whole video's captions run early."""
+    from . import brand as brandkit
+    p = ctx.project
+    kit = brandkit.load(p.raw)
+    if not (kit.name and (kit.intro or kit.outro)):
+        return clips, 0.0, 0.0
+    folder = bd / "brand"
+    folder.mkdir(parents=True, exist_ok=True)
+    head, tail = [], []
+    try:
+        if kit.intro:
+            clip = brandkit.render_opener(kit, folder, p.width, p.height, p.fps, log=_log)
+            head = [brandkit.with_audio(clip, Path(kit.sting) if kit.sting else None,
+                                        folder / "intro.mp4", kit.intro_seconds)]
+        if kit.outro:
+            clip = brandkit.render_endcard(kit, folder, p.width, p.height, p.fps, log=_log)
+            tail = [brandkit.with_audio(clip, Path(kit.outro_music) if kit.outro_music else None,
+                                        folder / "outro.mp4", kit.outro_seconds)]
+    except Exception as e:  # noqa: BLE001  a missing Node or a bad logo must not fail the video
+        _log(f"warning: brand clips skipped ({e})")
+        return clips, 0.0, 0.0
+    lead = ffmpeg.duration(head[0]) if head else 0.0
+    trail = ffmpeg.duration(tail[0]) if tail else 0.0
+    return [*head, *clips, *tail], lead, trail
 
 
 def build(project: Project, *, only_tts: bool = False, burn: bool | None = None) -> Path:

@@ -7,6 +7,8 @@ import { Vocab, VocabProps } from "./compositions/Vocab";
 import { LineChart, LineChartProps } from "./compositions/LineChart";
 import { BigNumber, BigNumberProps } from "./compositions/BigNumber";
 import { Compare, CompareProps } from "./compositions/Compare";
+import { Intro, IntroProps } from "./compositions/Intro";
+import { Outro, OutroProps } from "./compositions/Outro";
 import { Base } from "./theme";
 
 // vidforge passes durationInFrames/fps/width/height in the props file: the composition
@@ -24,6 +26,25 @@ const demoEnvelope = Array.from({ length: 150 }, (_, i) => Math.max(0, Math.sin(
 
 export const Root: React.FC = () => (
   <>
+    <Composition<any, IntroProps>
+      id="Intro"
+      component={Intro}
+      calculateMetadata={fromProps}
+      {...base}
+      durationInFrames={36}
+      defaultProps={{ ...base, durationInFrames: 36, name: "刻度", slogan: "把热点放进时间里", mark: "ticks" }}
+    />
+    <Composition<any, OutroProps>
+      id="Outro"
+      component={Outro}
+      calculateMetadata={fromProps}
+      {...base}
+      durationInFrames={180}
+      defaultProps={{
+        ...base, durationInFrames: 180, name: "刻度", slogan: "把热点放进时间里", mark: "ticks",
+        subscribe: "订阅，下期继续", nextHint: "日本失去的三十年，到底失去了什么",
+      }}
+    />
     <Composition<any, LineChartProps>
       id="LineChart"
       component={LineChart}
