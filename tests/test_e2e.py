@@ -67,7 +67,8 @@ class Wizard(unittest.TestCase):
             page = browser.new_page(viewport={"width": 1300, "height": 900})
             errors: list[str] = []
             page.on("pageerror", lambda e: errors.append(str(e)))
-            page.goto(self.url + "?step=1")
+            # /old is the frozen fallback UI; the React one at / is covered by test_ui_react.
+            page.goto(self.url + "old?step=1")
 
             # 1 script: paste two paragraphs, split
             page.fill("#script", "# Opening\nThe first segment talks about the sea.\n\nThe second segment is about the sky and clouds.")

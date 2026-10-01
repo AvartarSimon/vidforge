@@ -17,6 +17,7 @@ import {
 import type { PaletteMode } from '@mui/material'
 import CategoryIcon from '@mui/icons-material/Category'
 import FolderOpenIcon from '@mui/icons-material/FolderOpen'
+import HistoryIcon from '@mui/icons-material/History'
 import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew'
 import MovieFilterIcon from '@mui/icons-material/MovieFilter'
 import GraphicEqIcon from '@mui/icons-material/GraphicEq'
@@ -28,6 +29,7 @@ import LightModeIcon from '@mui/icons-material/LightMode'
 import { ApiError, apiPost } from '../../api/client'
 import { useProject } from '../../state/ProjectContext'
 import { ProjectSwitcher } from './ProjectSwitcher'
+import { ProjectHistoryDialog } from './ProjectHistoryDialog'
 import { CategoryManagerDialog } from './CategoryManagerDialog'
 import { AiAssistantDrawer } from './AiAssistantDrawer'
 import { SystemStatusDialog } from './SystemStatusDialog'
@@ -73,6 +75,7 @@ export function NavRail({
   const [categoryOpen, setCategoryOpen] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
   const [statusOpen, setStatusOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [quitting, setQuitting] = useState(false)
 
   // Closing the browser tab leaves the server running — which is how an instance from days ago
@@ -181,6 +184,12 @@ export function NavRail({
             </ListItemIcon>
             <ListItemText primary="切换 / 新建项目" secondary="项目之间互不影响" />
           </ListItemButton>
+          <ListItemButton onClick={() => setHistoryOpen(true)} disabled={!raw} sx={{ mx: 1, borderRadius: 2 }}>
+            <ListItemIcon>
+              <HistoryIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="历史版本" secondary="整份项目回到某一刻" />
+          </ListItemButton>
           <ListItemButton onClick={() => setAiOpen(true)} sx={{ mx: 1, borderRadius: 2 }}>
             <ListItemIcon>
               <AutoAwesomeIcon fontSize="small" />
@@ -218,6 +227,7 @@ export function NavRail({
         </DialogContent>
       </Dialog>
       <ProjectSwitcher open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
+      <ProjectHistoryDialog open={historyOpen} onClose={() => setHistoryOpen(false)} />
       <CategoryManagerDialog open={categoryOpen} onClose={() => setCategoryOpen(false)} />
       <AiAssistantDrawer open={aiOpen} onClose={() => setAiOpen(false)} />
       <SystemStatusDialog open={statusOpen} onClose={() => setStatusOpen(false)} />

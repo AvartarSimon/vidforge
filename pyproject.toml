@@ -26,4 +26,5 @@ vidforge = "vidforge.cli:main"
 include = ["vidforge*"]
 
 [tool.setuptools.package-data]
-vidforge = ["ui/static/*", "remotion/app/*.json", "remotion/app/*.ts", "remotion/app/src/*", "remotion/app/src/compositions/*"]
+vidforge = ["ui/static/*", "ui/react/dist/*", "ui/react/dist/assets/*",
+            "remotion/app/*.json", "remotion/app/*.ts", "remotion/app/src/*", "remotion/app/src/compositions/*"]

@@ -47,7 +47,36 @@ from .. import env, ffmpeg, keywords, pipeline, project as proj, script_parser
 from ..assets import is_cjk as llm_is_cjk
 from ..tts.silent import estimate_seconds
 
-STATIC = Path(__file__).resolve().parent / "static"
+STATIC = Path(__file__).resolve().parent / "static"          # the original UI, kept as a fallback
+REACT_DIST = Path(__file__).resolve().parent / "react" / "dist"
+REACT_SRC = Path(__file__).resolve().parent / "react"
+
+
+def react_ready() -> bool:
+    """Is there a built React bundle to serve?"""
+    return (REACT_DIST / "index.html").is_file()
+
+
+def build_react(log=print) -> bool:
+    """Build the React UI once, if Node is available.
+
+    The React UI is the one that is maintained; the old static page only survives as a fallback
+    for a machine with no Node. Building here means a fresh clone opens the real UI on the first
+    double-click instead of a page missing half the features."""
+    if react_ready():
+        return True
+    if not shutil.which("npm"):
+        log("[vidforge] 没装 Node.js，暂时使用旧界面。装了 Node 之后重启即可切到新界面。")
+        return False
+    log("[vidforge] 第一次启动：正在构建界面（约 1 分钟，只此一次）…")
+    try:
+        if not (REACT_SRC / "node_modules").is_dir():
+            subprocess.run(["npm", "install"], cwd=REACT_SRC, check=True, shell=(os.name == "nt"))
+        subprocess.run(["npm", "run", "build"], cwd=REACT_SRC, check=True, shell=(os.name == "nt"))
+    except (OSError, subprocess.SubprocessError) as e:
+        log(f"[vidforge] 界面构建失败（{e}），暂时使用旧界面。")
+        return False
+    return react_ready()
 
 
 CONFIG_DIR = Path.home() / ".vidforge"
@@ -328,6 +357,14 @@ def make_handler(state: State):
             path = url.path
             try:
                 if path in ("/", "/index.html"):
+                    return self._file(REACT_DIST / "index.html" if react_ready() else STATIC / "index.html")
+                if path.startswith("/assets/") and react_ready():
+                    p = (REACT_DIST / path.lstrip("/")).resolve()      # dist/assets/<hashed>.js
+                    return (self._file(p) if str(p).startswith(str(REACT_DIST.resolve()))
+                            else self._error("forbidden", HTTPStatus.FORBIDDEN))
+                if path == "/favicon.svg" and react_ready():
+                    return self._file(REACT_DIST / "favicon.svg")
+                if path == "/old":                       # the previous UI, still reachable on purpose
                     return self._file(STATIC / "index.html")
                 if path.startswith("/static/"):
                     p = (STATIC / path[len("/static/"):]).resolve()
@@ -781,6 +818,7 @@ def make_handler(state: State):
                 "ffmpeg": {"ok": ff_ok, "path": ff}, "encoder": enc, "encoders": ["libx264", *hw],
                 "node": bool(shutil.which("node")), "remotion": (APP_DIR / "node_modules").exists(),
                 "stamp": STAMP, "busy": state.busy, "idle_exit_min": State.IDLE_EXIT_MIN,
+                "ui": "react" if react_ready() else "legacy",
                 "keys": {k: bool(os.environ.get(k)) for k in env.KEYS},
                 "youtube_secret": (Path.home() / ".vidforge" / "client_secret.json").exists()
                                   or bool(os.environ.get("YOUTUBE_CLIENT_SECRET")),
@@ -1689,6 +1727,7 @@ def serve(project: str | Path | None, port: int = 8765, open_browser: bool = Tru
             else:
                 raise SystemExit(f"could not find a free port near {requested_port}")
             print(f"port {requested_port} busy (not vidforge); using {port} instead.")
+    build_react()
     httpd.daemon_threads = True
 
     def idle_watch():
@@ -1713,7 +1752,8 @@ def serve(project: str | Path | None, port: int = 8765, open_browser: bool = Tru
 
     threading.Thread(target=idle_watch, daemon=True).start()
     url = f"http://127.0.0.1:{port}/"
-    print(f"vidforge ui · {project_path or 'project picker'}\n  {url}   (Ctrl+C to stop)")
+    which = "新界面" if react_ready() else "旧界面（装 Node.js 后重启可切到新界面）"
+    print(f"vidforge ui · {project_path or 'project picker'}\n  {url}   {which}   (Ctrl+C to stop)")
     if open_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     try:

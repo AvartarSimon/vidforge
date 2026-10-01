@@ -18,16 +18,15 @@ User-facing manual: `QUICKSTART.zh.md`. Roadmap: `docs/roadmap-v0.4-plan.md`.
 | Assets | `assets/` — `pexels.py`, `pixabay.py`, `wikimedia.py`, `openverse.py`, `archive.py`, `google_images.py`, `baidu.py` | `Library` = `assets/index.json` (licence, credits, picks, vision-check verdicts). `pick_many()` is what autofill uses (one search → several files, downloaded in parallel); `relevant()` (contiguous content-word bigram) + `branded()` + `blocked_host()` gate accuracy, `vision_verdict()` is the optional slow check; `normalise()` shrinks museum-sized downloads |
 | TTS | `tts/` (edge-tts default, ElevenLabs, VoxCPM) | word timings drive `final.srt` |
 | Local LLM | `llm.py` (Ollama, optional) | text: `qwen2.5:3b` keywords/translation/chapter names, batched `keywords_batch()`; vision: `qwen2.5vl:3b` `vision_check()` (watermark / text overlay / depicts) |
-| Browser bridge | `browser/` (Playwright on the user's own Chrome/Edge profile) | types prompts into ChatGPT/Claude/DeepSeek/… web UIs for script generation; no API keys |
+| Browser bridge | `browser/` (Playwright on the user's own Chrome/Edge profile) | types prompts into ChatGPT/Codex/DeepSeek/… web UIs for script generation; no API keys |
 | Script parsing | `script_parser.py` | pasted AI text → segments; strips chatter/notes/stage directions; `language_issues()` flags mixed language |
 | Web UI backend | `ui/__init__.py` (stdlib `ThreadingHTTPServer`, `/api/*`, port 8765) | `State` holds project path, build status, autofill job, background vision-check queue. `STAMP` = code mtime; a stale running copy is replaced on start |
 | UI sections | `ui/react/src/components/sections/` | 视频 / 声音 / 图片 — material-centred pages beside the 5-step wizard (React UI only; the old static UI has no nav rail) |
-| Web UI frontend | `ui/react/` (Vite + MUI) — **this is the UI**; the backend serves `ui/react/dist/` at `/`, and builds it on first run when Node is present | Dev loop: `npm run dev` on 5175 proxying to 8765. `ui/static/app.js` is a frozen fallback for machines without Node, reachable at `/old`; **do not add features to it** |
-| Remotion | `remotion/` | TitleCard / Timeline / BarChart / **LineChart / BigNumber / Compare** / Vocab / Host, each exactly the narration's length; charts carry a source caption; needs Node |
-| Data | `data/` — `worldbank.py`, `from_csv()` | public datasets → chart props. World Bank: no key, ~16k indicators, cached 30 days in `~/.vidforge/data-cache/`. Values auto-scaled to 万亿/亿/万 and every series carries its source through to the caption. `vidforge data search|chart`, `/api/data/*`, UI: 画面 → 动画 tab |
+| Web UI frontends | `ui/static/app.js` (vanilla, served by the backend — what the launchers open) **and** `ui/react/` (Vite + MUI, `npm run dev` on 5175 proxying to 8765) | **Every UI change must be made in both** until the React one replaces the old |
+| Remotion | `remotion/` | animated TitleCard / Timeline / BarChart at exact narration length; needs Node |
 | Video tools | `video/heads.py`, `video/face.py` | heads: detect (OpenCV YuNet, weights auto-downloaded to `~/.vidforge/models/`) → track/smooth → cover each face with a still **or an animated head** (`cover_video=`, oval-masked, frame-locked). face: photo → talking head, `motion` (audio-envelope puppet, no GPU) or `cmd` (`PHOTO_TALK_CMD` → SadTalker/EchoMimic/Hallo, needs a GPU). `vidforge video heads|detect|face` + `/api/video/heads/*`, `/api/video/face`. UI: the 视频 section |
 | Presenter | `me.py`, `lipsync.py`, `avatar/` | own-footage library `~/.vidforge/me/`, optional lip-sync providers |
-| Tests | `tests/` — `python -m unittest discover -s tests` (144 tests, offline; providers/TTS/network mocked) | e2e browser test skips without playwright |
+| Tests | `tests/` — `python -m unittest discover -s tests` (125 tests, offline; providers/TTS mocked) | e2e browser test skips without playwright |
 
 Data locations: projects `~/vidforge-projects/` (`VIDFORGE_WORKSPACE`), per-project `assets/`, `build*/`,
 `.history/`; user-wide `~/.vidforge/` (browser profile, `me/`, `categories/`, `voices/`, YouTube
@@ -38,7 +37,6 @@ Data locations: projects `~/vidforge-projects/` (`VIDFORGE_WORKSPACE`), per-proj
 - Before changing code: read the function and its callers; report bugs found before fixing (owner's rule).
 - Comments explain *why* (policy, platform quirk, user request), not what. Match existing density.
 - Accuracy over quantity for pictures: never insert an unrelated or watermarked image; leave the slot empty.
-- Never invent a figure: a chart's numbers come from a fetched dataset or a pasted table, and the source caption rides along with them to the screen.
 - Chinese projects must produce Chinese-only narration (no mixed English sentences, no AI chatter).
 - Platform rules that shaped the design: YouTube "inauthentic content" (2025-07) and China's AI-content
   labelling (2025-09-01) — own voice / own footage / original charts are the answer, not evasion.
