@@ -404,6 +404,13 @@ def make_handler(state: State):
                     return self._json(state.heads)
                 if path == "/api/assets/library":
                     return self._json(self.asset_library())
+                if path == "/api/data/search":
+                    from ..data import DataError, worldbank
+                    try:
+                        return self._json({"indicators": worldbank.search(q.get("q", ""), int(q.get("limit", 15))),
+                                           "countries": worldbank.ZH_NAMES})
+                    except DataError as e:
+                        return self._error(str(e))
                 if path == "/api/keywords":
                     p = state.load(q.get("lang"))
                     seg = next((s for s in p.segments if s.id == q.get("id")), None)
@@ -630,6 +637,8 @@ def make_handler(state: State):
                     return self.heads_cover(body)
                 if path == "/api/video/face":
                     return self.face_talk(body)
+                if path == "/api/data/chart":
+                    return self.data_chart(body)
                 if path == "/api/autofill/cancel":
                     state.autofill["cancel"] = True
                     return self._json({"cancelling": state.autofill["state"] == "running"})
@@ -1304,6 +1313,38 @@ def make_handler(state: State):
                 return self._json({"started": True, **(state.heads["result"] or {"error": state.heads["error"]})})
             threading.Thread(target=run, daemon=True).start()
             return self._json({"started": True})
+
+        def data_chart(self, body: dict):
+            """Indicator + countries -> Remotion chart props, with the source already filled in.
+
+            Returns the props rather than writing them: the picker shows a preview first, because
+            a wrong indicator code is far easier to spot on a chart than in a JSON blob."""
+            from ..data import DataError, bar_props, big_number_props, compare_props, line_props, worldbank
+            indicator = (body.get("indicator") or "").strip()
+            countries = [c.strip().upper() for c in (body.get("countries") or []) if c.strip()]
+            chart = body.get("chart", "line")
+            if not indicator or not countries:
+                return self._error("要选指标和至少一个国家")
+            try:
+                series = worldbank.fetch(indicator, countries, body.get("start"), body.get("end"))
+                title = body.get("title") or ""
+                if chart == "line":
+                    props, comp = line_props(series, title), "LineChart"
+                elif chart == "bar":
+                    props, comp = bar_props(series, title, body.get("year")), "BarChart"
+                elif chart == "big":
+                    props, comp = big_number_props(series, (series.labels or [None])[0], title), "BigNumber"
+                elif chart == "compare":
+                    if len(series.labels) < 2:
+                        return self._error("对比图需要两个国家")
+                    props, comp = compare_props(series, series.labels[0], series.labels[1],
+                                                body.get("year"), title), "Compare"
+                else:
+                    return self._error(f"未知图表类型 {chart}")
+            except DataError as e:
+                return self._error(str(e))
+            return self._json({"composition": comp, "props": props, "source": series.source,
+                               "labels": series.labels, "span": series.span()})
 
         def asset_library(self) -> dict:
             """Everything downloaded into this project, with licence, credit, vision verdict and

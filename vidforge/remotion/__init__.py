@@ -23,7 +23,7 @@ import subprocess
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent / "app"
-COMPOSITIONS = ("TitleCard", "Timeline", "BarChart", "Host", "Vocab")
+COMPOSITIONS = ("TitleCard", "Timeline", "BarChart", "LineChart", "BigNumber", "Compare", "Host", "Vocab")
 
 
 class RemotionError(RuntimeError):

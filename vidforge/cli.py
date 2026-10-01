@@ -162,6 +162,51 @@ def cmd_me(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_data(args: argparse.Namespace) -> int:
+    """Public datasets -> a chart segment. `search` finds an indicator code, `chart` renders one."""
+    from .data import bar_props, big_number_props, compare_props, line_props, worldbank
+    if args.action == "search":
+        for hit in worldbank.search(args.query or "", limit=args.limit):
+            print(f"  {hit['id']:<24} {hit['name']}")
+        return 0
+
+    if not args.indicator:
+        raise SystemExit("`vidforge data chart --indicator <代码> --countries CHN,USA`（代码用 `data search` 找）")
+    countries = [c.strip() for c in (args.countries or "CHN").replace("，", ",").split(",") if c.strip()]
+    series = worldbank.fetch(args.indicator, countries, args.start, args.end)
+    builders = {
+        "line": lambda: line_props(series, args.title or ""),
+        "bar": lambda: bar_props(series, args.title or "", args.year),
+        "big": lambda: big_number_props(series, args.label or None, args.title or ""),
+        "compare": lambda: compare_props(series, *(args.label or "").split(",")[:2], args.year, args.title or ""),
+    }
+    if args.chart == "compare" and len((args.label or "").split(",")) < 2:
+        raise SystemExit("compare 需要 --label 中国,美国")
+    props = builders[args.chart]()
+    composition = {"line": "LineChart", "bar": "BarChart", "big": "BigNumber", "compare": "Compare"}[args.chart]
+    clip = {"remotion": {"composition": composition, "props": props}}
+    if not args.project:
+        print(json.dumps(clip, ensure_ascii=False, indent=1))
+        return 0
+
+    root = Path(args.project).resolve()
+    path = root / "project.json" if root.is_dir() else root
+    if not path.is_file():
+        raise SystemExit(f"找不到项目：{path}")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    target = next((sg for sg in raw["segments"] if sg["id"] == args.segment), None) if args.segment else None
+    if args.segment and target is None:
+        raise SystemExit(f"项目里没有段落 {args.segment}")
+    if target is None:
+        raw["segments"].append({"id": f"chart-{args.indicator.lower().replace('.', '-')}",
+                                "text": args.text or "", "clips": [clip]})
+    else:
+        target.setdefault("clips", []).append(clip)
+    path.write_text(json.dumps(raw, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"已加入 {path.name}：{composition} · {series.source}")
+    return 0
+
+
 def cmd_video(args: argparse.Namespace) -> int:
     """Tools that take a clip and give a clip back, independent of any project.
     `heads` covers every face with a picture (or an animated head) that follows it; `face` turns a
@@ -408,6 +453,23 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--tags", help="tag: comma-separated tags, e.g. backyard,glasses")
     s.add_argument("--talking", choices=["true", "false"], help="tag: mark as a speaking take or silent B-roll")
     s.set_defaults(fn=cmd_me)
+
+    s = sub.add_parser("data", help="public datasets as charts: 'search' finds an indicator, 'chart' builds one")
+    s.add_argument("action", choices=["search", "chart"])
+    s.add_argument("query", nargs="?", help="search: words to look for, e.g. population")
+    s.add_argument("--limit", type=int, default=15)
+    s.add_argument("--indicator", help="chart: World Bank indicator code, e.g. NY.GDP.MKTP.CD")
+    s.add_argument("--countries", default="CHN", help="chart: ISO3 codes, e.g. CHN,USA,JPN")
+    s.add_argument("--start", type=int, help="chart: first year")
+    s.add_argument("--end", type=int, help="chart: last year")
+    s.add_argument("--chart", choices=["line", "bar", "big", "compare"], default="line")
+    s.add_argument("--title", help="chart: heading (defaults to the indicator's own name)")
+    s.add_argument("--label", help="big: which country · compare: two, e.g. 中国,美国")
+    s.add_argument("--year", type=float, help="bar/compare: which year (default: the latest)")
+    s.add_argument("--project", help="write the chart into this project instead of printing it")
+    s.add_argument("--segment", help="add it to this segment (default: a new segment at the end)")
+    s.add_argument("--text", help="narration for the new segment")
+    s.set_defaults(fn=cmd_data)
 
     s = sub.add_parser("video", help="clip tools: 'heads' covers every face with a picture that follows it")
     s.add_argument("action", choices=["heads", "detect", "face"],

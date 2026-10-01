@@ -4,6 +4,9 @@ import { Timeline, TimelineProps } from "./compositions/Timeline";
 import { TitleCard, TitleCardProps } from "./compositions/TitleCard";
 import { Host, HostProps } from "./compositions/Host";
 import { Vocab, VocabProps } from "./compositions/Vocab";
+import { LineChart, LineChartProps } from "./compositions/LineChart";
+import { BigNumber, BigNumberProps } from "./compositions/BigNumber";
+import { Compare, CompareProps } from "./compositions/Compare";
 import { Base } from "./theme";
 
 // vidforge passes durationInFrames/fps/width/height in the props file: the composition
@@ -21,6 +24,41 @@ const demoEnvelope = Array.from({ length: 150 }, (_, i) => Math.max(0, Math.sin(
 
 export const Root: React.FC = () => (
   <>
+    <Composition<any, LineChartProps>
+      id="LineChart"
+      component={LineChart}
+      calculateMetadata={fromProps}
+      {...base}
+      defaultProps={{
+        ...base, title: "中美 GDP", unit: "万亿", source: "数据来源：世界银行（NY.GDP.MKTP.CD）",
+        lines: [
+          { label: "中国", points: [2000, 2005, 2010, 2015, 2020, 2023].map((x, i) => ({ x, y: [1.2, 2.3, 6.1, 11.1, 15.0, 18.3][i] })) },
+          { label: "美国", points: [2000, 2005, 2010, 2015, 2020, 2023].map((x, i) => ({ x, y: [10.3, 13.0, 15.0, 18.2, 21.1, 27.8][i] })) },
+        ],
+      }}
+    />
+    <Composition<any, BigNumberProps>
+      id="BigNumber"
+      component={BigNumber}
+      calculateMetadata={fromProps}
+      {...base}
+      defaultProps={{
+        ...base, title: "中国 GDP", value: "18.3", unit: "万亿", caption: "中国 · 2023",
+        change: 1393, changeSince: "2000", source: "数据来源：世界银行（NY.GDP.MKTP.CD）",
+      }}
+    />
+    <Composition<any, CompareProps>
+      id="Compare"
+      component={Compare}
+      calculateMetadata={fromProps}
+      {...base}
+      defaultProps={{
+        ...base, title: "GDP（现价美元）", unit: "万亿", ratio: 0.66,
+        left: { label: "中国", value: "18.3", raw: 18.3, caption: "2023" },
+        right: { label: "美国", value: "27.8", raw: 27.8, caption: "2023" },
+        source: "数据来源：世界银行（NY.GDP.MKTP.CD）",
+      }}
+    />
     <Composition<any, HostProps>
       id="Host"
       component={Host}
