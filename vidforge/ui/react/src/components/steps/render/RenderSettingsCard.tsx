@@ -82,14 +82,83 @@ export function RenderSettingsCard() {
               <MenuItem value="box">白字 + 半透明底框</MenuItem>
             </TextField>
           </Stack>
-          <TextField
-            size="small"
-            type="number"
-            label="片段间转场（秒，0 = 硬切）"
-            value={raw.transition ?? 0}
-            onChange={(e) => patch((r) => (r.transition = parseFloat(e.target.value) || 0))}
-            sx={{ width: 220 }}
-          />
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <TextField
+              size="small"
+              type="number"
+              label="段内片段转场（秒，0 = 硬切）"
+              value={raw.transition ?? 0}
+              onChange={(e) => patch((r) => (r.transition = parseFloat(e.target.value) || 0))}
+              sx={{ width: 210 }}
+            />
+            <TextField
+              size="small"
+              select
+              label="转场方式"
+              value={raw.transition_style ?? 'fade'}
+              onChange={(e) => patch((r) => (r.transition_style = e.target.value))}
+              sx={{ width: 170 }}
+            >
+              {[
+                ['fade', '淡入淡出'],
+                ['dissolve', '溶解'],
+                ['fadeblack', '黑场过渡'],
+                ['fadewhite', '白场过渡'],
+                ['slideleft', '左滑'],
+                ['slideright', '右滑'],
+                ['wipeleft', '擦除'],
+                ['circleopen', '圆形打开'],
+              ].map(([v, label]) => (
+                <MenuItem key={v} value={v}>
+                  {label}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              size="small"
+              type="number"
+              label="段与段之间黑场（秒）"
+              value={raw.segment_fade ?? 0}
+              onChange={(e) => patch((r) => (r.segment_fade = parseFloat(e.target.value) || 0))}
+              sx={{ width: 190 }}
+              helperText="不改变时长，字幕不会错位"
+            />
+          </Stack>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+            <TextField
+              size="small"
+              select
+              label="统一调色"
+              value={raw.look ?? 'none'}
+              onChange={(e) => patch((r) => (r.look = e.target.value))}
+              sx={{ width: 170 }}
+            >
+              {[
+                ['none', '不调色'],
+                ['film', '胶片（低饱和高反差）'],
+                ['warm', '暖调'],
+                ['cool', '冷调'],
+                ['mono', '黑白'],
+              ].map(([v, label]) => (
+                <MenuItem key={v} value={v}>
+                  {label}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              size="small"
+              type="number"
+              label="调色强度"
+              value={raw.look_strength ?? 1}
+              onChange={(e) => patch((r) => (r.look_strength = parseFloat(e.target.value) || 1))}
+              sx={{ width: 130 }}
+              slotProps={{ htmlInput: { step: 0.1, min: 0, max: 2 } }}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 420 }}>
+              一键配图会从 Commons、Openverse、Internet Archive 各取一些，色调差别很大；
+              统一调色让它们看起来像同一条片子。
+            </Typography>
+          </Stack>
           <TextField
             size="small"
             label="背景音乐"

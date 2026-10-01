@@ -194,6 +194,9 @@ def render_clip(project: Project, pc: PlannedClip, out: Path, encoder: str) -> N
             args += ["-stream_loop", "-1"]
         if c.in_:
             args += ["-ss", f"{c.in_:.3f}"]
+        grade = look_filter(project)
+        if grade:
+            vf = f"{vf},{grade}"
         args += ["-i", str(c.video), "-an", "-vf", vf, "-t", f"{dur:.3f}", *codec, str(out)]
         ffmpeg.run(args)
         return
@@ -202,7 +205,9 @@ def render_clip(project: Project, pc: PlannedClip, out: Path, encoder: str) -> N
     frames = max(1, round(dur * fps))
     z, x, y = _zoompan_exprs(c.motion, project.motion_amount, frames)
     sharpen = ",unsharp=5:5:0.4:3:3:0.0" if project.quality == "final" else ""
-    zp = f"zoompan=z='{z}':x='{x}':y='{y}':d={frames}:s={w}x{h}:fps={fps}{sharpen},setsar=1"
+    grade = look_filter(project)
+    zp = (f"zoompan=z='{z}':x='{x}':y='{y}':d={frames}:s={w}x{h}:fps={fps}{sharpen},setsar=1"
+          + (f",{grade}" if grade else ""))
     if image_needs_fill(c.image, w, h):
         # portrait / square picture: blurred, darkened copy fills the frame, the whole picture sits on top
         vf = (f"[0:v]split=2[bg][fg];"
@@ -237,9 +242,48 @@ def image_needs_fill(path: Path, w: int, h: int) -> bool:
     return ratio < frame * 0.72 or ratio > frame * 1.6
 
 
+# What ffmpeg's xfade calls these. Only the ones that suit a narrated explainer are offered:
+# a spin or a page-curl between two photographs of the Qin dynasty reads as a screensaver.
+TRANSITIONS = {
+    "fade": "fade",                 # the default: one picture dissolves into the next
+    "dissolve": "dissolve",         # grainier dissolve, good over textured archive photos
+    "fadeblack": "fadeblack",       # through black — a beat of separation, for topic changes
+    "fadewhite": "fadewhite",
+    "slideleft": "slideleft",
+    "slideright": "slideright",
+    "wipeleft": "wipeleft",
+    "circleopen": "circleopen",
+}
+
+# A single grade over every visual. Autofill pulls pictures from Commons, Openverse and the
+# Internet Archive in one segment, and their colour is all over the place; one curve across the
+# lot is what makes them read as one video rather than a scrapbook.
+LOOKS = {
+    "warm": "eq=saturation={sat}:contrast={con},colortemperature=temperature={warm}",
+    "cool": "eq=saturation={sat}:contrast={con},colortemperature=temperature={cool}",
+    "film": "curves=preset=medium_contrast,eq=saturation={filmsat}",
+    "mono": "hue=s=0,eq=contrast={con}",
+}
+
+
+def look_filter(project: Project) -> str:
+    """The grade for this project as an ffmpeg filter string, or "" when it is off."""
+    name = (project.look or "none").lower()
+    if name in ("", "none"):
+        return ""
+    tmpl = LOOKS.get(name)
+    if not tmpl:
+        raise ValueError(f"unknown look '{project.look}'; available: none, {', '.join(LOOKS)}")
+    k = max(0.0, min(2.0, project.look_strength))
+    return tmpl.format(sat=round(1 + 0.12 * k, 3), con=round(1 + 0.06 * k, 3),
+                       warm=int(6500 - 900 * k), cool=int(6500 + 900 * k),
+                       filmsat=round(1 - 0.08 * k, 3))
+
+
 def _xfade_join(project: Project, parts: list[Path], seconds: list[float], out: Path, encoder: str) -> None:
     """Crossfade consecutive clips (re-encode). Total length = sum(seconds) - (n-1)*t."""
     t = project.transition
+    style = TRANSITIONS.get(project.transition_style, "fade")
     args = ["-y"]
     for p in parts:
         args += ["-i", str(p)]
@@ -247,10 +291,25 @@ def _xfade_join(project: Project, parts: list[Path], seconds: list[float], out: 
     for i in range(1, len(parts)):
         offset += seconds[i - 1] - t
         label = f"[v{i}]" if i < len(parts) - 1 else "[v]"
-        filt.append(f"{prev}[{i}:v]xfade=transition=fade:duration={t:.3f}:offset={offset:.3f}{label}")
+        filt.append(f"{prev}[{i}:v]xfade=transition={style}:duration={t:.3f}:offset={offset:.3f}{label}")
         prev = label
     args += ["-filter_complex", ";".join(filt), "-map", "[v]", "-an", *video_codec_args(project, encoder), str(out)]
     ffmpeg.run(args)
+
+
+def _boundary_fade(project: Project, visual: Path, total: float, out: Path, encoder: str) -> Path:
+    """Dip to black at both ends of a segment, **without changing its length**.
+
+    A crossfade between segments would be the obvious thing and is the wrong thing here: xfade
+    shortens the join by its own duration, and this pipeline's subtitles, chapter marks and the
+    brand clips are all laid out from segment lengths that must stay exactly as measured. Fading
+    the ends in place gives the same beat of separation and keeps every timestamp true."""
+    d = min(project.segment_fade, max(0.08, total / 4))
+    chain = (f"[0:v]fade=t=in:st=0:d={d:.3f},"
+             f"fade=t=out:st={max(0.0, total - d):.3f}:d={d:.3f}[v]")
+    ffmpeg.run(["-y", "-i", str(visual), "-filter_complex", chain, "-map", "[v]", "-an",
+                "-t", f"{total:.3f}", *video_codec_args(project, encoder), str(out)])
+    return out
 
 
 def render_segment(project: Project, seg: Segment, audio: Path, out: Path, *, encoder: str | None = None,
@@ -288,6 +347,9 @@ def render_segment(project: Project, seg: Segment, audio: Path, out: Path, *, en
     overlays = [o for o in seg.overlays if o.image or o.video]
     if overlays:
         visual = apply_overlays(project, overlays, visual, target, work / "overlaid.mp4", encoder)
+
+    if project.segment_fade > 0:
+        visual = _boundary_fade(project, visual, target, work / "faded.mp4", encoder)
 
     norm = "loudnorm=I=-16:TP=-1.5:LRA=11," if project.normalize_audio and not audio_is_silent(audio) else ""
     ffmpeg.run(["-y", "-i", str(visual), "-i", str(audio),

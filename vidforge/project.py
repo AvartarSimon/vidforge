@@ -229,6 +229,10 @@ class Project:
     motion_amount: float = 0.15      # zoom factor / pan distance as a fraction of the frame
     supersample: int | None = None   # zoompan supersampling; None = by quality (draft 1, final 2)
     transition: float = 0.0          # crossfade seconds between clips inside a segment (0 = hard cut)
+    transition_style: str = "fade"   # fade | fadeblack | fadewhite | dissolve | slideleft | slideright | wipeleft | circleopen
+    segment_fade: float = 0.0        # seconds of dip-to-black at each segment boundary (0 = hard cut)
+    look: str = "none"               # none | warm | cool | film | mono — one grade over every visual
+    look_strength: float = 1.0
     auto_title_cards: bool = False   # prepend a 3 s TitleCard to every segment that has a label (needs Remotion)
     presenter: PresenterConfig = field(default_factory=PresenterConfig)
     outro_vocab: int = 0             # learner edition: append a vocabulary card with N words (0 = off)
@@ -510,6 +514,10 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         motion_amount=float(data.get("motion_amount", 0.15)),
         supersample=int(data["supersample"]) if data.get("supersample") else None,
         transition=float(data.get("transition", 0.0)),
+        transition_style=str(data.get("transition_style", "fade")),
+        segment_fade=float(data.get("segment_fade", 0.0)),
+        look=str(data.get("look", "none")),
+        look_strength=float(data.get("look_strength", 1.0)),
         auto_title_cards=bool(data.get("auto_title_cards", False)),
         outro_vocab=int(data.get("outro_vocab", 0) or 0),
         lipsync=str(data.get("lipsync", "none")),

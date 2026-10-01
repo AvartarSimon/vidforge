@@ -42,6 +42,10 @@ export interface Segment {
 }
 
 export interface RawProject {
+  transition_style?: string
+  segment_fade?: number
+  look?: string
+  look_strength?: number
   title?: string
   thumbnail_text?: string
   target_minutes?: number
