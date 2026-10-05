@@ -67,6 +67,7 @@ export interface RawProject {
   voice_fx?: string
   voice_pitch?: number
   narration_trim?: boolean
+  take_look?: string
   encoder?: string
   parallel?: number
   supersample?: number
@@ -375,4 +376,11 @@ export interface TrendGroup {
   label: string
   fetched: number
   items: TrendItem[]
+}
+
+export interface VideoLook {
+  id: string
+  name: string
+  about: string
+  chain: string
 }

@@ -257,6 +257,24 @@ def cmd_voicefx(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_videofx(args: argparse.Namespace) -> int:
+    """画面预设：把一条自己录的素材修到能用。"""
+    from . import ffmpeg as ff, videofx
+    if args.action == "list":
+        for lk in videofx.LOOKS:
+            print(f"  {lk.id:<8} {lk.name}")
+            print(f"  {'':<8} {lk.about}")
+        return 0
+    if not args.file:
+        raise SystemExit("`vidforge videofx try <视频或图片> --look beauty`")
+    src = Path(args.file)
+    out = Path(args.out) if args.out else src.with_name(f"{src.stem}.{args.look}{src.suffix}")
+    chain = videofx.get(args.look).chain
+    ff.run(["-y", "-i", str(src)] + (["-vf", chain] if chain else []) + [str(out)])
+    print(f"{out}  ({args.look})")
+    return 0
+
+
 def cmd_narration(args: argparse.Namespace) -> int:
     """Use your own recording for a segment instead of TTS."""
     from . import align as aligner, narration, project as proj
@@ -735,6 +753,13 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--preset", default="warm")
     s.add_argument("-o", "--out")
     s.set_defaults(fn=cmd_voicefx)
+
+    s = sub.add_parser("videofx", help="画面预设：柔肤/补光/锐利（保边平滑，不糊眼睛和头发）")
+    s.add_argument("action", choices=["list", "try"])
+    s.add_argument("file", nargs="?")
+    s.add_argument("--look", default="beauty")
+    s.add_argument("-o", "--out")
+    s.set_defaults(fn=cmd_videofx)
 
     s = sub.add_parser("narration", help="用自己的录音代替 TTS（会和脚本强制对齐，字幕照旧准）")
     s.add_argument("project", help="project.json or its directory")

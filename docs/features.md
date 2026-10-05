@@ -78,6 +78,8 @@
 | **ElevenLabs** | 🟡 | [`tts/elevenlabs.py`](../vidforge/tts/elevenlabs.py) — `/with-timestamps` 端点，同样帧级准确。要 key、按字符收费 |
 | **VoxCPM2（本地设计音色）** | 🟡 | [`tts/voxcpm.py`](../vidforge/tts/voxcpm.py) — Apache-2.0 可商用，30 语言 + 9 种方言，**纯文字描述生成一个不存在的新音色**。⚠ 实测 CPU 上约 39 倍实时（12.96s 的输出跑了 505s），只有真有 GPU 才实用。没有 forced alignment，时间按真实总长平均摊 |
 | **声音设计（文字描述 → 音色）** | 🟡 | [`tts/voice_design.py`](../vidforge/tts/voice_design.py)（ElevenLabs）/ `voxcpm.design()`。**不克隆任何真人**，所以没有肖像/声音授权问题。你存的 `Simon1` 就是这条路出来的 |
+| **录音棚（提词器 + 设备选择 + 电平表）** | ✅ | `RecordStudio.tsx` — 提词器压在摄像头画面**上面**（念稿时眼睛要能看镜头）、摄像头/麦克风分别选（「音频口」几乎从不是浏览器默认）、实时电平表（录废的最常见原因是选错输入，事后才发现是一片静音）、3 秒倒数。**一条录像可以同时**当这一段的旁白和素材库里的出镜镜头 |
+| **画面预设（柔肤/补光）** | ✅ | [`videofx.py`](../vidforge/videofx.py) — `bilateral` 保边平滑 + `unsharp` 回加细节。**不是 `gblur`**：普通模糊会把眼睛、发丝、下颌线一起抹掉。每个预设都不改分辨率和时长 |
 | **用我自己的录音当旁白** | ✅ | [`narration.py`](../vidforge/narration.py) — `Segment.narration` 指一个文件就不走 TTS。解码（**视频也行，自动抽音频**）→ 掐掉首尾静音 → 强制对齐 → sidecar 缓存。按段落录，不是整条录 |
 | **字幕与任意录音对齐** | ✅ | [`align.py`](../vidforge/align.py) — faster-whisper（可选依赖）。**转写只用来定位时间，不用来决定字幕内容**：字幕永远显示脚本原文。`difflib` 在归一化 key 上对齐两串 token，没命中的借相邻词插值。实测中文平均误差 **0.068s**，比平均摊好 4.4 倍 |
 | **人声美化（浑厚/磁性）** | ✅ | [`voicefx.py`](../vidforge/voicefx.py) — 7 个预设（none/clean/warm/clear/**deep 低沉磁性**/**radio 电台质感**/phone），只有 `highpass`/`afftdn`/`equalizer`/`acompressor` 几条 ffmpeg 滤镜，没有模型。界面可试听对比。**每个预设都不改变时长**——字幕时间是按这段音频量出来的 |
@@ -191,6 +193,7 @@ vidforge i18n export|import                      # 翻译表
 vidforge voices / voice design|keep              # 列音色 / 设计音色
 vidforge narration <项目> list|attach|clear      # 用自己的录音
 vidforge voicefx list|try                        # 人声预设
+vidforge videofx list|try                        # 画面预设（柔肤/补光/锐利）
 vidforge trends list|sources                     # 热点发现 + 打分
 
 vidforge assets <项目>                           # 只下素材不渲染
@@ -214,7 +217,8 @@ vidforge category / remotion setup|studio / ui / shortcut
 |---|---|
 | **视频中途的关注/点赞引导** | 片尾有 `subscribe` 文案，但中途没有任何 CTA。见 [第 13 节](data-channel-plan.md#q13) |
 | **抖音 / TikTok / 快手 热榜** | 要请求签名，拿不到（见 2.0）。正规途径是抖音开放平台 / 巨量算数，都要注册审核 |
-| **声音克隆（录一次，以后只打字）** | 还没做，但路线是清的，见 [audio-voice-qa.md 第 8 节](audio-voice-qa.md#q8) |
+| **声音克隆（录一次，以后只打字）** | 还没做。挡路的不是代码：**没有录音样本**，而且这台机器只有 Intel 核显（无 CUDA）。见 [audio-voice-qa.md 第 8 节](audio-voice-qa.md#q8) |
+| **实时换脸 / 换背景** | 没做。换脸要 GPU + 授权有问题的权重，而且会让整条视频变回「合成媒体」。绿幕换背景的滤镜链在 `videofx.chromakey_chain()`，但没绿幕就别用 |
 | **生成背景音乐** | **故意不做**。每条「免费 AI 音乐」路线都有授权陷阱——MusicGen 是 CC-BY-NC，变现频道不能用。所以只做正弦波合成的音频标记 |
 | **克隆真人声音** | 不需要了——直接用你本人念的（见 3 节） |
 | **录像 / 抠像 / 背景虚化 / 换背景** | 只录音，不录像。画面处理仍在 vidforge 之外 |

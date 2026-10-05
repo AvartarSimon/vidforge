@@ -446,6 +446,11 @@ def make_handler(state: State):
                     return self._json({"sources": trends.available(), "kinds": trends.KINDS})
                 if path == "/api/trends":
                     return self.trends(q)
+                if path == "/api/videofx":
+                    from .. import videofx
+                    raw = state.read_raw()
+                    return self._json({"looks": videofx.listing(),
+                                       "current": raw.get("take_look", "clean")})
                 if path == "/api/voicefx":
                     from .. import align as aligner, voicefx
                     raw = state.read_raw()
@@ -728,6 +733,8 @@ def make_handler(state: State):
                     return self.make_short(body)
                 if path == "/api/voicefx/preview":
                     return self.voicefx_preview(body)
+                if path == "/api/record/save":
+                    return self.record_save(body)
                 if path == "/api/narration/upload":
                     return self.narration_upload(body)
                 if path == "/api/narration/clear":
@@ -1555,6 +1562,92 @@ def make_handler(state: State):
             prov = get_provider(p.tts.provider, rate=p.rate, config=p.tts.__dict__)
             synthesize_cached(prov, seg.text, seg.voice or p.voice, out)
             return out
+
+        def record_save(self, body: dict):
+            """One take from the recording studio, used for up to three things at once.
+
+            A take in front of the camera is a voice *and* a face *and* a B-roll shot, and asking
+            someone to record the same paragraph three times is how a channel dies. So one upload
+            can land as: this segment's narration (audio pulled out of the video), a clip in the
+            own-footage library, or both."""
+            from .. import me, narration as narr, videofx
+            seg_id = body.get("segment") or ""
+            as_narration = bool(body.get("as_narration", True))
+            as_footage = bool(body.get("as_footage", False))
+            if not as_narration and not as_footage:
+                return self._error("这条录像要用来做什么？旁白、素材库，至少选一个")
+            try:
+                data = base64.b64decode(body.get("data") or "", validate=True)
+            except (ValueError, TypeError):
+                return self._error("录像数据损坏")
+            if not data:
+                return self._error("录像是空的")
+            ext = (body.get("ext") or "webm").lstrip(".").lower()
+
+            raw = state.read_raw()
+            seg = next((x for x in (raw.get("segments") or []) if x.get("id") == seg_id), None)
+            if as_narration and seg is None:
+                return self._error(f"没有段落 '{seg_id}'")
+
+            out: dict = {}
+            # the raw take is kept next to the project: it is the source both uses point back at
+            try:
+                saved = narr.save_upload(state.root, seg_id or "take", data, ext)
+            except narr.NarrationError as e:
+                return self._error(str(e))
+            try:
+                seconds = ffmpeg.duration(saved)
+            except ffmpeg.FfmpegError as e:
+                saved.unlink(missing_ok=True)
+                return self._error(f"这个文件读不出时长，可能没录上：{e}")
+            out["seconds"] = seconds
+
+            if as_narration:
+                try:
+                    rel = saved.relative_to(state.root).as_posix()
+                except ValueError:
+                    rel = str(saved)
+                seg["narration"] = rel
+                state.write_raw(raw, snapshot=True)
+                out["narration"] = rel
+
+            if as_footage:
+                look = body.get("look") or raw.get("take_look") or "none"
+                try:
+                    chain = videofx.chain(look).rstrip(",")
+                except KeyError as e:
+                    return self._error(str(e))
+                lib = me.MeLibrary(me.library_dir(state.root))
+                lib.folder.mkdir(parents=True, exist_ok=True)
+                name = re.sub(r"[^\w\-.]+", "_", body.get("name") or f"{seg_id or 'take'}.mp4")
+                if not name.lower().endswith(".mp4"):
+                    name = f"{Path(name).stem}.mp4"
+                dest = lib.folder / name
+                # always transcode: a browser take is webm/vp8, and the pipeline wants mp4/h264
+                args = ["-y", "-i", str(saved)]
+                if chain:
+                    args += ["-vf", chain]
+                args += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                         "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", str(dest)]
+                try:
+                    ffmpeg.run(args)
+                except ffmpeg.FfmpegError as e:
+                    return self._error(f"转码失败：{e}")
+                lib.scan()
+                tags = body.get("tags")
+                if tags is not None:
+                    lib.set_tags(dest.name,
+                                 [t.strip() for t in str(tags).replace("，", ",").split(",") if t.strip()],
+                                 bool(body.get("talking", True)))
+                out["footage"] = dest.name
+                out["look"] = look
+                out["items"] = lib.items()
+
+            if body.get("remember_look") and body.get("look"):
+                raw = state.read_raw()
+                raw["take_look"] = body["look"]
+                state.write_raw(raw)
+            return self._json(out)
 
         def narration_upload(self, body: dict):
             """Store a recording for one segment and point the segment at it."""

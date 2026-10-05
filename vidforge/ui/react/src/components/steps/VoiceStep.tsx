@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Stack, Typography } from '@mui/material'
 import { useProject } from '../../state/ProjectContext'
 import { OwnVoicePanel } from '../sections/voice/OwnVoicePanel'
+import { RecordStudio } from '../sections/voice/RecordStudio'
 import { VoiceFxPanel } from '../sections/voice/VoiceFxPanel'
 import { SegmentVoiceList } from './voice/SegmentVoiceList'
 import { VoiceSettingsCard } from './voice/VoiceSettingsCard'
@@ -40,6 +41,7 @@ export function VoiceStep() {
           {progress}
         </Typography>
       )}
+      <RecordStudio />
       <OwnVoicePanel />
       <VoiceFxPanel />
       <SegmentVoiceList overrides={overrides} setOverride={setOverride} />

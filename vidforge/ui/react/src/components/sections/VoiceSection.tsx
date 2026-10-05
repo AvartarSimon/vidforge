@@ -17,6 +17,7 @@ import {
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import { apiGet, apiPost } from '../../api/client'
 import { useProject } from '../../state/ProjectContext'
+import { RecordStudio } from './voice/RecordStudio'
 import { OwnVoicePanel } from './voice/OwnVoicePanel'
 import { VoiceFxPanel } from './voice/VoiceFxPanel'
 
@@ -106,6 +107,7 @@ export function VoiceSection() {
         </CardContent>
       </Card>
 
+      <RecordStudio />
       <OwnVoicePanel />
       <VoiceFxPanel />
 

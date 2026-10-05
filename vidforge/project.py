@@ -243,6 +243,7 @@ class Project:
     voice_fx: str = "none"           # voicefx preset applied before loudnorm (own recordings and TTS alike)
     voice_pitch: float = 0.0         # semitones, +-4; pitch only, length untouched (rubberband)
     narration_trim: bool = True      # cut the silence at either end of an own recording
+    take_look: str = "clean"         # videofx preset applied to takes saved from the recording studio
     parallel: int = 0                # segments rendered at once; 0 = auto (cores / 2)
     out_dir: Path = Path("build")
     bgm: Bgm | None = None
@@ -280,6 +281,14 @@ def _voice_pitch(value: Any) -> float:
     except KeyError as e:
         raise ProjectError(str(e)) from None
     return float(value)
+
+
+def _take_look(value: Any) -> str:
+    from . import videofx
+    try:
+        return videofx.get(str(value)).id
+    except KeyError as e:
+        raise ProjectError(str(e)) from None
 
 
 def _req(d: dict, key: str, ctx: str) -> Any:
@@ -555,6 +564,7 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         voice_fx=_voice_fx(data.get("voice_fx", "none")),
         voice_pitch=_voice_pitch(data.get("voice_pitch", 0.0)),
         narration_trim=bool(data.get("narration_trim", True)),
+        take_look=_take_look(data.get("take_look", "clean")),
         parallel=int(data.get("parallel", 0)),
         out_dir=Path(data.get("out_dir", "build")),
         bgm=bgm,
