@@ -5,6 +5,7 @@ TTS per segment → word timings → subtitles → Ken Burns / stock video / Rem
 ffmpeg concat → `final.mp4` + thumbnail + optional YouTube upload. A local web UI drives it.
 Owner: Simon (Chinese-speaking, Melbourne). Reply in Chinese; code comments in English.
 
+Feature inventory with implementation notes: `docs/features.md`.
 Full handoff (state of every feature, decisions, known issues): `docs/handoff-mac.md`.
 User-facing manual: `QUICKSTART.zh.md`. Roadmap: `docs/roadmap-v0.4-plan.md`.
 
