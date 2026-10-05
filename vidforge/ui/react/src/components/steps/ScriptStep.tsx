@@ -6,6 +6,7 @@ import { useProject } from '../../state/ProjectContext'
 import { AiGeneratePanel } from './script/AiGeneratePanel'
 import { ResearchPanel } from './script/ResearchPanel'
 import { ScriptEditorPanel } from './script/ScriptEditorPanel'
+import { RetentionBanner } from '../shared/RetentionBanner'
 import { StructurePanel } from './script/StructurePanel'
 
 export function ScriptStep() {
@@ -68,6 +69,7 @@ export function ScriptStep() {
         </CardContent>
       </Card>
       <ResearchPanel onUseAngle={(angle) => setPoints((p) => `视角：${angle}\n${p}`)} />
+      <RetentionBanner />
       <StructurePanel template={template} onTemplate={pickTemplate} />
       <AiGeneratePanel categories={categories} points={points} onPointsChange={setPoints} template={template} />
       <ScriptEditorPanel />

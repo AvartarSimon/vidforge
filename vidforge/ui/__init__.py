@@ -441,6 +441,11 @@ def make_handler(state: State):
                     return self._json(state.heads)
                 if path == "/api/assets/library":
                     return self._json(self.asset_library())
+                if path == "/api/trends/sources":
+                    from .. import trends
+                    return self._json({"sources": trends.available(), "kinds": trends.KINDS})
+                if path == "/api/trends":
+                    return self.trends(q)
                 if path == "/api/voicefx":
                     from .. import align as aligner, voicefx
                     raw = state.read_raw()
@@ -1461,6 +1466,43 @@ def make_handler(state: State):
                 return self._json({"started": True, **(state.heads["result"] or {"error": state.heads["error"]})})
             threading.Thread(target=run, daemon=True).start()
             return self._json({"started": True})
+
+        def trends(self, q: dict):
+            """Hot lists + domain news, scored for this channel. Grouped by kind, because
+            "what is everyone watching" and "what happened in my field" are different questions
+            and the larger group would otherwise bury the smaller one."""
+            from .. import trends as tr
+            from ..trends import score as sc
+            raw = state.read_raw()
+            banned: tuple[str, ...] = ()
+            if raw.get("category"):
+                try:
+                    from .. import categories as cats
+                    cat = cats.load(raw["category"])
+                    banned = tuple((cat or {}).get("banned_keywords") or ())
+                except (KeyError, OSError):
+                    banned = ()
+            sources = [x for x in (q.get("sources") or "").split(",") if x] or None
+            queries = [x for x in (q.get("queries") or "").replace("，", ",").split(",") if x.strip()]
+            notes: list[str] = []
+            try:
+                topics = tr.fetch(state.root, sources, queries=queries or None, log=notes.append)
+            except tr.TrendsError as e:
+                return self._error(str(e))
+            on_domain = q.get("all", "0") in ("0", "false", "")
+            groups = []
+            for kind, label in tr.KINDS.items():
+                group = [t for t in topics if tr.kind_of(t.source) == kind]
+                ranked = sc.rank(group, banned=banned, on_domain_only=on_domain,
+                                 limit=int(q.get("limit", 20)))
+                groups.append({"kind": kind, "label": label, "fetched": len(group),
+                               "items": [{"title": x.topic.title, "url": x.topic.url,
+                                          "source": x.topic.source, "rank": x.topic.rank,
+                                          "heat": x.topic.heat, "score": x.score,
+                                          "domain": x.domain, "reasons": x.reasons}
+                                         for x in ranked]})
+            return self._json({"groups": groups, "notes": notes,
+                               "on_domain_only": on_domain, "banned": list(banned)})
 
         def voicefx_preview(self, body: dict):
             """The same sentence with and without the preset, so the difference is audible.

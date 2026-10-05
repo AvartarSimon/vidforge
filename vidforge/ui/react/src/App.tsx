@@ -4,6 +4,7 @@ import type { PaletteMode } from '@mui/material'
 import { apiGet } from './api/client'
 import { NavRail, DRAWER_WIDTH, SECTIONS, stepDone } from './components/nav/NavRail'
 import type { SectionId } from './components/nav/NavRail'
+import { TrendsSection } from './components/sections/TrendsSection'
 import { VideoSection } from './components/sections/VideoSection'
 import { VoiceSection } from './components/sections/VoiceSection'
 import { ImagesSection } from './components/sections/ImagesSection'
@@ -120,6 +121,7 @@ function Shell({ mode, onToggleMode }: { mode: PaletteMode; onToggleMode: () => 
               还没有打开项目——点左上角的项目卡片，新建或打开一个。
             </Typography>
           )}
+          {!loading && !error && raw && section === 'trends' && <TrendsSection key={`${stepKey}-trends`} />}
           {!loading && !error && raw && section === 'video' && <VideoSection key={`${stepKey}-video`} />}
           {!loading && !error && raw && section === 'voice' && <VoiceSection key={`${stepKey}-voice`} />}
           {!loading && !error && raw && section === 'images' && <ImagesSection key={`${stepKey}-images`} />}

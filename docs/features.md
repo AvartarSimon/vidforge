@@ -43,12 +43,25 @@
 <a id="q2"></a>
 ## 2. 第 1 步 脚本
 
+### 2.0 选题发现（在写脚本之前）
+
+| 功能 | 状态 | 怎么实现的 |
+|---|---|---|
+| **热点抓取** | ✅ | [`trends/`](../vidforge/trends/) — 今日头条热榜（50 条 JSON）、百度热搜（52 条）、B 站排行榜（100 条）、Google News RSS（按关键词）、Hacker News。都是公开端点、不要 key、15 分钟缓存 |
+| **YouTube 热门** | 🟡 | 要 `YOUTUBE_API_KEY` 走 `chart=mostPopular`。**无 key 的 trending 页实测 0 条**（要 JS/consent），所以没有 key 时这一源为空而不是乱解析 |
+| **抖音 / TikTok / 快手** | ❌ | `trends.UNREACHABLE` 里带着实测原因：抖音热点榜 API 返回 200 但 **0 字节**（要 a-bogus 签名）、TikTok 页面 JSON 不含视频列表、快手 TLS 握手超时 |
+| **按频道匹配度打分** | ✅ | [`trends/score.py`](../vidforge/trends/score.py) — 平台权重 × 榜位衰减 + 九个方向的领域匹配 + 标题里有数字（能配图表）+ 时间/历史线索。全本地计算，`explain()` 给出**为什么**得这个分 |
+| **热榜 / 领域新闻分组** | ✅ | `SOURCES` 的 `kind`：`hot`（大家在看什么）和 `news`（我的方向今天发生了什么）。混在一张表里大的会把小的埋掉 |
+| **接到调研验证** | ✅ | 界面每行一个「查同类视频」，直接调现成的 `/api/research/youtube` |
+
+
+
 | 功能 | 状态 | 怎么实现的 |
 |---|---|---|
 | **用我自己浏览器里的 AI 写脚本** | ✅ | [`browser/`](../vidforge/browser/) — Playwright 驱动**你本机的 Chrome/Edge 配置**，把提示词打进 ChatGPT / Claude / Gemini / DeepSeek / Grok / 千问 / Kimi / 文心的网页，等回答抓回来。**不需要任何 API key**，用的是你已经登录的账号 |
 | **粘贴的 AI 文本 → 段落** | ✅ | [`script_parser.py`](../vidforge/script_parser.py) — 认「第N段 章节名」「画面：」两栏式、剧本式 `旁白:/Narration:`；**剥掉** AI 的客套话、字数统计、`（停顿）`之类的舞台提示、Markdown 符号 |
 | **中英混杂检测** | ✅ | `script_parser.language_issues()` — 中文项目里混进英文句子会被标出来，因为混语旁白读起来是灾难 |
-| **结构模板 + 留存体检** | ✅ | [`structure.py`](../vidforge/structure.py) — 三套骨架（数据解说/历史解说/热点解读），每块带时长与字数配额；`check()` 用五条规则体检现有脚本。详见 [data-channel-plan.md 第 11 节](data-channel-plan.md#q11) |
+| **结构模板 + 留存体检** | ✅ | [`structure.py`](../vidforge/structure.py)（每次构建都会自动体检，见 5 节） — 三套骨架（数据解说/历史解说/热点解读），每块带时长与字数配额；`check()` 用五条规则体检现有脚本。详见 [data-channel-plan.md 第 11 节](data-channel-plan.md#q11) |
 | **选题调研（值不值得做）** | ✅ | [`research/youtube.py`](../vidforge/research/youtube.py) — 查同类视频的播放/时长/频道数。**有 `YOUTUBE_API_KEY` 走 Data API，没有就解析公开搜索页的 `ytInitialData`**，两条路都不用登录。[`research/analyze.py`](../vidforge/research/analyze.py) 把这张表喂给 AI，要回一个 JSON：做/换角度/别做、饱和度、5 个标题、3 个开场钩子、别人没覆盖的空白 |
 | **分类预设** | ✅ | [`categories.py`](../vidforge/categories.py) — 每个选题方向一套设置（平台、资料源、禁用词、默认时长）。普通 JSON 文件，`~/.vidforge/categories/<id>.json` |
 | **多语言版本** | ✅ | [`i18n.py`](../vidforge/i18n.py) — `export` 导出翻译表 → 翻译 → `import` 合回去；`variants` 让不同语言用不同声音 |
@@ -67,7 +80,8 @@
 | **声音设计（文字描述 → 音色）** | 🟡 | [`tts/voice_design.py`](../vidforge/tts/voice_design.py)（ElevenLabs）/ `voxcpm.design()`。**不克隆任何真人**，所以没有肖像/声音授权问题。你存的 `Simon1` 就是这条路出来的 |
 | **用我自己的录音当旁白** | ✅ | [`narration.py`](../vidforge/narration.py) — `Segment.narration` 指一个文件就不走 TTS。解码（**视频也行，自动抽音频**）→ 掐掉首尾静音 → 强制对齐 → sidecar 缓存。按段落录，不是整条录 |
 | **字幕与任意录音对齐** | ✅ | [`align.py`](../vidforge/align.py) — faster-whisper（可选依赖）。**转写只用来定位时间，不用来决定字幕内容**：字幕永远显示脚本原文。`difflib` 在归一化 key 上对齐两串 token，没命中的借相邻词插值。实测中文平均误差 **0.068s**，比平均摊好 4.4 倍 |
-| **人声美化（浑厚/磁性）** | ✅ | [`voicefx.py`](../vidforge/voicefx.py) — 5 个预设（none/clean/warm/clear/phone），只有 `highpass`/`afftdn`/`equalizer`/`acompressor` 几条 ffmpeg 滤镜，没有模型。界面可试听对比。**每个预设都不改变时长**——字幕时间是按这段音频量出来的 |
+| **人声美化（浑厚/磁性）** | ✅ | [`voicefx.py`](../vidforge/voicefx.py) — 7 个预设（none/clean/warm/clear/**deep 低沉磁性**/**radio 电台质感**/phone），只有 `highpass`/`afftdn`/`equalizer`/`acompressor` 几条 ffmpeg 滤镜，没有模型。界面可试听对比。**每个预设都不改变时长**——字幕时间是按这段音频量出来的 |
+| **音高微调** | ✅ | `voice_pitch` ±4 半音，`rubberband` **只改音高不改时长**（实测 −1 要求得到 −0.97）。界面是一个滑块。只有 `deep` 预设自带变调，其余预设不动基频 |
 | **响度统一** | ✅ | `loudnorm=I=-16:TP=-1.5:LRA=11`，在 [`render.py`](../vidforge/render.py) 里**永远排在音色预设之后**（预设管音色，loudnorm 管电平） |
 | **TTS 并行提速** | ✅ | `pipeline.TTS_WORKERS = {edge:4, elevenlabs:2, silent:8, voxcpm:1}`。实测 26.0s → 7.4s。VoxCPM 是 1，因为模型跑在本机，并行只会自己抢核 |
 | **每段试听 / 换音色** | ✅ | `/api/tts`，界面里每段一个播放按钮 |
@@ -122,6 +136,7 @@
 | **硬编自动选择** | ✅ | `render.pick_encoder()` — nvenc / qsv / amf / videotoolbox / libx264 按序探测。实测 30 分钟 40 段约 2.7–4.5 分钟渲完 |
 | **并行段渲染** | ✅ | `_stage_render` 多 worker |
 | **字幕** | ✅ | [`subtitles.py`](../vidforge/subtitles.py) — SRT + ASS。`write_ass()` 支持 `none`/`keywords`/`karaoke` 三种高亮；**数字和关键词自动高亮**；双语字幕；可选烧入。⚠ 实测烧字幕从 45s 涨到 89s，**瓶颈是字幕滤镜本身，不是编码器** |
+| **留存体检（每次构建）** | ✅ | `pipeline._stage_retention` — TTS 完、真实时长已知时跑 `structure.check()`，把问题打进构建日志。**从不阻断构建**（41 秒开场值不值得是作者的决定），但也不让这个决定被默默做掉 |
 | **章节** | ✅ | `timeline.json` 用**真实段落时长**（容器长度，不是计划长度——AAC 帧是 21ms，40 段会把字幕推偏一秒）→ YouTube 章节 |
 | **背景音乐** | ✅ | `Bgm(file, volume_db=-18, fade_out=3, duck)`。自动循环铺满、结尾淡出；`duck` 用 `sidechaincompress` 让人声把音乐压低约 10 dB、0.4s 恢复 |
 | **品牌包** | ✅ | [`brand.py`](../vidforge/brand.py) — 一套 kit（`~/.vidforge/brand.json`）同时决定片头、片尾和**每张图表的配色**。logo 是生成的 SVG（ticks/line/axis 三种刻度标志）；1.2s 片头 + 6s 片尾**默认开**，构建时自动拼。音效用**纯正弦波合成**——没人拥有一条正弦波，所以没有东西要清权 |
@@ -176,6 +191,7 @@ vidforge i18n export|import                      # 翻译表
 vidforge voices / voice design|keep              # 列音色 / 设计音色
 vidforge narration <项目> list|attach|clear      # 用自己的录音
 vidforge voicefx list|try                        # 人声预设
+vidforge trends list|sources                     # 热点发现 + 打分
 
 vidforge assets <项目>                           # 只下素材不渲染
 vidforge data search|chart                       # 公开数据集 → 图表
@@ -196,8 +212,9 @@ vidforge category / remotion setup|studio / ui / shortcut
 
 | 没有 | 为什么 |
 |---|---|
-| **选题发现（现在什么在火）** | 只有「给定选题 → 值不值得做」的验证，没有「告诉我现在该做什么」的发现。**这是目前最大的空白**，见 [data-channel-plan.md 第 12 节](data-channel-plan.md#q12) |
 | **视频中途的关注/点赞引导** | 片尾有 `subscribe` 文案，但中途没有任何 CTA。见 [第 13 节](data-channel-plan.md#q13) |
+| **抖音 / TikTok / 快手 热榜** | 要请求签名，拿不到（见 2.0）。正规途径是抖音开放平台 / 巨量算数，都要注册审核 |
+| **声音克隆（录一次，以后只打字）** | 还没做，但路线是清的，见 [audio-voice-qa.md 第 8 节](audio-voice-qa.md#q8) |
 | **生成背景音乐** | **故意不做**。每条「免费 AI 音乐」路线都有授权陷阱——MusicGen 是 CC-BY-NC，变现频道不能用。所以只做正弦波合成的音频标记 |
 | **克隆真人声音** | 不需要了——直接用你本人念的（见 3 节） |
 | **录像 / 抠像 / 背景虚化 / 换背景** | 只录音，不录像。画面处理仍在 vidforge 之外 |

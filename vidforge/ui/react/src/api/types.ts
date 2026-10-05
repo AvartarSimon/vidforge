@@ -65,6 +65,7 @@ export interface RawProject {
   auto_title_cards?: boolean
   normalize_audio?: boolean
   voice_fx?: string
+  voice_pitch?: number
   narration_trim?: boolean
   encoder?: string
   parallel?: number
@@ -347,4 +348,31 @@ export interface AlignResult {
   words: number
   whisper: boolean
   preview: { text: string; start: number }[]
+}
+
+export interface TrendSource {
+  id: string
+  label: string
+  weight: number
+  kind: string
+  ok: boolean
+  why?: string
+}
+
+export interface TrendItem {
+  title: string
+  url: string
+  source: string
+  rank: number
+  heat: number | null
+  score: number
+  domain: string
+  reasons: string[]
+}
+
+export interface TrendGroup {
+  kind: string
+  label: string
+  fetched: number
+  items: TrendItem[]
 }

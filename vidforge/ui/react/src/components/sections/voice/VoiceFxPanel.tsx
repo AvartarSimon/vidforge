@@ -8,6 +8,7 @@ import {
   Chip,
   FormControlLabel,
   MenuItem,
+  Slider,
   Stack,
   Switch,
   TextField,
@@ -28,6 +29,7 @@ export function VoiceFxPanel({ onChanged }: { onChanged?: () => void }) {
   const [pair, setPair] = useState<{ before: string; after: string; preset: string } | null>(null)
   const [trying, setTrying] = useState('warm')
   const [busy, setBusy] = useState(false)
+  const [pitch, setPitch] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
   const load = () =>
@@ -41,6 +43,10 @@ export function VoiceFxPanel({ onChanged }: { onChanged?: () => void }) {
   useEffect(() => {
     load()
   }, [])
+
+  useEffect(() => {
+    if (raw) setPitch(raw.voice_pitch ?? 0)
+  }, [raw?.voice_pitch])
 
   if (!raw || !state) return null
   const current = raw.voice_fx || 'none'
@@ -73,6 +79,13 @@ export function VoiceFxPanel({ onChanged }: { onChanged?: () => void }) {
     await saveNow()
     await load()
     onChanged?.()
+  }
+
+  const applyPitch = async (v: number) => {
+    patch((r) => {
+      r.voice_pitch = v
+    })
+    await saveNow()
   }
 
   const toggleTrim = async (on: boolean) => {
@@ -154,6 +167,34 @@ export function VoiceFxPanel({ onChanged }: { onChanged?: () => void }) {
             </Box>
           </Stack>
         )}
+
+        <Box sx={{ mt: 2, maxWidth: 420 }}>
+          <Typography variant="body2" color="text.secondary">
+            音高 {pitch > 0 ? '+' : ''}
+            {pitch} 半音
+            {pitch < 0 && '（更低沉）'}
+            {pitch > 0 && '（更明亮）'}
+          </Typography>
+          <Slider
+            size="small"
+            value={pitch}
+            min={-4}
+            max={4}
+            step={0.5}
+            marks={[
+              { value: -4, label: '-4' },
+              { value: 0, label: '0' },
+              { value: 4, label: '+4' },
+            ]}
+            onChange={(_, v) => setPitch(v as number)}
+            onChangeCommitted={(_, v) => applyPitch(v as number)}
+          />
+          <Typography variant="caption" color="text.secondary">
+            只改音高，<b>不改时长</b>（rubberband）——字幕的逐词时间是按这段音频量出来的，
+            会拉伸时长的滤镜会把整条字幕轨推偏。实测 −1 半音得到 −0.97 半音。
+            自己的声音偏年轻时，−1 到 −2 最有效；超过 ±4 就不像人声了。
+          </Typography>
+        </Box>
 
         <FormControlLabel
           sx={{ mt: 1 }}

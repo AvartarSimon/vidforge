@@ -306,6 +306,51 @@ def cmd_narration(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_trends(args: argparse.Namespace) -> int:
+    """现在什么在火，以及其中哪些适合这个频道。"""
+    from . import trends
+    from .trends import score as sc
+
+    if args.action == "sources":
+        for r in trends.available():
+            mark = "✓" if r["ok"] else "✗"
+            why = "" if r["ok"] else f"  — {r['why']}"
+            print(f"  {mark} {r['id']:<12} {r['kind']:<5} 权重 {r['weight']:.1f}  {r['label']}{why}")
+        return 0
+
+    root = Path(args.project).resolve() if args.project else Path.cwd()
+    if root.is_file():
+        root = root.parent
+    banned: tuple[str, ...] = ()
+    queries = [q.strip() for q in (args.queries or "").replace("，", ",").split(",") if q.strip()]
+    if args.project:
+        try:
+            raw = json.loads((root / "project.json").read_text(encoding="utf-8"))
+            from . import categories as cats
+            cat = cats.load(raw["category"]) if raw.get("category") else None
+            if cat:
+                banned = tuple(cat.get("banned_keywords") or ())
+        except (OSError, json.JSONDecodeError, KeyError):
+            pass
+
+    sources = [x.strip() for x in (args.sources or "").split(",") if x.strip()] or None
+    topics = trends.fetch(root, sources, queries=queries or None, log=print)
+    print()
+    for kind, label in trends.KINDS.items():
+        group = [t for t in topics if trends.kind_of(t.source) == kind]
+        if not group:
+            continue
+        ranked = sc.rank(group, banned=banned, on_domain_only=not args.all, limit=args.limit)
+        print(f"== {label} ==")
+        if not ranked:
+            print("  （这一组里没有落在频道九个方向里的选题）")
+        for item in ranked:
+            print("  " + sc.explain(item))
+        print()
+    print("下一步：选定一条后用「查同类视频」（research）判它值不值得做。")
+    return 0
+
+
 def cmd_brand(args: argparse.Namespace) -> int:
     """The channel's own look: name, slogan, colours, logo, opener and end card."""
     from . import brand as kitmod
@@ -698,6 +743,15 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--file", help="attach: the recording (audio file, or a video to pull audio out of)")
     s.add_argument("--align", action="store_true", help="attach: align right away instead of at build time")
     s.set_defaults(fn=cmd_narration)
+
+    s = sub.add_parser("trends", help="热点发现：头条/百度/B站/Google News 等，按频道匹配度打分")
+    s.add_argument("action", choices=["list", "sources"])
+    s.add_argument("project", nargs="?", help="a project, so its category's banned keywords apply")
+    s.add_argument("--sources", help="逗号分隔；toutiao,baidu,bilibili,googlenews,hn,youtube")
+    s.add_argument("--queries", help="领域新闻的关键词（逗号分隔），默认用频道的九个方向")
+    s.add_argument("--all", action="store_true", help="连领域外的也列出来")
+    s.add_argument("--limit", type=int, default=12)
+    s.set_defaults(fn=cmd_trends)
 
     s = sub.add_parser("brand", help="channel look: name, slogan, logo, 1s opener, end card, audio mark")
     s.add_argument("action", choices=["init", "show", "preview", "sting", "slogans"])

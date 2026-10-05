@@ -354,7 +354,7 @@ def render_segment(project: Project, seg: Segment, audio: Path, out: Path, *, en
     # The preset shapes the tone, loudnorm sets the level, so loudnorm goes last. Both are skipped
     # on digital silence: loudnorm turns it into NaN, and there is no tone to shape.
     live = not audio_is_silent(audio)
-    fx = voicefx.chain(project.voice_fx) if live else ""
+    fx = (voicefx.chain(project.voice_fx) + voicefx.pitch_filter(project.voice_pitch)) if live else ""
     norm = "loudnorm=I=-16:TP=-1.5:LRA=11," if project.normalize_audio and live else ""
     ffmpeg.run(["-y", "-i", str(visual), "-i", str(audio),
                 "-filter_complex", f"[1:a]{fx}{norm}apad=pad_dur={seg.pause_after}[a]",

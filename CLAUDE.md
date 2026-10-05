@@ -13,8 +13,9 @@ User-facing manual: `QUICKSTART.zh.md`. Roadmap: `docs/roadmap-v0.4-plan.md`.
 
 | Layer | Where | Notes |
 |---|---|---|
-| CLI | `vidforge/cli.py` | `vidforge start|ui|build|doctor|voices|assets|upload|i18n|browser|chat|voice|me|category|remotion|structure|short|brand|data|narration|voicefx|shortcut` |
+| CLI | `vidforge/cli.py` | `vidforge start|ui|build|doctor|voices|assets|upload|i18n|browser|chat|voice|me|category|remotion|structure|short|brand|data|narration|voicefx|trends|shortcut` |
 | Pipeline | `pipeline.py`, `render.py`, `subtitles.py`, `thumbnail.py`, `ffmpeg.py` | staged build with per-segment clip cache `build/clips/<seg>.<hash>.mp4`; encoder auto-pick (nvenc/qsv/amf/videotoolbox/libx264) |
+| Trends | `trends/` — `toutiao.py`, `baidu.py`, `bilibili.py`, `googlenews.py`, `hn.py`, `youtube.py`, `score.py` | 热点发现: public hot lists + keyword news, scored for this channel (platform weight x rank, domain fit, a number in the title, a history clue). Sources split into `hot` (what everyone is watching) and `news` (what happened in my fields) because the bigger group buries the smaller one. 抖音/TikTok/快手 are listed in `UNREACHABLE` with the measured reason — they need request signing. 15-minute cache; feeds the existing `research/` validation |
 | Project model | `project.py` (`Project`, `Segment`, `Clip`, `Overlay`) | `Clip.source` = unresolved spec `"commons:Battle of Lexington 1775"`, resolved at build or by autofill |
 | Assets | `assets/` — `pexels.py`, `pixabay.py`, `wikimedia.py`, `openverse.py`, `archive.py`, `google_images.py`, `baidu.py` | `Library` = `assets/index.json` (licence, credits, picks, vision-check verdicts). `pick_many()` is what autofill uses (one search → several files, downloaded in parallel); `relevant()` (contiguous content-word bigram) + `branded()` + `blocked_host()` gate accuracy, `vision_verdict()` is the optional slow check; `normalise()` shrinks museum-sized downloads |
 | TTS | `tts/` (edge-tts default, ElevenLabs, VoxCPM) | word timings drive `final.srt` |
@@ -30,7 +31,7 @@ User-facing manual: `QUICKSTART.zh.md`. Roadmap: `docs/roadmap-v0.4-plan.md`.
 | Data | `data/` — `worldbank.py`, `from_csv()` | public datasets → chart props. World Bank: no key, ~16k indicators, cached 30 days in `~/.vidforge/data-cache/`. Values auto-scaled to 万亿/亿/万 and every series carries its source through to the caption. `vidforge data search|chart`, `/api/data/*`, UI: 画面 → 动画 tab |
 | Video tools | `video/heads.py`, `video/face.py` | heads: detect (OpenCV YuNet, weights auto-downloaded to `~/.vidforge/models/`) → track/smooth → cover each face with a still **or an animated head** (`cover_video=`, oval-masked, frame-locked). face: photo → talking head, `motion` (audio-envelope puppet, no GPU) or `cmd` (`PHOTO_TALK_CMD` → SadTalker/EchoMimic/Hallo, needs a GPU). `vidforge video heads|detect|face` + `/api/video/heads/*`, `/api/video/face`. UI: the 视频 section |
 | Presenter | `me.py`, `lipsync.py`, `avatar/` | own-footage library `~/.vidforge/me/`, optional lip-sync providers |
-| Tests | `tests/` — `python -m unittest discover -s tests` (294 tests, offline; providers/TTS/alignment mocked — the real-alignment tests skip without faster-whisper) | e2e browser test skips without playwright |
+| Tests | `tests/` — `python -m unittest discover -s tests` (339 tests, offline; providers/TTS/alignment/hot-lists mocked — the real-alignment tests skip without faster-whisper) | e2e browser test skips without playwright |
 
 Data locations: projects `~/vidforge-projects/` (`VIDFORGE_WORKSPACE`), per-project `assets/`, `build*/`,
 `.history/`; user-wide `~/.vidforge/` (browser profile, `me/`, `categories/`, `voices/`, YouTube
@@ -41,6 +42,8 @@ Data locations: projects `~/vidforge-projects/` (`VIDFORGE_WORKSPACE`), per-proj
 - Before changing code: read the function and its callers; report bugs found before fixing (owner's rule).
 - Comments explain *why* (policy, platform quirk, user request), not what. Match existing density.
 - Accuracy over quantity for pictures: never insert an unrelated or watermarked image; leave the slot empty.
+- Retention rules are enforced where they cannot be skipped: `structure.check()` runs on every
+  build (`pipeline._stage_retention`) and auto-runs in the UI — never blocking, never silent.
 - Subtitles say what the *script* says. A transcription is only ever consulted about *when* a word
   was spoken, never about what it was — Whisper mishears names and drops punctuation.
 - Never invent a figure: a chart's numbers come from a fetched dataset or a pasted table, and the source caption rides along with them to the screen.

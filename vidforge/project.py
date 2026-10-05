@@ -241,6 +241,7 @@ class Project:
     category: str | None = None      # id of the vidforge/categories.py preset this project was created from (reference only)
     normalize_audio: bool = True     # loudnorm the narration to -16 LUFS so every segment/provider sounds alike
     voice_fx: str = "none"           # voicefx preset applied before loudnorm (own recordings and TTS alike)
+    voice_pitch: float = 0.0         # semitones, +-4; pitch only, length untouched (rubberband)
     narration_trim: bool = True      # cut the silence at either end of an own recording
     parallel: int = 0                # segments rendered at once; 0 = auto (cores / 2)
     out_dir: Path = Path("build")
@@ -270,6 +271,15 @@ def _voice_fx(value: Any) -> str:
         return voicefx.get(str(value)).id
     except KeyError as e:
         raise ProjectError(str(e)) from None
+
+
+def _voice_pitch(value: Any) -> float:
+    from . import voicefx
+    try:
+        voicefx.pitch_filter(value)
+    except KeyError as e:
+        raise ProjectError(str(e)) from None
+    return float(value)
 
 
 def _req(d: dict, key: str, ctx: str) -> Any:
@@ -543,6 +553,7 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         presenter=pres,
         normalize_audio=bool(data.get("normalize_audio", True)),
         voice_fx=_voice_fx(data.get("voice_fx", "none")),
+        voice_pitch=_voice_pitch(data.get("voice_pitch", 0.0)),
         narration_trim=bool(data.get("narration_trim", True)),
         parallel=int(data.get("parallel", 0)),
         out_dir=Path(data.get("out_dir", "build")),

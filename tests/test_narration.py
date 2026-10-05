@@ -67,6 +67,34 @@ class VoiceFxTest(unittest.TestCase):
     def test_case_and_space_are_forgiven(self):
         self.assertEqual(voicefx.get("  WARM ").id, "warm")
 
+    def test_pitch_is_off_at_zero_and_a_ratio_otherwise(self):
+        self.assertEqual(voicefx.pitch_filter(0), "")
+        self.assertEqual(voicefx.pitch_filter(0.001), "")
+        self.assertTrue(voicefx.pitch_filter(-1).startswith("rubberband=pitch=0.94"))
+        self.assertTrue(voicefx.pitch_filter(12).startswith("rubberband=pitch=2.0")
+                        if voicefx.MAX_PITCH >= 12 else True)
+
+    def test_pitch_is_comma_terminated_so_it_splices(self):
+        self.assertTrue(voicefx.pitch_filter(-2).endswith(","))
+
+    def test_pitch_refuses_nonsense(self):
+        for bad in (voicefx.MAX_PITCH + 1, -99, "x", None, float("nan")):
+            with self.assertRaises(KeyError, msg=repr(bad)):
+                voicefx.pitch_filter(bad)
+
+    def test_only_deep_actually_lowers_the_pitch(self):
+        # measured with autocorrelation on real speech: deep -0.97 semitones, warm +0.10, radio
+        # +0.20. warm and radio reshape the tone; shifting pitch is deep's whole job.
+        self.assertIn("rubberband", voicefx.get("deep").chain)
+        for other in ("warm", "clear", "radio", "clean", "phone"):
+            self.assertNotIn("rubberband", voicefx.get(other).chain, other)
+
+    def test_no_preset_uses_a_filter_that_changes_length(self):
+        # atempo/asetrate would slide the whole subtitle track, which is measured against this audio
+        for p in voicefx.PRESETS:
+            for banned in ("atempo", "asetrate", "atrim", "apad", "silenceremove"):
+                self.assertNotIn(banned, p.chain, f"{p.id} must not use {banned}")
+
     def test_no_preset_changes_the_duration(self):
         # the word timings were measured against this audio: a filter that stretched it would
         # slide the whole subtitle track
@@ -358,6 +386,22 @@ class ProjectFieldTest(unittest.TestCase):
         enc = render.pick_encoder(a)
         self.assertNotEqual(pipeline._segment_key(a, a.segments[0], audio, enc),
                             pipeline._segment_key(b, b.segments[0], audio, enc))
+
+    def test_voice_pitch_is_part_of_the_clip_cache_key(self):
+        from vidforge import pipeline, render
+        a, b = self.write(voice_pitch=0), self.write(voice_pitch=-1.5)
+        audio = self.td / "assets" / "take.mp3"
+        enc = render.pick_encoder(a)
+        self.assertNotEqual(pipeline._segment_key(a, a.segments[0], audio, enc),
+                            pipeline._segment_key(b, b.segments[0], audio, enc))
+
+    def test_voice_pitch_defaults_to_zero_and_round_trips(self):
+        self.assertEqual(self.write().voice_pitch, 0.0)
+        self.assertEqual(self.write(voice_pitch=-1.5).voice_pitch, -1.5)
+
+    def test_an_out_of_range_pitch_fails_at_load(self):
+        with self.assertRaises(proj.ProjectError):
+            self.write(voice_pitch=12)
 
 
 class NarrationApi(unittest.TestCase):

@@ -239,6 +239,29 @@ def _stage_tts(ctx: _Ctx) -> None:
         _log(f"  {kind}  {seg.id:<12} {len(words):>4} words  {ctx.narration[seg.id]:6.2f}s")
 
 
+def _stage_retention(ctx: _Ctx) -> None:
+    """Report the retention problems of the script being rendered, every single build.
+
+    The hook rules are easy to agree with and easy to forget three weeks later, so they are
+    checked where they cannot be skipped: right after TTS, when the real segment lengths are
+    known. This never blocks a build — it is the author's call whether a 41-second opening is
+    worth it — but it does not let the decision be made by accident either."""
+    from . import structure
+    segs = [{"id": s.id, "text": s.text, "label": s.label or ""} for s in ctx.project.segments]
+    issues = structure.check(segs, dict(ctx.narration))
+    problems = [i for i in issues if i.level == "problem"]
+    if not issues:
+        _log("retention: 没发现问题")
+        return
+    _log(f"retention: {len(problems)} 个要改、1 个建议" if len(issues) - len(problems) == 1
+         else f"retention: {len(problems)} 个要改、{len(issues) - len(problems)} 个建议")
+    for i in issues[:8]:
+        mark = "✗" if i.level == "problem" else "·"
+        _log(f"  {mark} {i.where or '整体':<10} {i.what} → {i.fix}")
+    if len(issues) > 8:
+        _log(f"  …还有 {len(issues) - 8} 条，完整列表：vidforge structure check <项目>")
+
+
 def _stage_title_cards(ctx: _Ctx) -> None:
     """auto_title_cards: a 3 s TitleCard in front of every labelled segment (needs Remotion)."""
     if not ctx.project.auto_title_cards:
@@ -377,7 +400,7 @@ def _segment_key(project: Project, seg: Segment, audio: Path, encoder: str) -> s
         return o
     settings = [project.width, project.height, project.fps, project.quality, encoder, project.motion_amount,
                 project.effective_supersample, project.transition, project.normalize_audio,
-                project.voice_fx, project.presenter.provider]
+                project.voice_fx, project.voice_pitch, project.presenter.provider]
     blob = json.dumps([enc(seg), enc(audio), settings], sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:10]
 
@@ -540,6 +563,7 @@ def build(project: Project, *, only_tts: bool = False, burn: bool | None = None)
         _stage_vocab(project)
         ctx = _Ctx(project)
         _stage_tts(ctx)
+        _stage_retention(ctx)
         if only_tts:
             return bd
         _stage_title_cards(ctx)

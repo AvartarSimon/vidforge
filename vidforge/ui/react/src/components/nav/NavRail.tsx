@@ -19,6 +19,7 @@ import CategoryIcon from '@mui/icons-material/Category'
 import FolderOpenIcon from '@mui/icons-material/FolderOpen'
 import HistoryIcon from '@mui/icons-material/History'
 import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew'
+import WhatshotIcon from '@mui/icons-material/Whatshot'
 import MovieFilterIcon from '@mui/icons-material/MovieFilter'
 import GraphicEqIcon from '@mui/icons-material/GraphicEq'
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary'
@@ -49,6 +50,7 @@ const STEPS = [
 // faces in a clip, managing voices, reviewing everything that was downloaded. Kept out of the
 // wizard so it can be reached at any time and grown independently.
 export const SECTIONS = [
+  { id: 'trends', label: '热点', sub: '现在什么在火', icon: WhatshotIcon },
   { id: 'video', label: '视频', sub: '遮脸、我的镜头', icon: MovieFilterIcon },
   { id: 'voice', label: '声音', sub: '声音库与试听', icon: GraphicEqIcon },
   { id: 'images', label: '图片', sub: '素材与授权', icon: PhotoLibraryIcon },

@@ -53,6 +53,31 @@ PRESETS: tuple[Preset, ...] = (
         "acompressor=threshold=-20dB:ratio=3.5:attack=8:release=180",
     ),
     Preset(
+        "deep", "低沉磁性", "降半个到一个半音，加胸腔共鸣和泛音，压齿音。"
+        "年轻/偏亮的声音想要成熟感就选这个。",
+        "highpass=f=65,afftdn=nr=10:nf=-30,"
+        # rubberband shifts pitch and leaves the length alone (measured: delta 0.000s) — asetrate
+        # would change the speed too, and atempo would change the length. The word timings were
+        # measured against this audio, so only a pitch-only shift is safe here.
+        "rubberband=pitch=0.944,"
+        "equalizer=f=110:t=q:w=0.8:g=3.5,"    # chest
+        "equalizer=f=320:t=q:w=1.0:g=-2.5,"   # mud
+        "deesser=i=0.35,"
+        "aexciter=amount=1.5:blend=1,"        # added harmonics are what "磁性" actually is
+        "acompressor=threshold=-20dB:ratio=3.5:attack=10:release=200",
+    ),
+    Preset(
+        "radio", "电台质感", "压缩更重、泛音更多，像电台主播。"
+        "信息密度高的段落听起来更有权威感。",
+        "highpass=f=85,afftdn=nr=12:nf=-30,"
+        "equalizer=f=150:t=q:w=0.9:g=2,"
+        "equalizer=f=400:t=q:w=1.2:g=-2.5,"
+        "equalizer=f=2800:t=q:w=1.3:g=2.5,"   # presence: where authority is heard
+        "deesser=i=0.4,"
+        "aexciter=amount=2:blend=2,"
+        "acompressor=threshold=-24dB:ratio=5:attack=5:release=120",
+    ),
+    Preset(
         "phone", "手机录音补救", "降噪更狠、压缩更重，用来救嘈杂环境里用手机录的素材。",
         "highpass=f=100,lowpass=f=12000,afftdn=nr=20:nf=-25,"
         "equalizer=f=150:t=q:w=1.0:g=2,"
@@ -76,6 +101,26 @@ def chain(preset: str) -> str:
     """The filter chain, comma-terminated so it can be spliced in front of another filter."""
     c = get(preset).chain
     return f"{c}," if c else ""
+
+
+MAX_PITCH = 4.0        # semitones either way; beyond this a voice stops sounding like a person
+
+
+def pitch_filter(semitones: float) -> str:
+    """Pitch shift on its own, comma-terminated, or "" for no shift.
+
+    A preset is someone else's taste; how deep *your* voice should sit is not something a preset
+    can know, so this one number stays separate and tunable. rubberband changes pitch without
+    touching the length — the subtitle timings depend on that."""
+    try:
+        st = float(semitones)
+    except (TypeError, ValueError):
+        raise KeyError(f"音高要是一个数字（半音），不是 {semitones!r}") from None
+    if st != st or abs(st) > MAX_PITCH:                      # NaN or out of range
+        raise KeyError(f"音高要在 ±{MAX_PITCH:.0f} 个半音之内（给的是 {semitones}）")
+    if abs(st) < 0.01:
+        return ""
+    return f"rubberband=pitch={2 ** (st / 12):.6f},"
 
 
 def listing() -> list[dict]:
