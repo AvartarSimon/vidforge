@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from . import ffmpeg
+from . import ffmpeg, voicefx
 from .project import Clip, Project, Segment
 
 MIN_IMAGE_SECONDS = 1.5
@@ -351,9 +351,13 @@ def render_segment(project: Project, seg: Segment, audio: Path, out: Path, *, en
     if project.segment_fade > 0:
         visual = _boundary_fade(project, visual, target, work / "faded.mp4", encoder)
 
-    norm = "loudnorm=I=-16:TP=-1.5:LRA=11," if project.normalize_audio and not audio_is_silent(audio) else ""
+    # The preset shapes the tone, loudnorm sets the level, so loudnorm goes last. Both are skipped
+    # on digital silence: loudnorm turns it into NaN, and there is no tone to shape.
+    live = not audio_is_silent(audio)
+    fx = voicefx.chain(project.voice_fx) if live else ""
+    norm = "loudnorm=I=-16:TP=-1.5:LRA=11," if project.normalize_audio and live else ""
     ffmpeg.run(["-y", "-i", str(visual), "-i", str(audio),
-                "-filter_complex", f"[1:a]{norm}apad=pad_dur={seg.pause_after}[a]",
+                "-filter_complex", f"[1:a]{fx}{norm}apad=pad_dur={seg.pause_after}[a]",
                 "-map", "0:v", "-map", "[a]", "-c:v", "copy", *AUDIO_ARGS,
                 "-t", f"{target:.3f}", "-movflags", "+faststart", str(out)])
     # the container's real length (AAC frames are 21 ms; over 40 segments the planned lengths

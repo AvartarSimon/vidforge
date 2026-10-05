@@ -18,6 +18,7 @@ dev = ["playwright>=1.45"]
 browser = ["playwright>=1.45"]
 video = ["opencv-python>=4.8"]   # face detection for `vidforge video heads` (installed on first use too)
 voxcpm = ["voxcpm", "soundfile"]   # free/local Voice Design alt to ElevenLabs; pulls in PyTorch, install on the render machine only
+align = ["faster-whisper>=1.0"]   # force-align your own narration to the script (`Segment.narration`); without it subtitle times are spread evenly
 
 [project.scripts]
 vidforge = "vidforge.cli:main"

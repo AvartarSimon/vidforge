@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import {
+  Alert,
   Box,
   Button,
   Card,
@@ -46,6 +47,8 @@ export function PublishStep() {
   const disclosure = yt.disclosure || { ai_voice: true }
   const presenterProvider = (raw.presenter as { provider?: string } | undefined)?.provider
   const synthFlag = disclosure.realistic_presenter || disclosure.ai_visuals || presenterProvider === 'heygen'
+  // narration is only AI-generated if some of it actually is
+  const allOwnVoice = raw.segments.length > 0 && raw.segments.every((s) => s.narration)
 
   const setYt = (fn: (y: NonNullable<RawProject['youtube']>) => void) =>
     patch((r) => {
@@ -133,6 +136,19 @@ export function PublishStep() {
             <Typography variant="caption" fontWeight={600}>
               AI 使用声明
             </Typography>
+            {allOwnVoice && (disclosure.ai_voice ?? true) && (
+              <Alert
+                severity="info"
+                sx={{ mb: 1 }}
+                action={
+                  <Button size="small" onClick={() => setDisclosure((d) => (d!.ai_voice = false))}>
+                    取消勾选
+                  </Button>
+                }
+              >
+                每一段旁白都用的是你自己的录音，「AI 配音」不该再勾着——简介里会多出一句不必要的声明。
+              </Alert>
+            )}
             <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
               <FormControlLabel
                 control={<Checkbox checked={disclosure.ai_voice ?? true} onChange={(e) => setDisclosure((d) => (d!.ai_voice = e.target.checked))} />}

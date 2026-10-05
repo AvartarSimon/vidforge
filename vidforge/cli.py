@@ -238,6 +238,74 @@ def cmd_short(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_voicefx(args: argparse.Namespace) -> int:
+    """Voice presets: the few filters that make a recording sound like narration."""
+    from . import ffmpeg as ff, voicefx
+    if args.action == "list":
+        for pr in voicefx.PRESETS:
+            print(f"  {pr.id:<8} {pr.name}")
+            print(f"  {'':<8} {pr.about}")
+        return 0
+    if not args.file:
+        raise SystemExit("`vidforge voicefx try <音频> --preset warm`")
+    src = Path(args.file)
+    out = Path(args.out) if args.out else src.with_name(f"{src.stem}.{args.preset}{src.suffix}")
+    chain = voicefx.get(args.preset).chain
+    ff.run(["-y", "-i", str(src), "-af", f"{chain},loudnorm=I=-16:TP=-1.5:LRA=11" if chain
+            else "loudnorm=I=-16:TP=-1.5:LRA=11", str(out)])
+    print(f"{out}  ({ff.duration(out):.2f}s · {args.preset})")
+    return 0
+
+
+def cmd_narration(args: argparse.Namespace) -> int:
+    """Use your own recording for a segment instead of TTS."""
+    from . import align as aligner, narration, project as proj
+    root = Path(args.project).resolve()
+    path = root / "project.json" if root.is_dir() else root
+    if not path.is_file():
+        raise SystemExit(f"找不到项目：{path}")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    segs = raw.get("segments") or []
+
+    if args.action == "list":
+        print(f"  faster-whisper: {'已安装' if aligner.available() else '未安装（字幕会按时长平均摊）'}")
+        for s2 in segs:
+            own = s2.get("narration")
+            print(f"  {s2.get('id', '?'):<12} {own or '(TTS)'}")
+        return 0
+
+    seg = next((s2 for s2 in segs if s2.get("id") == args.segment), None)
+    if seg is None:
+        raise SystemExit(f"没有段落 '{args.segment}'（有：{', '.join(s2.get('id', '?') for s2 in segs)}）")
+
+    if args.action == "clear":
+        seg.pop("narration", None)
+        path.write_text(json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"{args.segment} 改回 TTS")
+        return 0
+
+    # attach
+    if not args.file:
+        raise SystemExit("`vidforge narration <项目> attach --segment seg1 --file take.m4a`")
+    src = Path(args.file).resolve()
+    data = src.read_bytes()
+    saved = narration.save_upload(path.parent, args.segment, data, src.suffix)
+    try:
+        rel = saved.relative_to(path.parent).as_posix()
+    except ValueError:
+        rel = str(saved)
+    seg["narration"] = rel
+    path.write_text(json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"{args.segment} -> {rel}")
+
+    if args.align:
+        out = path.parent / "build" / "audio" / f"{args.segment}.own.mp3"
+        words = narration.prepare(saved, out, seg.get("text", ""),
+                                  lang=raw.get("language", "en"), log=print)
+        print(f"对齐好了：{len(words)} 个词，音频 {out}")
+    return 0
+
+
 def cmd_brand(args: argparse.Namespace) -> int:
     """The channel's own look: name, slogan, colours, logo, opener and end card."""
     from . import brand as kitmod
@@ -615,6 +683,21 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--lang", help="use build_<lang>/ instead of build/")
     s.add_argument("-o", "--out")
     s.set_defaults(fn=cmd_short)
+
+    s = sub.add_parser("voicefx", help="人声预设：几条滤镜把录音变成解说声（浑厚/清亮/降噪）")
+    s.add_argument("action", choices=["list", "try"])
+    s.add_argument("file", nargs="?", help="try: the audio file to process")
+    s.add_argument("--preset", default="warm")
+    s.add_argument("-o", "--out")
+    s.set_defaults(fn=cmd_voicefx)
+
+    s = sub.add_parser("narration", help="用自己的录音代替 TTS（会和脚本强制对齐，字幕照旧准）")
+    s.add_argument("project", help="project.json or its directory")
+    s.add_argument("action", choices=["list", "attach", "clear"])
+    s.add_argument("--segment", help="which segment")
+    s.add_argument("--file", help="attach: the recording (audio file, or a video to pull audio out of)")
+    s.add_argument("--align", action="store_true", help="attach: align right away instead of at build time")
+    s.set_defaults(fn=cmd_narration)
 
     s = sub.add_parser("brand", help="channel look: name, slogan, logo, 1s opener, end card, audio mark")
     s.add_argument("action", choices=["init", "show", "preview", "sting", "slogans"])

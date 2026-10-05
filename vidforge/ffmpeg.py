@@ -81,6 +81,17 @@ def duration(path: str | Path) -> float:
     return float(json.loads(proc.stdout)["format"]["duration"])
 
 
+def pcm(path: str | Path, *, rate: int = 16000) -> bytes:
+    """Raw mono 32-bit float samples at `rate`, for code that wants the waveform itself."""
+    out = subprocess.run([find_binary("ffmpeg"), "-v", "error", "-nostdin", "-i", str(path),
+                          "-vn", "-ac", "1", "-ar", str(rate), "-f", "f32le", "-"],
+                         capture_output=True)
+    if out.returncode != 0:
+        raise FfmpegError(f"could not decode audio from {path}: "
+                          f"{out.stderr.decode('utf-8', 'replace').strip()[-400:]}")
+    return out.stdout
+
+
 def video_size(path: str | Path) -> tuple[int, int]:
     """(width, height) of a file's first video stream, via ffprobe."""
     cmd = [find_binary("ffprobe"), "-v", "error", "-select_streams", "v:0",

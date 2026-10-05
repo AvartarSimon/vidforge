@@ -115,6 +115,7 @@ class Segment:
     fit: str = "stretch"             # stretch | trim — what to do when clips are shorter than the narration
     pause_after: float = 0.5         # seconds of silence appended after the narration
     voice: str | None = None         # override the project voice for this segment
+    narration: Path | None = None    # your own recording instead of TTS; force-aligned to `text`
     label: str | None = None         # chapter name (defaults to a prettified id)
     alt_text: str | None = None      # the other language's narration (bilingual subtitles)
 
@@ -239,6 +240,8 @@ class Project:
     lipsync: str = "none"            # none | synclabs | musetalk — for `me` takes with talking=true
     category: str | None = None      # id of the vidforge/categories.py preset this project was created from (reference only)
     normalize_audio: bool = True     # loudnorm the narration to -16 LUFS so every segment/provider sounds alike
+    voice_fx: str = "none"           # voicefx preset applied before loudnorm (own recordings and TTS alike)
+    narration_trim: bool = True      # cut the silence at either end of an own recording
     parallel: int = 0                # segments rendered at once; 0 = auto (cores / 2)
     out_dir: Path = Path("build")
     bgm: Bgm | None = None
@@ -258,6 +261,15 @@ class Project:
         if self.supersample:
             return self.supersample
         return 1 if self.quality == "draft" else 2
+
+
+def _voice_fx(value: Any) -> str:
+    """Fail on a typo here rather than three minutes into a render."""
+    from . import voicefx
+    try:
+        return voicefx.get(str(value)).id
+    except KeyError as e:
+        raise ProjectError(str(e)) from None
 
 
 def _req(d: dict, key: str, ctx: str) -> Any:
@@ -447,9 +459,15 @@ def load(path: str | Path, lang: str | None = None) -> Project:
             raise ProjectError(f"{ctx}: fit '{fit}' not in {FITS}")
         if float(s.get("pause_after", 0.5)) < 0:
             raise ProjectError(f"{ctx}: pause_after must be >= 0")
+        narration = None
+        if s.get("narration"):
+            narration = resolve(str(s["narration"]))
+            if not narration.is_file():
+                raise ProjectError(f"{ctx}: narration file not found: {narration}")
         segments.append(Segment(
             id=sid, text=text, clips=clips, fit=fit,
             pause_after=float(s.get("pause_after", 0.5)), voice=s.get("voice"),
+            narration=narration,
             label=s.get(label_key) or s.get("label"), overlays=overlays,
             alt_text=(str(s.get(alt_key) or "").strip() or None) if alt_key else None,
             presenter=(bool(s["presenter"]) if "presenter" in s else None),
@@ -524,6 +542,8 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         category=data.get("category"),
         presenter=pres,
         normalize_audio=bool(data.get("normalize_audio", True)),
+        voice_fx=_voice_fx(data.get("voice_fx", "none")),
+        narration_trim=bool(data.get("narration_trim", True)),
         parallel=int(data.get("parallel", 0)),
         out_dir=Path(data.get("out_dir", "build")),
         bgm=bgm,

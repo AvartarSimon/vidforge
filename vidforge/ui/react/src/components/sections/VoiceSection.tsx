@@ -17,6 +17,8 @@ import {
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import { apiGet, apiPost } from '../../api/client'
 import { useProject } from '../../state/ProjectContext'
+import { OwnVoicePanel } from './voice/OwnVoicePanel'
+import { VoiceFxPanel } from './voice/VoiceFxPanel'
 
 type Voice = { name: string; locale?: string; gender?: string; personality?: string; desc?: string }
 
@@ -103,6 +105,9 @@ export function VoiceSection() {
           {audio && <Box component="audio" src={audio} controls sx={{ mt: 1, width: '100%' }} />}
         </CardContent>
       </Card>
+
+      <OwnVoicePanel />
+      <VoiceFxPanel />
 
       <Card variant="outlined">
         <CardContent>

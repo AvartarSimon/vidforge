@@ -38,6 +38,7 @@ export interface Segment {
   pause_after?: number
   fit?: string
   voice?: string // per-segment override of the project's global voice
+  narration?: string // own recording read aloud by you, force-aligned to `text` instead of TTS
   [key: string]: unknown // text_<lang> / label_<lang> variant keys
 }
 
@@ -63,6 +64,8 @@ export interface RawProject {
   bgm?: { file: string; volume_db?: number; fade_out?: number } | null
   auto_title_cards?: boolean
   normalize_audio?: boolean
+  voice_fx?: string
+  narration_trim?: boolean
   encoder?: string
   parallel?: number
   supersample?: number
@@ -320,4 +323,28 @@ export interface StructureIssue {
   where: string
   what: string
   fix: string
+}
+
+export interface VoicePreset {
+  id: string
+  name: string
+  about: string
+  chain: string
+}
+
+export interface VoiceFxState {
+  presets: VoicePreset[]
+  current: string
+  trim: boolean
+  whisper: boolean
+  own_segments: string[]
+}
+
+export interface AlignResult {
+  segment: string
+  audio: string
+  seconds: number
+  words: number
+  whisper: boolean
+  preview: { text: string; start: number }[]
 }

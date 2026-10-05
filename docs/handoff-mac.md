@@ -41,7 +41,13 @@ cd ~/Projects/vidforge
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"                     # dev 包含 playwright（不下载浏览器，用本机 Chrome）
+pip install faster-whisper                  # 可选：用自己的录音当旁白时把字幕对齐到帧级
 vidforge doctor                             # 检查 ffmpeg + edge-tts
+
+#    faster-whisper 的模型下到 ~/.vidforge/models/whisper/（默认 small，CPU 够用）。
+#    不装也能用：字幕时间会按时长平均摊，界面会提示。
+#    ⚠ 别让 pip 把 av 升到 19：faster-whisper 1.2 的 PyAV 调用和它不兼容。vidforge 自己用
+#    ffmpeg 解码（ffmpeg.pcm）绕开了这条路径，所以这里只是提醒，不影响 vidforge。
 
 # 3) 本地模型（Apple Silicon 的 GPU 会被 Ollama 用上，比 Windows 那台 CPU 机快得多）
 ollama pull qwen2.5:3b                      # 文本：搜索词、翻译、章节名（2 GB）

@@ -441,6 +441,15 @@ def make_handler(state: State):
                     return self._json(state.heads)
                 if path == "/api/assets/library":
                     return self._json(self.asset_library())
+                if path == "/api/voicefx":
+                    from .. import align as aligner, voicefx
+                    raw = state.read_raw()
+                    own = [s2.get("id") for s2 in (raw.get("segments") or []) if s2.get("narration")]
+                    return self._json({"presets": voicefx.listing(),
+                                       "current": raw.get("voice_fx", "none"),
+                                       "trim": bool(raw.get("narration_trim", True)),
+                                       "whisper": aligner.available(),
+                                       "own_segments": own})
                 if path == "/api/structure/templates":
                     from .. import structure as st
                     return self._json({"templates": st.list_templates()})
@@ -712,6 +721,14 @@ def make_handler(state: State):
                     return self.data_chart(body)
                 if path == "/api/short":
                     return self.make_short(body)
+                if path == "/api/voicefx/preview":
+                    return self.voicefx_preview(body)
+                if path == "/api/narration/upload":
+                    return self.narration_upload(body)
+                if path == "/api/narration/clear":
+                    return self.narration_clear(body)
+                if path == "/api/narration/align":
+                    return self.narration_align(body)
                 if path == "/api/structure/apply":
                     from .. import structure as st
                     try:
@@ -1444,6 +1461,121 @@ def make_handler(state: State):
                 return self._json({"started": True, **(state.heads["result"] or {"error": state.heads["error"]})})
             threading.Thread(target=run, daemon=True).start()
             return self._json({"started": True})
+
+        def voicefx_preview(self, body: dict):
+            """The same sentence with and without the preset, so the difference is audible.
+
+            A preset is a matter of taste, and taste cannot be read off a filter string."""
+            from .. import voicefx
+            from ..tts import get_provider, synthesize_cached
+            try:
+                preset = voicefx.get(body.get("preset", "none"))
+            except KeyError as e:
+                return self._error(str(e))
+            p = state.load(body.get("lang"))
+            folder = state.build_dir(body.get("lang")) / "ui" / "voicefx"
+            folder.mkdir(parents=True, exist_ok=True)
+
+            source = body.get("source")                     # a segment id: use that real narration
+            if source:
+                seg = next((s2 for s2 in p.segments if s2.id == source), None)
+                if seg is None:
+                    return self._error(f"没有段落 '{source}'")
+                try:
+                    dry = self.segment_audio(p, seg, body.get("lang"))
+                except (proj.ProjectError, ffmpeg.FfmpegError, OSError) as e:
+                    return self._error(str(e))
+            else:
+                text = (body.get("text") or "").strip() or (
+                    p.segments[0].text[:160] if p.segments else "这是一段试听。")
+                dry = folder / "dry.mp3"
+                prov = get_provider(p.tts.provider, rate=p.rate, config=p.tts.__dict__)
+                synthesize_cached(prov, text, body.get("voice") or p.voice, dry)
+
+            wet = folder / f"{preset.id}.mp3"
+            chain = preset.chain
+            ffmpeg.run(["-y", "-i", str(dry), "-af",
+                        (f"{chain}," if chain else "") + "loudnorm=I=-16:TP=-1.5:LRA=11", str(wet)])
+            return self._json({"before": state.rel(dry), "after": state.rel(wet),
+                               "preset": preset.id, "chain": chain,
+                               "duration": ffmpeg.duration(wet)})
+
+        def segment_audio(self, p, seg, lang):
+            """The segment's narration audio as the build would make it (own recording or TTS)."""
+            from ..narration import prepare as prepare_own
+            from ..tts import get_provider, synthesize_cached
+            bd = state.build_dir(lang)
+            if seg.narration:
+                out = bd / "audio" / f"{re.sub(r'[^A-Za-z0-9_-]+', '_', seg.id)}.own.mp3"
+                prepare_own(seg.narration, out, seg.text, lang=p.language, trim=p.narration_trim)
+                return out
+            out = bd / "audio" / f"{re.sub(r'[^A-Za-z0-9_-]+', '_', seg.id)}.mp3"
+            prov = get_provider(p.tts.provider, rate=p.rate, config=p.tts.__dict__)
+            synthesize_cached(prov, seg.text, seg.voice or p.voice, out)
+            return out
+
+        def narration_upload(self, body: dict):
+            """Store a recording for one segment and point the segment at it."""
+            from .. import narration as narr
+            seg_id = body.get("segment")
+            if not seg_id:
+                return self._error("segment required")
+            try:
+                data = base64.b64decode(body.get("data") or "", validate=True)
+            except (ValueError, TypeError):
+                return self._error("录音数据损坏")
+            raw = state.read_raw()
+            seg = next((s2 for s2 in (raw.get("segments") or []) if s2.get("id") == seg_id), None)
+            if seg is None:
+                return self._error(f"没有段落 '{seg_id}'")
+            try:
+                saved = narr.save_upload(state.root, seg_id, data, body.get("ext") or "webm")
+            except narr.NarrationError as e:
+                return self._error(str(e))
+            try:
+                rel = saved.relative_to(state.root).as_posix()
+            except ValueError:
+                rel = str(saved)
+            seg["narration"] = rel
+            state.write_raw(raw, snapshot=True)
+            return self._json({"segment": seg_id, "narration": rel,
+                               "seconds": ffmpeg.duration(saved)})
+
+        def narration_clear(self, body: dict):
+            seg_id = body.get("segment")
+            raw = state.read_raw()
+            seg = next((s2 for s2 in (raw.get("segments") or []) if s2.get("id") == seg_id), None)
+            if seg is None:
+                return self._error(f"没有段落 '{seg_id}'")
+            seg.pop("narration", None)
+            state.write_raw(raw, snapshot=True)
+            return self._json({"segment": seg_id, "narration": None})
+
+        def narration_align(self, body: dict):
+            """Align now rather than at build time, so the result is visible before rendering.
+
+            Synchronous: Whisper on a 60 s take is a few seconds, and the answer is worth waiting
+            for — the alignment is cached afterwards, so the build does not repeat it."""
+            from .. import align as aligner, narration as narr
+            seg_id = body.get("segment")
+            p = state.load(body.get("lang"))
+            seg = next((s2 for s2 in p.segments if s2.id == seg_id), None)
+            if seg is None:
+                return self._error(f"没有段落 '{seg_id}'")
+            if not seg.narration:
+                return self._error(f"段落 '{seg_id}' 用的是 TTS，没有录音可对齐")
+            out = state.build_dir(body.get("lang")) / "audio" / \
+                f"{re.sub(r'[^A-Za-z0-9_-]+', '_', seg.id)}.own.mp3"
+            try:
+                words = narr.prepare(seg.narration, out, seg.text, lang=p.language,
+                                     trim=p.narration_trim)
+            except (narr.NarrationError, aligner.AlignError, ffmpeg.FfmpegError, OSError) as e:
+                return self._error(str(e))
+            return self._json({"segment": seg_id, "audio": state.rel(out),
+                               "seconds": ffmpeg.duration(out), "words": len(words),
+                               "whisper": aligner.available(),
+                               "preview": [{"text": w.text, "start": round(w.start, 3)}
+                                           for w in words[:40]]})
 
         def data_chart(self, body: dict):
             """Indicator + countries -> Remotion chart props, with the source already filled in.

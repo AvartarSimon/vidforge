@@ -25,6 +25,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from . import env, ffmpeg, render, subtitles, thumbnail
+from .narration import prepare as prepare_own
 from .project import Project, Segment
 from .tts import get_provider, synthesize_cached
 
@@ -180,14 +181,22 @@ TTS_WORKERS = {"edge": 4, "elevenlabs": 2, "silent": 8, "voxcpm": 1}
 
 
 def _stage_tts(ctx: _Ctx) -> None:
-    """Cached by text/voice; synthesised in parallel for the network-backed engines."""
+    """Every segment's audio + word timings, from TTS or from your own recording.
+
+    Cached by text/voice (TTS) or by the recording's size/mtime (own voice). The network-backed
+    TTS engines run in parallel; own recordings run serially because each one loads the same
+    Whisper model, and two copies of it on one machine only fight for the same cores."""
     p = ctx.project
     tts = get_provider(p.tts.provider, rate=p.rate, config=p.tts.__dict__)
-    _log(f"{len(p.segments)} segments · tts {tts.name} · voice {p.voice} · {p.quality} · {ctx.encoder}")
+    own = [s for s in p.segments if s.narration]
+    fx = f" · 人声 {p.voice_fx}" if p.voice_fx != "none" else ""
+    how = f"tts {tts.name} · voice {p.voice}" if len(own) < len(p.segments) else "own voice"
+    if own and len(own) < len(p.segments):
+        how += f" · {len(own)}/{len(p.segments)} 段用自己的录音"
+    _log(f"{len(p.segments)} segments · {how}{fx} · {p.quality} · {ctx.encoder}")
     for w in p.warnings:
         _log(f"warning: {w}")
     _set_progress("tts", 0, len(p.segments))
-    workers = min(TTS_WORKERS.get(tts.name, 1), max(1, len(p.segments)))
 
     def one(seg):
         _check_cancel()
@@ -195,19 +204,39 @@ def _stage_tts(ctx: _Ctx) -> None:
         words = synthesize_cached(tts, seg.text, seg.voice or p.voice, audio)
         return seg, audio, subtitles.restore_punctuation(words, seg.text)
 
+    def one_own(seg):
+        _check_cancel()
+        audio = ctx.bd / "audio" / f"{_safe(seg.id)}.own.mp3"
+        _log(f"  own  {seg.id:<12} {Path(seg.narration).name}")
+        words = prepare_own(seg.narration, audio, seg.text, lang=p.language,
+                            trim=p.narration_trim, log=_log)
+        return seg, audio, subtitles.restore_punctuation(words, seg.text)
+
+    synth = [s for s in p.segments if not s.narration]
+    results: dict[str, tuple] = {}
+    for seg in own:                                     # serial: one Whisper model, reused
+        s2, audio, words = one_own(seg)
+        results[s2.id] = (s2, audio, words)
+    if synth:
+        workers = min(TTS_WORKERS.get(tts.name, 1), max(1, len(synth)))
+        if workers == 1:
+            pairs = [one(seg) for seg in synth]
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                pairs = list(ex.map(one, synth))
+        for s2, audio, words in pairs:
+            results[s2.id] = (s2, audio, words)
+
     done = 0
-    if workers == 1:
-        results = (one(seg) for seg in p.segments)
-    else:
-        with ThreadPoolExecutor(max_workers=workers) as ex:
-            results = list(ex.map(one, p.segments))     # order preserved, so the log reads in order
-    for seg, audio, words in results:
+    for seg in p.segments:                              # log in script order, not finish order
+        _, audio, words = results[seg.id]
         ctx.words[seg.id] = words
         ctx.audio[seg.id] = audio
         ctx.narration[seg.id] = ffmpeg.duration(audio) + seg.pause_after
         done += 1
         _set_progress("tts", done, len(p.segments))
-        _log(f"  tts  {seg.id:<12} {len(words):>4} words  {ctx.narration[seg.id]:6.2f}s")
+        kind = "own" if seg.narration else "tts"
+        _log(f"  {kind}  {seg.id:<12} {len(words):>4} words  {ctx.narration[seg.id]:6.2f}s")
 
 
 def _stage_title_cards(ctx: _Ctx) -> None:
@@ -347,7 +376,8 @@ def _segment_key(project: Project, seg: Segment, audio: Path, encoder: str) -> s
             return {k: enc(v) for k, v in o.items()}
         return o
     settings = [project.width, project.height, project.fps, project.quality, encoder, project.motion_amount,
-                project.effective_supersample, project.transition, project.normalize_audio, project.presenter.provider]
+                project.effective_supersample, project.transition, project.normalize_audio,
+                project.voice_fx, project.presenter.provider]
     blob = json.dumps([enc(seg), enc(audio), settings], sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:10]
 
