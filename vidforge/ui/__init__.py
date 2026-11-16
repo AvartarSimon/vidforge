@@ -747,6 +747,8 @@ def make_handler(state: State):
                     return self.heads_detect(body)
                 if path == "/api/video/heads/cover":
                     return self.heads_cover(body)
+                if path in ("/api/video/jumpcut", "/api/video/jumpcut/plan"):
+                    return self.jumpcut(body, apply=path.endswith("jumpcut"))
                 if path == "/api/video/face":
                     return self.face_talk(body)
                 if path == "/api/data/chart":
@@ -1644,6 +1646,16 @@ def make_handler(state: State):
                              "-r", str(raw.get("fps") or 30), "-c:a", "aac", "-b:a", "192k",
                              "-movflags", "+faststart", str(take)]
                     ffmpeg.run(args)
+                    if body.get("jumpcut"):
+                        from ..video import VideoToolError, jumpcut as jc
+                        cut_take = take.with_name(f"{take.stem}_cut.mp4")
+                        try:
+                            r = jc.cut(take, cut_take, fps=int(raw.get("fps") or 30), log=lambda *_: None)
+                            take.unlink(missing_ok=True)
+                            take = cut_take
+                            out["jumpcut"] = {"removed": r["removed"], "cuts": r["cuts"]}
+                        except VideoToolError:
+                            pass                  # nothing to cut is not a failure
                 except (ffmpeg.FfmpegError, KeyError) as e:
                     return self._error(f"录像转码失败：{e}")
                 rel = take.relative_to(state.root).as_posix()
@@ -1703,6 +1715,45 @@ def make_handler(state: State):
                 raw["take_look"] = body["look"]
                 state.write_raw(raw)
             return self._json(out)
+
+        def jumpcut(self, body: dict, apply: bool):
+            """智能剪口播 on a project video: `plan` says what would go, the other one does it.
+            `replace` points every segment that showed (or spoke from) the original at the cut
+            file — picture and narration together, or the lips would come off the words."""
+            from ..video import VideoToolError, jumpcut as jc
+            rel = str(body.get("video") or "").replace("\\", "/")
+            src = self._safe_path(rel) if rel else None
+            if not src or not src.is_file():
+                return self._error(f"找不到视频：{rel}")
+            opts = {"threshold_db": float(body.get("threshold", jc.THRESHOLD_DB)),
+                    "min_gap": float(body.get("min_gap", jc.MIN_GAP)), "pad": float(body.get("pad", jc.PAD))}
+            try:
+                if not apply:
+                    return self._json(jc.plan(src, **opts))
+                dest = src.with_name(f"{src.stem}_cut.mp4")
+                r = jc.cut(src, dest, fps=int(state.read_raw().get("fps") or 30), **opts)
+            except (VideoToolError, ffmpeg.FfmpegError) as e:
+                return self._error(str(e))
+            new_rel = dest.relative_to(state.root).as_posix()
+            replaced = []
+            if body.get("replace", True):
+                raw = state.read_raw()
+                for seg in raw.get("segments") or []:
+                    hit = False
+                    for c in [*(seg.get("clips") or []), *(seg.get("overlays") or [])]:
+                        if str(c.get("video") or "").replace("\\", "/") == rel:
+                            c["video"] = new_rel
+                            c.pop("in", None)        # the old slice points at moments that moved
+                            c.pop("out", None)
+                            hit = True
+                    if str(seg.get("narration") or "").replace("\\", "/") == rel:
+                        seg["narration"] = new_rel
+                        hit = True
+                    if hit:
+                        replaced.append(seg.get("id"))
+                if replaced:
+                    state.write_raw(raw, snapshot=True)
+            return self._json({**r, "path": new_rel, "replaced": replaced})
 
         def fx_save(self, q: dict):
             """A video re-recorded through the live effects (视频美化 / 后期换背景), body = the bytes.

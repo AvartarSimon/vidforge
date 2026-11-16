@@ -18,6 +18,7 @@ import { apiGet, apiPost } from '../../api/client'
 import { useProject } from '../../state/ProjectContext'
 import { fileUrl } from '../../utils'
 import { VideoBeautify } from './video/VideoBeautify'
+import { JumpCut } from './video/JumpCut'
 
 type MeItem = { name: string; tags?: string[]; talking?: boolean; duration?: number; uses?: number }
 type ShortCut = { ids: string[]; label: string; start: number; seconds: number }
@@ -152,6 +153,8 @@ export function VideoSection() {
       <Typography variant="body2" color="text.secondary">
         对整段视频做处理的工具都放在这里，不需要先把它放进某一段。
       </Typography>
+
+      <JumpCut />
 
       <VideoBeautify />
 

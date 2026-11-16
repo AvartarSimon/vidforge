@@ -484,6 +484,12 @@ def cmd_video(args: argparse.Namespace) -> int:
         r = face.talk(src, Path(args.audio).resolve(), out, provider=args.provider, crop=not args.no_crop)
         print(f"完成：{r}")
         return 0
+    if args.action == "jumpcut":
+        from .video import jumpcut
+        out = Path(args.out) if args.out else src.with_name(src.stem + "_cut.mp4")
+        jumpcut.cut(src, out, threshold_db=args.threshold, min_gap=args.min_gap, pad=args.pad)
+        print(f"完成：{out}")
+        return 0
     if args.action == "detect":
         out = Path(args.out) if args.out else src.with_name(src.stem + "_faces.png")
         heads.preview_frame(src, out, at=args.at)
@@ -815,9 +821,10 @@ def main(argv: list[str] | None = None) -> int:
     s.set_defaults(fn=cmd_data)
 
     s = sub.add_parser("video", help="clip tools: 'heads' covers every face with a picture that follows it")
-    s.add_argument("action", choices=["heads", "detect", "face"],
+    s.add_argument("action", choices=["heads", "detect", "face", "jumpcut"],
                    help="heads: render the covered clip · detect: one frame showing what was found · "
-                        "face: animate a photo to talk along with an audio file")
+                        "face: animate a photo to talk along with an audio file · "
+                        "jumpcut: cut the pauses out of a talking-head take (智能剪口播)")
     s.add_argument("input", help="the video file (or, for `face`, the photo)")
     s.add_argument("-o", "--out", help="output file (default: alongside the input)")
     s.add_argument("--image", help="picture to paste over each face (PNG with transparency is best); omit for a blurred disc")
@@ -831,6 +838,9 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--provider", default="motion", choices=["motion", "cmd"],
                    help="face: motion = built-in puppet (no GPU) · cmd = the model set in PHOTO_TALK_CMD")
     s.add_argument("--no-crop", dest="no_crop", action="store_true", help="face: do not auto-crop the photo to the head")
+    s.add_argument("--threshold", type=float, default=-38.0, help="jumpcut: quieter than this (dB) counts as a pause")
+    s.add_argument("--min-gap", dest="min_gap", type=float, default=0.45, help="jumpcut: only pauses at least this long (s) are cut")
+    s.add_argument("--pad", type=float, default=0.12, help="jumpcut: seconds kept on each side of a cut")
     s.set_defaults(fn=cmd_video)
 
     s = sub.add_parser("category", help="topic-vertical presets (platforms/sources/banned keywords/defaults): plain JSON files, not a database")
