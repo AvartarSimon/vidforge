@@ -511,7 +511,7 @@ def make_handler(state: State):
                         return self._json({"rows": st.outline(tid, mins),
                                            "prompt": st.prompt_block(tid, mins, zh=zh)})
                     except (KeyError, ValueError) as e:
-                        return self._error(str(e))
+                        return self._error(str(e.args[0]) if e.args else str(e))
                 if path == "/api/structure/check":
                     from .. import structure as st
                     raw = state.read_raw()
@@ -802,7 +802,7 @@ def make_handler(state: State):
                         skeleton = st.skeleton_segments(body.get("template", "data_explainer"),
                                                         float(body.get("minutes", 10)))
                     except KeyError as e:
-                        return self._error(str(e))
+                        return self._error(str(e.args[0]) if e.args else str(e))
                     raw = state.read_raw()
                     if raw.get("segments") and not body.get("replace"):
                         return self._error("这个项目已经有段落了；要用骨架覆盖请勾选「替换现有段落」",
@@ -1557,8 +1557,8 @@ def make_handler(state: State):
                                       ratio=body.get("ratio", "9:16"),
                                       srt=(bd / "final.srt") if body.get("subtitles", True) else None,
                                       font=p.subtitles.font, subtitles=body.get("subtitles", True), log=log)
-                    state.heads["result"] = {"path": state.rel(out), "faces": 0,
-                                             "frames": 0, "covered": 0, **r}
+                    # `r` carries the absolute path it wrote; the UI addresses files project-relative
+                    state.heads["result"] = {"faces": 0, "frames": 0, "covered": 0, **r, "path": state.rel(out)}
                 except (VideoToolError, ffmpeg.FfmpegError, OSError) as e:
                     state.heads["error"] = str(e)
                 finally:
@@ -1616,7 +1616,7 @@ def make_handler(state: State):
             try:
                 preset = voicefx.get(body.get("preset", "none"))
             except KeyError as e:
-                return self._error(str(e))
+                return self._error(str(e.args[0]) if e.args else str(e))
             p = state.load(body.get("lang"))
             folder = state.build_dir(body.get("lang")) / "ui" / "voicefx"
             folder.mkdir(parents=True, exist_ok=True)
@@ -1764,7 +1764,7 @@ def make_handler(state: State):
                 try:
                     chain = videofx.chain(look).rstrip(",")
                 except KeyError as e:
-                    return self._error(str(e))
+                    return self._error(str(e.args[0]) if e.args else str(e))
                 lib = me.MeLibrary(me.library_dir(state.root))
                 lib.folder.mkdir(parents=True, exist_ok=True)
                 name = re.sub(r"[^\w\-.]+", "_", body.get("name") or f"{seg_id or 'take'}.mp4")
