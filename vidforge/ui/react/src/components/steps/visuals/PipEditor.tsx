@@ -279,8 +279,9 @@ export function PipEditor({
             onPointerDown={() => setSel(null)}
             sx={{
               position: 'relative',
-              width: '100%',
-              maxHeight: '64vh',
+              // sized by its width alone: a max-height on top of width 100% squashed a vertical
+              // project's stage to a landscape box, so a round window was drawn as an oval
+              width: `min(100%, calc(64vh * ${W} / ${H}))`,
               aspectRatio: `${W} / ${H}`,
               mx: 'auto',
               bgcolor: '#111',
