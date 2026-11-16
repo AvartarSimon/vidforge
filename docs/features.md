@@ -143,7 +143,8 @@
 | **分段缓存** | ✅ | `pipeline._segment_key()` — 把段落定义、音频文件的**大小+mtime**、渲染设置一起哈希。改一段只重渲那一段。实测重建 0.6s |
 | **硬编自动选择** | ✅ | `render.pick_encoder()` — nvenc / qsv / amf / videotoolbox / libx264 按序探测。实测 30 分钟 40 段约 2.7–4.5 分钟渲完 |
 | **并行段渲染** | ✅ | `_stage_render` 多 worker |
-| **字幕** | ✅ | [`subtitles.py`](../vidforge/subtitles.py) — SRT + ASS。`write_ass()` 支持 `none`/`keywords`/`karaoke` 三种高亮；**数字和关键词自动高亮**；双语字幕；可选烧入。⚠ 实测烧字幕从 45s 涨到 89s，**瓶颈是字幕滤镜本身，不是编码器** |
+| **字幕** | ✅ | [`subtitles.py`](../vidforge/subtitles.py) — SRT + ASS。`write_ass()` 支持 `none`/`keywords`/`karaoke`/`word`（逐词：正在说的词变色放大 112%，竖屏模板默认）四种高亮；**数字和关键词自动高亮**；双语字幕；可选烧入。⚠ 实测烧字幕从 45s 涨到 89s，**瓶颈是字幕滤镜本身，不是编码器** |
+| **开场大字** | ✅ | [`hook.py`](../vidforge/hook.py) — `project.json` 的 `hook.text` 在旁白开始时压在画面中上部 `hook.seconds`（默认 3，1–6）秒，淡入淡出。PIL 画成图片在 `render.finalize` 里叠加（和系列角标一样），不需要 libass 或 Remotion；叠加而不是插标题卡，第一句旁白不往后推。文字只用用户写的 |
 | **留存体检（每次构建）** | ✅ | `pipeline._stage_retention` — TTS 完、真实时长已知时跑 `structure.check()`，把问题打进构建日志。**从不阻断构建**（41 秒开场值不值得是作者的决定），但也不让这个决定被默默做掉 |
 | **章节** | ✅ | `timeline.json` 用**真实段落时长**（容器长度，不是计划长度——AAC 帧是 21ms，40 段会把字幕推偏一秒）→ YouTube 章节 |
 | **背景音乐** | ✅ | `Bgm(file, volume_db=-18, fade_out=3, duck)`。自动循环铺满、结尾淡出；`duck` 用 `sidechaincompress` 让人声把音乐压低约 10 dB、0.4s 恢复 |

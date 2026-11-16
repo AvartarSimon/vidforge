@@ -64,6 +64,9 @@ export interface RawProject {
   variants?: Record<string, Record<string, unknown>>
   quality?: 'draft' | 'final'
   subtitles?: { burn?: boolean; style?: string; bilingual?: boolean; bilingual_lang?: string; [key: string]: unknown }
+  hook?: { text?: string; seconds?: number } // big type over the first seconds (hook.py)
+  theme?: { palette?: string; badge?: string; side?: string }
+  brand?: { accent?: string; [key: string]: unknown }
   transition?: number
   bgm?: { file: string; volume_db?: number; fade_out?: number } | null
   auto_title_cards?: boolean

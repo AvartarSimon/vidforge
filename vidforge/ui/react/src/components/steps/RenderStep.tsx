@@ -7,6 +7,7 @@ import { LearningEditionCard } from './render/LearningEditionCard'
 import { PresenterCard } from './render/PresenterCard'
 import { RenderSettingsCard } from './render/RenderSettingsCard'
 import { ResultCard } from './render/ResultCard'
+import { SubtitleCard } from './render/SubtitleCard'
 
 export function RenderStep() {
   const { raw, reload } = useProject()
@@ -16,6 +17,7 @@ export function RenderStep() {
     <Stack spacing={2}>
       <RetentionBanner />
       <ThemePicker />
+      <SubtitleCard />
       <RenderSettingsCard />
       <LearningEditionCard />
       <PresenterCard />

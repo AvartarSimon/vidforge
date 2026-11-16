@@ -12,7 +12,6 @@ import {
 } from '@mui/material'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { apiGet } from '../../../api/client'
-import type { RawProject } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
 
 const RESOLUTIONS = [
@@ -34,15 +33,7 @@ export function RenderSettingsCard() {
 
   if (!raw) return null
   const quality = raw.quality || 'final'
-  const burn = !!raw.subtitles?.burn
-  const subStyle = raw.subtitles?.style || 'outline'
   const [w, h] = [raw.width || 1920, raw.height || 1080]
-
-  const setSub = (fn: (s: NonNullable<RawProject['subtitles']>) => void) =>
-    patch((r) => {
-      r.subtitles = r.subtitles || {}
-      fn(r.subtitles)
-    })
 
   return (
     <Card variant="outlined">
@@ -59,29 +50,6 @@ export function RenderSettingsCard() {
             <MenuItem value="draft">草稿（快 3 倍，看效果）</MenuItem>
             <MenuItem value="final">成片（CRF 18，2× 超采样）</MenuItem>
           </TextField>
-          <Stack spacing={0.5}>
-            <TextField
-              select
-              size="small"
-              label="字幕"
-              value={burn ? 'true' : 'false'}
-              onChange={(e) => setSub((s) => (s.burn = e.target.value === 'true'))}
-              sx={{ minWidth: 220 }}
-            >
-              <MenuItem value="false">只出 .srt（上传时作字幕轨）</MenuItem>
-              <MenuItem value="true">烧进画面</MenuItem>
-            </TextField>
-            <TextField
-              select
-              size="small"
-              value={subStyle}
-              onChange={(e) => setSub((s) => (s.style = e.target.value))}
-              sx={{ minWidth: 220 }}
-            >
-              <MenuItem value="outline">白字黑边</MenuItem>
-              <MenuItem value="box">白字 + 半透明底框</MenuItem>
-            </TextField>
-          </Stack>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
             <TextField
               size="small"
