@@ -227,7 +227,7 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
           control={<Checkbox size="small" checked={vision} onChange={(e) => setVision(e.target.checked)} disabled={busy} />}
           label={<Typography variant="caption">逐段视觉核对水印（每段约 1 分钟，最慢）</Typography>}
         />
-        <Select size="small" value={site} onChange={(e) => setSite(e.target.value)} disabled={busy} sx={{ fontSize: 12, minWidth: 170 }}>
+        <Select size="small" displayEmpty value={site} onChange={(e) => setSite(e.target.value)} disabled={busy} sx={{ fontSize: 12, minWidth: 170 }}>
           <MenuItem value="" sx={{ fontSize: 12 }}>
             搜索词：本地模型（快）
           </MenuItem>
