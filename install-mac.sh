@@ -67,9 +67,23 @@ if [ "$MINIMAL" = 0 ]; then
 fi
 
 if [ "$WITH_AI" = 1 ]; then
-  command -v ollama >/dev/null || { say "installing Ollama ..."; brew install --cask ollama; open -a Ollama || true; sleep 5; }
-  ollama pull qwen2.5:3b || true
-  ollama pull qwen2.5vl:3b || true
+  command -v ollama >/dev/null || { say "installing Ollama ..."; brew install --cask ollama; }
+  # `ollama pull` talks to the local server, and a fresh install has not started one. The app does
+  # not always open from a script (macOS asks about a new app first), so fall back to the bare
+  # server — and say so when a model did not arrive, instead of finishing as if it had.
+  ollama_up() { ollama list >/dev/null 2>&1; }
+  wait_for_ollama() { for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do ollama_up && return 0; sleep 1; done; return 1; }
+  if ! ollama_up; then
+    open -a Ollama 2>/dev/null || true
+    if ! wait_for_ollama; then
+      say "the Ollama app did not start — running its server in the background for now"
+      nohup ollama serve >/tmp/vidforge-ollama.log 2>&1 &
+      wait_for_ollama || true
+    fi
+  fi
+  for model in qwen2.5:3b qwen2.5vl:3b; do
+    ollama pull "$model" || say "could not download $model — open the Ollama app once, then run: ollama pull $model"
+  done
 fi
 
 say "checking ..."
