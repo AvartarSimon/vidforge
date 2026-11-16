@@ -339,7 +339,9 @@ def cmd_trends(args: argparse.Namespace) -> int:
             print(f"  {mark} {r['id']:<12} {r['kind']:<5} 权重 {r['weight']:.1f}  {r['label']}{why}")
         return 0
 
-    root = Path(args.project).resolve() if args.project else Path.cwd()
+    # the 15-minute cache lives under the project; with no project it must not land in whatever
+    # folder the terminal happens to be in (it left assets/.search-cache/ in the repo itself)
+    root = Path(args.project).resolve() if args.project else Path.home() / ".vidforge"
     if root.is_file():
         root = root.parent
     banned: tuple[str, ...] = ()
