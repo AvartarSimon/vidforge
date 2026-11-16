@@ -1,5 +1,6 @@
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { Base, mergeTheme } from "../theme";
+import { Stage, useLayout } from "../layout";
 import { Mark } from "./Mark";
 
 export type IntroProps = Base & {
@@ -14,9 +15,9 @@ export type IntroProps = Base & {
 // still watching at 0:30 — so this is meant to sit *after* the hook, not before it.
 export const Intro: React.FC<IntroProps> = ({ name, slogan, enName, mark = "ticks", theme }) => {
   const frame = useCurrentFrame();
-  const { fps, width, height, durationInFrames } = useVideoConfig();
+  const { fps, durationInFrames } = useVideoConfig();
+  const { height, scale } = useLayout();
   const t = mergeTheme(theme);
-  const scale = width / 1920;
 
   const draw = spring({ frame, fps, config: { damping: 26, stiffness: 120 }, durationInFrames: Math.round(fps * 0.5) });
   const slide = spring({ frame: frame - Math.round(fps * 0.18), fps, config: { damping: 30, stiffness: 110 } });
@@ -27,9 +28,7 @@ export const Intro: React.FC<IntroProps> = ({ name, slogan, enName, mark = "tick
   const markSize = height * 0.28;
 
   return (
-    <AbsoluteFill style={{
-      backgroundColor: t.bg, fontFamily: t.font, alignItems: "center", justifyContent: "center", opacity: out,
-    }}>
+    <Stage theme={t} opacity={out} style={{ alignItems: "center", justifyContent: "center" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 44 * scale }}>
         <Mark kind={mark} size={markSize} progress={draw} fg={t.fg} accent={t.accent} />
         <div style={{ overflow: "hidden" }}>
@@ -54,6 +53,6 @@ export const Intro: React.FC<IntroProps> = ({ name, slogan, enName, mark = "tick
           {slogan}
         </div>
       )}
-    </AbsoluteFill>
+    </Stage>
   );
 };

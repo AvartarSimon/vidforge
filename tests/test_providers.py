@@ -173,6 +173,16 @@ class RemotionSpecs(unittest.TestCase):
             c = remotion.render("TitleCard", {"title": "B"}, duration=2, fps=30, width=320, height=180, out_dir=Path(td), log=lambda *_: None)
             self.assertEqual(a, b); self.assertNotEqual(a, c); self.assertEqual(run.call_count, 2)
 
+    def test_a_missing_required_prop_is_an_error_not_a_sample_figure(self):
+        # Remotion used to fill whatever a project left out from the Studio samples in Root.tsx
+        from vidforge import remotion
+        self.assertEqual(set(remotion.REQUIRED), set(remotion.COMPOSITIONS))
+        with tempfile.TemporaryDirectory() as td, self.assertRaises(remotion.RemotionError) as e:
+            remotion.render("BigNumber", {"title": "GDP"}, duration=2, fps=30, width=320, height=180, out_dir=Path(td), log=lambda *_: None)
+        self.assertIn("value", str(e.exception))
+        root = (remotion.APP_DIR / "src" / "Root.tsx").read_text(encoding="utf-8")
+        self.assertEqual(root.count("defaultProps={demo("), root.count("defaultProps="), "every sample is Studio-only")
+
 
 if __name__ == "__main__":
     unittest.main()

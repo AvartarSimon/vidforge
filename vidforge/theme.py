@@ -64,6 +64,24 @@ def listing() -> list[dict]:
     return [asdict(p) for p in PALETTES]
 
 
+def _luma(colour: str) -> float:
+    h = colour.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return 0.299 * r + 0.587 * g + 0.114 * b
+
+
+def graphics_theme(t: dict | None) -> dict | None:
+    """The template's colours as the `theme` prop of the animated charts and title cards. Without it
+    they keep their own near-black backdrop, and a bright video goes dark for every chart.
+
+    The accent is whichever of the palette's two strong colours is darker: the other one is the
+    yellow that highlights words inside the subtitle box, unreadable on the pale page."""
+    if not t:
+        return None
+    p = get(t.get("palette"))
+    return {"bg": p.page, "fg": "#1F2A30", "muted": "#5B6770", "accent": min((p.box, p.accent), key=_luma)}
+
+
 def window_position(side: str = "left") -> str:
     """The presenter window's `position` as render.py reads it: fractions of the *free* space."""
     fx = MARGIN_X / (1 - WINDOW_W)

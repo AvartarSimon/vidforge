@@ -1,5 +1,6 @@
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { Base, mergeTheme } from "../theme";
+import { Stage, useLayout } from "../layout";
 
 export type TimelineEvent = { date: string; text: string };
 export type TimelineProps = Base & {
@@ -13,9 +14,9 @@ export type TimelineProps = Base & {
 // over `revealBy` of the narration so the last one lands before the voice moves on.
 export const Timeline: React.FC<TimelineProps> = ({ title, events, revealBy = 0.85, theme }) => {
   const frame = useCurrentFrame();
-  const { fps, width, height, durationInFrames } = useVideoConfig();
+  const { fps, durationInFrames } = useVideoConfig();
+  const { width, height, scale } = useLayout();
   const t = mergeTheme(theme);
-  const scale = width / 1920;
   const n = Math.max(events.length, 1);
 
   const revealFrames = durationInFrames * revealBy;
@@ -27,7 +28,7 @@ export const Timeline: React.FC<TimelineProps> = ({ title, events, revealBy = 0.
   const slot = (right - left) / n;
 
   return (
-    <AbsoluteFill style={{ backgroundColor: t.bg, fontFamily: t.font }}>
+    <Stage theme={t}>
       {title && (
         <div style={{ position: "absolute", top: height * 0.12, width, textAlign: "center", color: t.fg, fontSize: 64 * scale, fontWeight: 700 }}>
           {title}
@@ -51,6 +52,6 @@ export const Timeline: React.FC<TimelineProps> = ({ title, events, revealBy = 0.
           </div>
         );
       })}
-    </AbsoluteFill>
+    </Stage>
   );
 };

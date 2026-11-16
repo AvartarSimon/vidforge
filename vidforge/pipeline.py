@@ -26,7 +26,7 @@ from pathlib import Path
 
 from . import env, ffmpeg, render, subtitles, thumbnail
 from .narration import prepare as prepare_own
-from .project import Project, Segment
+from .project import Project, RemotionSpec, Segment
 from .tts import get_provider, synthesize_cached
 
 _sink = None          # set_log() lets a host (the web UI) capture build output
@@ -89,7 +89,7 @@ def preview_segment(project: Project, seg_id: str) -> tuple[Path, float]:
         from . import remotion
         for pc in render.plan_clips(seg, narration + seg.pause_after):
             if pc.clip.remotion is not None:
-                pc.clip.video = remotion.render(pc.clip.remotion.composition, pc.clip.remotion.props, duration=pc.seconds,
+                pc.clip.video = remotion.render(pc.clip.remotion.composition, _graphics_props(project, pc.clip.remotion), duration=pc.seconds,
                                                 fps=project.fps, width=project.width, height=project.height,
                                                 out_dir=bd / "remotion", log=lambda *_: None)
     if any(getattr(o, "me", None) for o in (*seg.clips, *seg.overlays)):
@@ -288,6 +288,15 @@ def _stage_assets(ctx: _Ctx) -> None:
     _set_progress("assets", 1, 1)
 
 
+def _graphics_props(project: Project, spec: RemotionSpec) -> dict:
+    """A chart's props, in the template's colours unless the segment chose its own."""
+    from . import theme
+    colours = theme.graphics_theme(project.theme)
+    if colours and "theme" not in spec.props:
+        return {**spec.props, "theme": colours}
+    return spec.props
+
+
 def _stage_remotion(ctx: _Ctx) -> None:
     """Animated clips -> mp4 (cached by props), each at its planned share of the segment."""
     todo = [seg for seg in ctx.project.segments if any(c.remotion for c in seg.clips)]
@@ -298,7 +307,7 @@ def _stage_remotion(ctx: _Ctx) -> None:
             if pc.clip.remotion is not None:
                 _check_cancel()
                 pc.clip.video = remotion.render(
-                    pc.clip.remotion.composition, pc.clip.remotion.props, duration=pc.seconds,
+                    pc.clip.remotion.composition, _graphics_props(ctx.project, pc.clip.remotion), duration=pc.seconds,
                     fps=ctx.project.fps, width=ctx.project.width, height=ctx.project.height,
                     out_dir=ctx.bd / "remotion", log=_log)
         _set_progress("remotion", i + 1, len(todo))

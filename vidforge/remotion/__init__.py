@@ -25,6 +25,11 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parent / "app"
 COMPOSITIONS = ("TitleCard", "Timeline", "BarChart", "LineChart", "BigNumber", "Compare",
                 "Intro", "Outro", "Host", "Vocab")
+# what each one cannot draw without. Everything else is optional and is simply left out — the
+# sample values in Root.tsx are for Remotion Studio and never reach a render.
+REQUIRED = {"TitleCard": ("title",), "Timeline": ("events",), "BarChart": ("items",), "LineChart": ("lines",),
+            "BigNumber": ("value",), "Compare": ("left", "right"), "Intro": ("name",), "Outro": ("name",),
+            "Host": ("envelope",), "Vocab": ("items",)}
 
 
 class RemotionError(RuntimeError):
@@ -74,6 +79,9 @@ def render(composition: str, props: dict, *, duration: float, fps: int, width: i
            out_dir: Path, log=print) -> Path:
     if composition not in COMPOSITIONS:
         raise RemotionError(f"unknown composition '{composition}'; available: {', '.join(COMPOSITIONS)}")
+    missing = [k for k in REQUIRED[composition] if props.get(k) in (None, "", [])]
+    if missing:
+        raise RemotionError(f"{composition} 缺少必填项 {', '.join(missing)}（在这一段的 remotion.props 里填上）")
     full = dict(props)
     full.update({"durationInFrames": max(1, round(duration * fps)), "fps": fps, "width": width, "height": height})
     key = hashlib.sha1(json.dumps([composition, full, _source_stamp()], sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:12]

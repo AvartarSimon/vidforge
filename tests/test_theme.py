@@ -57,6 +57,20 @@ class Apply(unittest.TestCase):
             r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
             self.assertGreater(0.299 * r + 0.587 * g + 0.114 * b, 100, p.id)
 
+    def test_charts_take_the_template_colours_and_stay_readable(self):
+        # a chart kept its own near-black backdrop inside a bright video
+        from vidforge import pipeline
+        from vidforge.project import RemotionSpec
+        self.assertIsNone(theme.graphics_theme({}), "no template: the compositions keep their own look")
+        for p in theme.PALETTES:
+            g = theme.graphics_theme({"palette": p.id})
+            self.assertEqual(g["bg"], p.page)
+            self.assertGreater(theme._luma(g["bg"]) - theme._luma(g["accent"]), 40, f"{p.id}: accent readable on the page")
+        project = proj.Project(title="t", segments=[], root=Path("."), theme={"palette": "mint"})
+        self.assertEqual(pipeline._graphics_props(project, RemotionSpec("BigNumber", {"value": "1"}))["theme"]["bg"], theme.get("mint").page)
+        own = RemotionSpec("BigNumber", {"value": "1", "theme": {"bg": "#000"}})
+        self.assertEqual(pipeline._graphics_props(project, own)["theme"], {"bg": "#000"}, "a segment's own choice wins")
+
 
 @unittest.skipUnless(_ff(), "ffmpeg not installed")
 class Badge(unittest.TestCase):

@@ -1,5 +1,6 @@
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { Base, mergeTheme } from "../theme";
+import { Stage, useLayout } from "../layout";
 
 export type BarItem = { label: string; value: number; color?: string; display?: string };
 export type BarChartProps = Base & {
@@ -13,9 +14,9 @@ export type BarChartProps = Base & {
 // Horizontal bars grow one after another; values count up with the bar.
 export const BarChart: React.FC<BarChartProps> = ({ title, unit = "", items, max, source, theme }) => {
   const frame = useCurrentFrame();
-  const { fps, width, height } = useVideoConfig();
+  const { fps } = useVideoConfig();
+  const { width, height, scale } = useLayout();
   const t = mergeTheme(theme);
-  const scale = width / 1920;
   const top = height * (title ? 0.24 : 0.14);
   const bottom = height * 0.88;
   const rowH = Math.min(120 * scale, (bottom - top) / Math.max(items.length, 1));
@@ -26,7 +27,7 @@ export const BarChart: React.FC<BarChartProps> = ({ title, unit = "", items, max
   const fmt = (v: number) => (allInt ? Math.round(v).toLocaleString() : v.toFixed(1));
 
   return (
-    <AbsoluteFill style={{ backgroundColor: t.bg, fontFamily: t.font }}>
+    <Stage theme={t}>
       {title && (
         <div style={{ position: "absolute", top: height * 0.09, left: width * 0.08, color: t.fg, fontSize: 60 * scale, fontWeight: 700 }}>
           {title}
@@ -51,6 +52,6 @@ export const BarChart: React.FC<BarChartProps> = ({ title, unit = "", items, max
       {source && (
         <div style={{ position: "absolute", bottom: height * 0.05, right: width * 0.08, color: t.muted, fontSize: 22 * scale }}>{source}</div>
       )}
-    </AbsoluteFill>
+    </Stage>
   );
 };

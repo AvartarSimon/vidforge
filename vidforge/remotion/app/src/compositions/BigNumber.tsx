@@ -1,5 +1,6 @@
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { Base, mergeTheme } from "../theme";
+import { Stage, useLayout } from "../layout";
 
 export type BigNumberProps = Base & {
   title?: string;        // what the figure measures
@@ -18,12 +19,14 @@ export const BigNumber: React.FC<BigNumberProps> = ({
   title, value, unit = "", caption, change, changeSince, source, theme,
 }) => {
   const frame = useCurrentFrame();
-  const { fps, width, height } = useVideoConfig();
+  const { fps } = useVideoConfig();
+  const { width, height, scale } = useLayout();
   const t = mergeTheme(theme);
-  const scale = width / 1920;
 
-  const target = parseFloat(value.replace(/,/g, "")) || 0;
-  const decimals = (value.split(".")[1] || "").length;
+  // a hand-written project.json may well say 18.3 rather than "18.3"
+  const text = String(value);
+  const target = parseFloat(text.replace(/,/g, "")) || 0;
+  const decimals = (text.split(".")[1] || "").length;
   const grow = spring({ frame, fps, config: { damping: 28, stiffness: 70 }, durationInFrames: Math.round(fps * 1.2) });
   const shown = (target * grow).toLocaleString(undefined, {
     minimumFractionDigits: decimals, maximumFractionDigits: decimals,
@@ -31,9 +34,7 @@ export const BigNumber: React.FC<BigNumberProps> = ({
   const up = (change ?? 0) >= 0;
 
   return (
-    <AbsoluteFill style={{
-      backgroundColor: t.bg, fontFamily: t.font, alignItems: "center", justifyContent: "center",
-    }}>
+    <Stage theme={t} style={{ alignItems: "center", justifyContent: "center" }}>
       {title && (
         <div style={{ color: t.muted, fontSize: 46 * scale, marginBottom: 18 * scale, opacity: interpolate(frame, [0, 10], [0, 1], { extrapolateRight: "clamp" }) }}>
           {title}
@@ -60,6 +61,6 @@ export const BigNumber: React.FC<BigNumberProps> = ({
           {source}
         </div>
       )}
-    </AbsoluteFill>
+    </Stage>
   );
 };

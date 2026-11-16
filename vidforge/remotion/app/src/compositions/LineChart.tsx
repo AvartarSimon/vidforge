@@ -1,5 +1,6 @@
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
 import { Base, mergeTheme } from "../theme";
+import { Stage, useLayout } from "../layout";
 
 export type LinePoint = { x: number; y: number };
 export type LineSeries = { label: string; points: LinePoint[]; color?: string };
@@ -21,9 +22,9 @@ export const LineChart: React.FC<LineChartProps> = ({
   title, unit = "", lines, source, highlightLast = true, zeroBased = false, theme,
 }) => {
   const frame = useCurrentFrame();
-  const { durationInFrames, width, height } = useVideoConfig();
+  const { durationInFrames } = useVideoConfig();
+  const { width, height, scale } = useLayout();
   const t = mergeTheme(theme);
-  const scale = width / 1920;
 
   const left = width * 0.1, right = width * 0.94;
   const top = height * (title ? 0.26 : 0.16), bottom = height * 0.82;
@@ -50,7 +51,7 @@ export const LineChart: React.FC<LineChartProps> = ({
   const gridY = [0, 0.25, 0.5, 0.75, 1].map((f) => yMin + (yMax - yMin) * f);
 
   return (
-    <AbsoluteFill style={{ backgroundColor: t.bg, fontFamily: t.font }}>
+    <Stage theme={t}>
       {title && (
         <div style={{ position: "absolute", top: height * 0.09, left, color: t.fg, fontSize: 60 * scale, fontWeight: 700 }}>
           {title}
@@ -112,6 +113,6 @@ export const LineChart: React.FC<LineChartProps> = ({
           {source}
         </div>
       )}
-    </AbsoluteFill>
+    </Stage>
   );
 };

@@ -1,5 +1,6 @@
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { Base, mergeTheme } from "../theme";
+import { Stage, useLayout } from "../layout";
 
 export type CompareSide = { label: string; value: string; raw?: number; caption?: string; color?: string };
 export type CompareProps = Base & {
@@ -16,9 +17,9 @@ export type CompareProps = Base & {
 // the ratio ("0.66 倍") saves the viewer the arithmetic that the narration would otherwise do.
 export const Compare: React.FC<CompareProps> = ({ title, unit = "", left, right, ratio, source, theme }) => {
   const frame = useCurrentFrame();
-  const { fps, width, height } = useVideoConfig();
+  const { fps } = useVideoConfig();
+  const { width, height, scale } = useLayout();
   const t = mergeTheme(theme);
-  const scale = width / 1920;
 
   const bars = [left, right].map((s) => s.raw ?? (parseFloat(s.value.replace(/,/g, "")) || 0));
   const peak = Math.max(...bars, 1);
@@ -41,7 +42,7 @@ export const Compare: React.FC<CompareProps> = ({ title, unit = "", left, right,
   };
 
   return (
-    <AbsoluteFill style={{ backgroundColor: t.bg, fontFamily: t.font }}>
+    <Stage theme={t}>
       {title && (
         <div style={{ position: "absolute", top: height * 0.1, width: "100%", textAlign: "center", color: t.fg, fontSize: 58 * scale, fontWeight: 700 }}>
           {title}
@@ -67,6 +68,6 @@ export const Compare: React.FC<CompareProps> = ({ title, unit = "", left, right,
           {source}
         </div>
       )}
-    </AbsoluteFill>
+    </Stage>
   );
 };

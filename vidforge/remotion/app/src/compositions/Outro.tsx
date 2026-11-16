@@ -1,5 +1,6 @@
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { Base, mergeTheme } from "../theme";
+import { Stage, useLayout } from "../layout";
 import { Mark } from "./Mark";
 
 export type OutroProps = Base & {
@@ -18,18 +19,19 @@ export const Outro: React.FC<OutroProps> = ({
   name, slogan, enName, mark = "ticks", subscribe, nextHint, theme,
 }) => {
   const frame = useCurrentFrame();
-  const { fps, width, height } = useVideoConfig();
+  const { fps } = useVideoConfig();
+  const { width, height, scale, tall } = useLayout();
   const t = mergeTheme(theme);
-  const scale = width / 1920;
 
   const draw = spring({ frame, fps, config: { damping: 26, stiffness: 110 }, durationInFrames: Math.round(fps * 0.7) });
   const fade = (delay: number) =>
     interpolate(frame, [fps * delay, fps * (delay + 0.35)], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
 
   return (
-    <AbsoluteFill style={{ backgroundColor: t.bg, fontFamily: t.font }}>
+    <Stage theme={t}>
       <div style={{
-        position: "absolute", left: width * 0.08, top: 0, bottom: 0, width: width * 0.46,
+        // a phone frame has no end-screen widgets to keep clear of, and half its width is too narrow to read
+        position: "absolute", left: width * 0.08, top: 0, bottom: 0, width: width * (tall ? 0.84 : 0.46),
         display: "flex", flexDirection: "column", justifyContent: "center",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 30 * scale }}>
@@ -61,6 +63,6 @@ export const Outro: React.FC<OutroProps> = ({
         )}
       </div>
       {/* kept empty on purpose: YouTube's end-screen cards go here */}
-    </AbsoluteFill>
+    </Stage>
   );
 };

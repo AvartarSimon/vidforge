@@ -1,5 +1,6 @@
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { Base, mergeTheme } from "../theme";
+import { Stage, useLayout } from "../layout";
 
 export type TitleCardProps = Base & {
   title: string;
@@ -10,9 +11,9 @@ export type TitleCardProps = Base & {
 // Chapter title card: kicker fades in, title springs up, accent rule grows, subtitle follows.
 export const TitleCard: React.FC<TitleCardProps> = ({ title, subtitle, kicker, theme }) => {
   const frame = useCurrentFrame();
-  const { fps, width } = useVideoConfig();
+  const { fps } = useVideoConfig();
+  const { width, scale } = useLayout();
   const t = mergeTheme(theme);
-  const scale = width / 1920;
 
   const rise = spring({ frame, fps, config: { damping: 200, stiffness: 120 } });
   const titleY = interpolate(rise, [0, 1], [60, 0]);
@@ -21,7 +22,7 @@ export const TitleCard: React.FC<TitleCardProps> = ({ title, subtitle, kicker, t
   const subOpacity = interpolate(frame, [20, 40], [0, 1], { extrapolateRight: "clamp", extrapolateLeft: "clamp" });
 
   return (
-    <AbsoluteFill style={{ backgroundColor: t.bg, fontFamily: t.font, justifyContent: "center", alignItems: "center" }}>
+    <Stage theme={t} style={{ justifyContent: "center", alignItems: "center" }}>
       <div style={{ maxWidth: width * 0.8, textAlign: "center" }}>
         {kicker && (
           <div style={{ color: t.accent, fontSize: 30 * scale, letterSpacing: 6 * scale, opacity: kickerOpacity, marginBottom: 24 * scale, textTransform: "uppercase" }}>
@@ -36,6 +37,6 @@ export const TitleCard: React.FC<TitleCardProps> = ({ title, subtitle, kicker, t
           <div style={{ color: t.muted, fontSize: 40 * scale, opacity: subOpacity }}>{subtitle}</div>
         )}
       </div>
-    </AbsoluteFill>
+    </Stage>
   );
 };
