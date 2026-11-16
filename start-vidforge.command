@@ -1,22 +1,18 @@
 #!/bin/bash
 # vidforge launcher (macOS). Double-click in Finder (first time: right-click -> Open).
-# 1) python3 + vidforge installed?  2) ffmpeg?  3) open the wizard for the project.
+# The first run hands over to install-mac.sh (venv, ffmpeg, node, UI build); after that it just opens
+# the last project — `vidforge start` is the same thing from a terminal.
 cd "$(dirname "$0")"
+# Finder starts this without the shell profile, so Homebrew may not be on PATH yet
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
-if ! command -v python3 >/dev/null; then
-  echo "[vidforge] python3 not found. Install Xcode command line tools (xcode-select --install) or python.org."
-  read -r -p "Press Enter to close"; exit 1
+# a venv next to the repo is what install-mac.sh makes; it keeps vidforge off the system python
+if [ ! -x .venv/bin/python ] || ! .venv/bin/python -c "import vidforge, edge_tts" 2>/dev/null \
+   || ! command -v ffmpeg >/dev/null; then
+  echo "[vidforge] first run: installing (a few minutes, only once) ..."
+  bash ./install-mac.sh --minimal || { read -r -p "Install failed — press Enter to close"; exit 1; }
 fi
-python3 -c "import vidforge" 2>/dev/null || { echo "[vidforge] installing vidforge ..."; python3 -m pip install -e . || exit 1; }
-python3 -c "import playwright.sync_api" 2>/dev/null || { echo "[vidforge] installing playwright for browser features (no browser download, uses Edge/Chrome) ..."; python3 -m pip install "playwright>=1.45"; }
-if ! python3 -c "from vidforge import ffmpeg; ffmpeg.find_binary('ffmpeg')" 2>/dev/null; then
-  if command -v brew >/dev/null; then
-    echo "[vidforge] installing ffmpeg with Homebrew ..."; brew install ffmpeg
-  else
-    echo "[vidforge] ffmpeg not found and Homebrew missing. Install Homebrew (https://brew.sh) then: brew install ffmpeg"
-    read -r -p "Press Enter to close"; exit 1
-  fi
-fi
+PY=.venv/bin/python
 
 PROJECT="$1"
 [ -z "$PROJECT" ] && [ -f last-project.txt ] && PROJECT="$(cat last-project.txt)"
@@ -25,8 +21,8 @@ if [ -z "$PROJECT" ]; then
 fi
 if [ -z "$PROJECT" ]; then
   PROJECT="$PWD/examples/demo"
-  [ -f "$PROJECT/project.json" ] || python3 -m vidforge.cli demo "$PROJECT"
+  [ -f "$PROJECT/project.json" ] || "$PY" -m vidforge.cli demo "$PROJECT"
 fi
 echo "$PROJECT" > last-project.txt
 echo "[vidforge] opening $PROJECT"
-python3 -m vidforge.cli ui "$PROJECT"
+"$PY" -m vidforge.cli ui "$PROJECT"
