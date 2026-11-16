@@ -816,7 +816,9 @@ def make_handler(state: State):
                 if path == "/api/shutdown":              # the UI's 退出, or a newer launcher replacing this copy
                     if state.busy and not body.get("force"):
                         return self._error("还有任务在跑（配图/渲染），确定要退出吗？", HTTPStatus.CONFLICT, busy=True)
-                    threading.Thread(target=self.server.shutdown, daemon=True).start()
+                    # a moment later, so this reply is on the wire before the process goes: the
+                    # launcher replacing a stale copy read a cut-off answer as "could not quit it"
+                    threading.Timer(0.3, self.server.shutdown).start()
                     return self._json({"bye": True})
                 if path == "/api/build/cancel":
                     pipeline.cancel()
@@ -2269,10 +2271,13 @@ def _replace_stale(port: int) -> bool:
     try:
         urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{port}/api/shutdown", data=b"{}",
                                                       headers={"Content-Type": "application/json"}), timeout=3).read()
-        if _wait_gone(port):
-            return True
-    except Exception:  # noqa: BLE001  an old build without /api/shutdown: terminate it instead
-        pass
+        asked = True
+    except urllib.error.HTTPError:     # an old build without /api/shutdown: terminate it instead
+        asked = False
+    except Exception:  # noqa: BLE001  it hung up mid-reply, which is what quitting looks like
+        asked = True
+    if asked and _wait_gone(port):
+        return True
     pid = _pid_on_port(port)
     if pid is None or pid == os.getpid():
         print(f"[vidforge] 没能自动结束它。请手动关掉那个 vidforge 窗口（或结束进程），然后重新启动。")
