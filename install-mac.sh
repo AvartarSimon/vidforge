@@ -6,7 +6,7 @@
 #   ./install-mac.sh --with-ai  # also Ollama + the two small local models (~5 GB download)
 #
 # What it installs and why:
-#   ffmpeg, node        Homebrew   rendering / the web UI and the Remotion charts
+#   ffmpeg-full, node   Homebrew   rendering (with libass for burned subtitles) / the web UI and Remotion
 #   .venv               python     vidforge itself + playwright (browser bridge), opencv (face
 #                                  tools), faster-whisper (subtitle alignment for your own voice),
 #                                  google api client (YouTube upload)
@@ -43,7 +43,9 @@ if [ -z "$PY" ]; then
   brew install python@3.12; PY=python3.12
 fi
 
-command -v ffmpeg >/dev/null || { say "installing ffmpeg ..."; brew install ffmpeg; }
+# ffmpeg-full, not ffmpeg: the plain formula has no libass (burned subtitles) and no rubberband
+[ -x /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg ] || [ -x /usr/local/opt/ffmpeg-full/bin/ffmpeg ] \
+  || { say "installing ffmpeg-full (subtitles + pitch filters) ..."; brew install ffmpeg-full; }
 command -v node >/dev/null || { say "installing node ..."; brew install node; }
 
 if [ ! -x .venv/bin/python ]; then

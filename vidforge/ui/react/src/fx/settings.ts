@@ -46,7 +46,7 @@ export const DEFAULT_FX: FxSettings = {
   eyes: 0.1,
   bg: 'none',
   bgBlur: 0.6,
-  bgColor: '#1f6f78',
+  bgColor: '#ffd166',
   bgSrc: '',
   edge: 0.4,
   clothes: 0,

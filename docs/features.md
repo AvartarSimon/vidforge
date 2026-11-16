@@ -79,6 +79,9 @@
 | **VoxCPM2（本地设计音色）** | 🟡 | [`tts/voxcpm.py`](../vidforge/tts/voxcpm.py) — Apache-2.0 可商用，30 语言 + 9 种方言，**纯文字描述生成一个不存在的新音色**。⚠ 实测 CPU 上约 39 倍实时（12.96s 的输出跑了 505s），只有真有 GPU 才实用。没有 forced alignment，时间按真实总长平均摊 |
 | **声音设计（文字描述 → 音色）** | 🟡 | [`tts/voice_design.py`](../vidforge/tts/voice_design.py)（ElevenLabs）/ `voxcpm.design()`。**不克隆任何真人**，所以没有肖像/声音授权问题。你存的 `Simon1` 就是这条路出来的 |
 | **录音棚（提词器 + 设备选择 + 电平表）** | ✅ | `RecordStudio.tsx` — 提词器压在摄像头画面**上面**（念稿时眼睛要能看镜头）、摄像头/麦克风分别选（「音频口」几乎从不是浏览器默认）、实时电平表（录废的最常见原因是选错输入，事后才发现是一片静音）、3 秒倒数。**一条录像可以同时**当这一段的旁白和素材库里的出镜镜头 |
+| **实时美颜/美型/换背景/换装** | ✅ | [`ui/react/src/fx/`](../vidforge/ui/react/src/fx/) — 浏览器内 MediaPipe（人像多类分割：背景/头发/身体皮肤/脸部皮肤/衣服 + 478 点人脸网格）+ WebGL。磨皮是**只作用在皮肤上**的双边滤波；瘦脸/大眼是局部形变，上限压低；背景虚化/书房/图片/视频/纯色不要绿幕；衣服/头发只换色。录的是处理后的 canvas，所见即所得。模型首次使用时由 [`webmodels.py`](../vidforge/webmodels.py) 下到 `~/.vidforge/models/` |
+| **提词器自动滚动** | ✅ | `fx/Teleprompter.tsx` — 按字/分钟滚动，空格暂停、↑↓ 调速、R 回开头；位置靠上/满屏/靠下，可镜像 |
+| **一条录像 = 画面 + 旁白** | ✅ | `/api/record/save` `as_visual` — 按首尾声音切同一个 mp4，旁白掐静音时没东西可掐，口型和声音同帧开始；`as_window` 让它当竖屏模板的小窗 |
 | **画面预设（柔肤/补光）** | ✅ | [`videofx.py`](../vidforge/videofx.py) — `bilateral` 保边平滑 + `unsharp` 回加细节。**不是 `gblur`**：普通模糊会把眼睛、发丝、下颌线一起抹掉。每个预设都不改分辨率和时长 |
 | **用我自己的录音当旁白** | ✅ | [`narration.py`](../vidforge/narration.py) — `Segment.narration` 指一个文件就不走 TTS。解码（**视频也行，自动抽音频**）→ 掐掉首尾静音 → 强制对齐 → sidecar 缓存。按段落录，不是整条录 |
 | **字幕与任意录音对齐** | ✅ | [`align.py`](../vidforge/align.py) — faster-whisper（可选依赖）。**转写只用来定位时间，不用来决定字幕内容**：字幕永远显示脚本原文。`difflib` 在归一化 key 上对齐两串 token，没命中的借相邻词插值。实测中文平均误差 **0.068s**，比平均摊好 4.4 倍 |
@@ -125,7 +128,10 @@
 | **数字主持人** | 🟡 | [`avatar/`](../vidforge/avatar/) — `host` 是 Remotion 画的卡通形象，嘴型由音频包络驱动，**本地免费且不需要声明**（它明显是个卡通）；`heygen` 是写实数字人，⚠ 未实测，用了会自动打合成内容标 |
 | **人脸遮盖 / 换头** | ✅ | [`video/heads.py`](../vidforge/video/heads.py) — OpenCV YuNet 检测（权重自动下到 `~/.vidforge/models/`）→ 跟踪平滑 → 用静态图**或一段动态视频**（椭圆遮罩、逐帧锁定）盖住每张脸 |
 | **照片变会说话的头** | 🟡 | [`video/face.py`](../vidforge/video/face.py) — `motion`（音频包络驱动的木偶，不要 GPU）或 `cmd`（`PHOTO_TALK_CMD` → SadTalker/EchoMimic/Hallo，要 GPU） |
-| **叠加层** | ✅ | `Overlay` — 画中画，支持滑入/淡入、细边框、出处标注 |
+| **叠加层 / 画中画 / 分屏** | ✅ | `Overlay` — 滑入/淡入、描边（可选颜色）、`shape` 方/圆角/圆（Pillow 抗锯齿遮罩 + alphamerge）、`height` 固定框裁切铺满（分屏）。`PipEditor.tsx` 在画面上拖动/缩放、吸附，七种一键布局 |
+| **智能剪口播** | ✅ | [`video/jumpcut.py`](../vidforge/video/jumpcut.py) — `silencedetect` 找停顿（默认 -38dB、≥0.45s 才剪、两边留 0.12s），trim+concat 画面声音同一组切点 |
+| **视频美化（后期）** | ✅ | `VideoBeautify.tsx` — 已有视频按原速过一遍实时特效并重录，`/api/fx/save` 收原始字节转 h264 |
+| **竖屏主题模板** | ✅ | [`theme.py`](../vidforge/theme.py) — 1080×1920、小窗 24% 宽 3:4 圆角在上方、字幕抬高 24% 避开平台底部、系列角标（`finalize` 叠加）、6 套明亮配色 |
 
 ---
 
@@ -152,6 +158,7 @@
 
 | 功能 | 状态 | 怎么实现的 |
 |---|---|---|
+| **多平台导出** | ✅ | [`platforms.py`](../vidforge/platforms.py) — 抖音/快手/视频号/TikTok/头条·西瓜/YouTube/Shorts 各自画幅码率，横转竖复用竖版切片；每个平台一份可粘贴的标题/简介/话题/AI 声明；时长只警告不拦截 |
 | **YouTube 上传** | 🟡 | [`upload/youtube.py`](../vidforge/upload/youtube.py) — 视频 + 封面 + 字幕 + 章节。要 `client_secret.json`（放 `~/.vidforge/`） |
 | **AI 使用声明** | ✅ | `project.Disclosure` — 同时驱动 YouTube 的「改动或合成内容」标记和中国 2025-09-01 标识要求的简介文案。`ai_voice` 默认 `True`；**全部段落用自己的录音后，界面会提示取消这个勾选** |
 | **多语言成片** | ✅ | `build_<lang>/` 各自一套，`variants` 指定各语言的声音 |
@@ -218,10 +225,9 @@ vidforge category / remotion setup|studio / ui / shortcut
 | **视频中途的关注/点赞引导** | 片尾有 `subscribe` 文案，但中途没有任何 CTA。见 [第 13 节](data-channel-plan.md#q13) |
 | **抖音 / TikTok / 快手 热榜** | 要请求签名，拿不到（见 2.0）。正规途径是抖音开放平台 / 巨量算数，都要注册审核 |
 | **声音克隆（录一次，以后只打字）** | 还没做。挡路的不是代码：**没有录音样本**，而且这台机器只有 Intel 核显（无 CUDA）。见 [audio-voice-qa.md 第 8 节](audio-voice-qa.md#q8) |
-| **实时换脸 / 换背景** | 没做。换脸要 GPU + 授权有问题的权重，而且会让整条视频变回「合成媒体」。绿幕换背景的滤镜链在 `videofx.chromakey_chain()`，但没绿幕就别用 |
+| **实时逼真换脸 / 整件换衣服** | 没做。能做到不假的开源方案（inswapper/Deep-Live-Cam、IDM-VTON）要 GPU、权重是非商用授权，而且让整条视频变成要标注的合成内容。换背景、衣服头发换色已经做了（见 4.3） |
 | **生成背景音乐** | **故意不做**。每条「免费 AI 音乐」路线都有授权陷阱——MusicGen 是 CC-BY-NC，变现频道不能用。所以只做正弦波合成的音频标记 |
 | **克隆真人声音** | 不需要了——直接用你本人念的（见 3 节） |
-| **录像 / 抠像 / 背景虚化 / 换背景** | 只录音，不录像。画面处理仍在 vidforge 之外 |
 | **BGM 自动踩点** | 计划里，还没做 |
 | **地图组件** | 计划里的下一个 P2（世界/中国地图高亮 + 路线动画） |
 | **FRED / 国家统计局数据** | 世界银行是年度粒度，月度 CPI、利率这些还接不到 |

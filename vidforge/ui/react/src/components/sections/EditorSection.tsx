@@ -17,6 +17,7 @@ import { fileUrl } from '../../utils'
 import { ClipStrip } from '../steps/visuals/ClipStrip'
 import { PickerPanel } from '../steps/visuals/PickerPanel'
 import { RenderSettingsCard } from '../steps/render/RenderSettingsCard'
+import { ThemePicker } from '../shared/ThemePicker'
 import { Timeline, layout } from './editor/Timeline'
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`
@@ -274,7 +275,12 @@ export function EditorSection({ onOpen }: { onOpen: (where: 'studio' | 'render')
             </Stack>
           )}
           {seg && rightTab === 1 && <ClipStrip seg={seg} segId={seg.id} />}
-          {rightTab === 2 && <RenderSettingsCard />}
+          {rightTab === 2 && (
+            <Stack spacing={1.5}>
+              <ThemePicker />
+              <RenderSettingsCard />
+            </Stack>
+          )}
         </Box>
       </Box>
 

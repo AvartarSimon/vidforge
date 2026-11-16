@@ -529,11 +529,29 @@ def finalize(project: Project, merged: Path, srt: Path | None, total: float, out
     args: list[str] = ["-y", "-i", str(merged)]
     filters: list[str] = []
     maps: list[str] = []
+    # the theme's series badge sits over the whole video, so it is laid on here, once
+    vin = "[0:v]"
+    badge_text = (project.theme or {}).get("badge", "").strip()
+    if badge_text:
+        from . import theme as th
+        png = th.badge_png(badge_text, project.theme.get("palette"), out.with_name("badge.png"), height=project.height)
+        from PIL import Image
+        with Image.open(png) as im:
+            bw = im.width
+        x, y = th.badge_position(project.theme.get("side", "left"), project.width, project.height, bw)
+        args += ["-loop", "1", "-i", str(png)]
+        filters.append(f"[0:v][1:v]overlay={x}:{y}:shortest=1[bv]")
+        vin = "[bv]"
+    audio_in = 2 if badge_text else 1
+    if srt is not None and project.subtitles.burn and not ffmpeg.has_filter("subtitles"):
+        # an ffmpeg without libass cannot burn anything; a finished video with the .srt beside it
+        # beats a failed build (pipeline logs the warning)
+        srt = None
 
     if srt is not None and project.subtitles.burn and srt.suffix == ".ass":
         # ASS carries its own style block (and the per-word colours), so force_style would only
         # fight it; libass is the same renderer either way.
-        filters.append(f"[0:v]subtitles='{ffmpeg.filter_path(srt)}'[v]")
+        filters.append(f"{vin}subtitles='{ffmpeg.filter_path(srt)}'[v]")
         maps += ["-map", "[v]", *video_codec_args(project)]
     elif srt is not None and project.subtitles.burn:
         st = project.subtitles
@@ -543,10 +561,12 @@ def finalize(project: Project, merged: Path, srt: Path | None, total: float, out
         else:
             style = (f"FontName={st.font},FontSize={st.font_size},Outline=1,Shadow=0,"
                      f"MarginV={st.margin_v},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000")
-        filters.append(f"[0:v]subtitles='{ffmpeg.filter_path(srt)}':force_style='{style}'[v]")
+        filters.append(f"{vin}subtitles='{ffmpeg.filter_path(srt)}':force_style='{style}'[v]")
         # the encoder the project picked, not a hard-coded libx264: burning already costs a full
         # re-encode, so doing it on the CPU when a GPU/QSV encoder is available is pure loss
         maps += ["-map", "[v]", *video_codec_args(project)]
+    elif badge_text:
+        maps += ["-map", "[bv]", *video_codec_args(project)]
     else:
         maps += ["-map", "0:v", "-c:v", "copy"]
 
@@ -554,7 +574,7 @@ def finalize(project: Project, merged: Path, srt: Path | None, total: float, out
         b = project.bgm
         args += ["-stream_loop", "-1", "-i", str(b.file)]
         fade_start = max(0.0, total - b.fade_out)
-        chain = f"[1:a]volume={b.volume_db}dB,afade=t=out:st={fade_start:.3f}:d={b.fade_out}[bg]"
+        chain = f"[{audio_in}:a]volume={b.volume_db}dB,afade=t=out:st={fade_start:.3f}:d={b.fade_out}[bg]"
         if b.duck:
             # voice on the sidechain pushes the music down ~10 dB while speaking, recovers in 0.4 s
             filters.append(f"[0:a]asplit=2[voice][sc];{chain};"

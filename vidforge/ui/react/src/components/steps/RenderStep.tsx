@@ -1,6 +1,7 @@
 import { Stack } from '@mui/material'
 import { useProject } from '../../state/ProjectContext'
 import { RetentionBanner } from '../shared/RetentionBanner'
+import { ThemePicker } from '../shared/ThemePicker'
 import { BuildPanel } from './render/BuildPanel'
 import { LearningEditionCard } from './render/LearningEditionCard'
 import { PresenterCard } from './render/PresenterCard'
@@ -14,6 +15,7 @@ export function RenderStep() {
   return (
     <Stack spacing={2}>
       <RetentionBanner />
+      <ThemePicker />
       <RenderSettingsCard />
       <LearningEditionCard />
       <PresenterCard />

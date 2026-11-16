@@ -467,6 +467,11 @@ def make_handler(state: State):
                     return self._json({"sources": trends.available(), "kinds": trends.KINDS})
                 if path == "/api/trends":
                     return self.trends(q)
+                if path == "/api/theme":
+                    from .. import theme as th
+                    raw = state.read_raw()
+                    return self._json({"palettes": th.listing(), "current": raw.get("theme") or None,
+                                       "window": {"size": th.WINDOW_W, "height": th.WINDOW_H}})
                 if path == "/api/platforms":
                     from .. import platforms
                     folder = state.build_dir(q.get("lang")) / "platforms"
@@ -767,6 +772,16 @@ def make_handler(state: State):
                     return self.face_talk(body)
                 if path == "/api/data/chart":
                     return self.data_chart(body)
+                if path == "/api/theme/apply":
+                    from .. import theme as th
+                    raw = state.read_raw()
+                    if body.get("off"):
+                        raw.pop("theme", None)
+                    else:
+                        th.apply(raw, body.get("palette") or "sunny", badge=body.get("badge") or "",
+                                 side="right" if body.get("side") == "right" else "left")
+                    state.write_raw(raw, snapshot=True)
+                    return self._json({"theme": raw.get("theme"), "subtitles": raw.get("subtitles")})
                 if path == "/api/platforms/export":
                     return self.platform_export(body)
                 if path == "/api/short":
@@ -1716,10 +1731,16 @@ def make_handler(state: State):
                 except (ffmpeg.FfmpegError, KeyError) as e:
                     return self._error(f"录像转码失败：{e}")
                 rel = take.relative_to(state.root).as_posix()
-                # an old-style segment carries its one visual directly; `clips` replaces that shape
-                for legacy in ("image", "video", "remotion", "motion"):
-                    seg.pop(legacy, None)
-                seg["clips"] = [{"video": rel}]
+                if body.get("as_window"):
+                    # the 竖屏模板 way: the pictures stay the main frame, you are the small window
+                    from .. import theme as th
+                    seg["overlays"] = [o for o in (seg.get("overlays") or []) if not th.is_presenter_overlay(o)]
+                    seg["overlays"].append(th.presenter_overlay(rel, raw))
+                else:
+                    # an old-style segment carries its one visual directly; `clips` replaces that shape
+                    for legacy in ("image", "video", "remotion", "motion"):
+                        seg.pop(legacy, None)
+                    seg["clips"] = [{"video": rel}]
                 if as_narration:
                     seg["narration"] = rel
                 state.write_raw(raw, snapshot=True)

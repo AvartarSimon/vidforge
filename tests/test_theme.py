@@ -1,0 +1,77 @@
+"""竖屏主题模板: the layout lands in project.json, the badge lands on the video."""
+from __future__ import annotations
+
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+
+from vidforge import ffmpeg, project as proj, render, theme
+
+
+def _ff() -> bool:
+    try:
+        ffmpeg.find_binary("ffmpeg")
+        return True
+    except ffmpeg.FfmpegError:
+        return False
+
+
+class Apply(unittest.TestCase):
+    def test_vertical_frame_subtitles_and_presenter_window(self):
+        raw = {"title": "t", "segments": [
+            {"id": "a", "text": "x", "clips": [], "overlays": [{"video": "assets/takes/a_1.mp4"}, {"image": "assets/pic.jpg"}]}]}
+        theme.apply(raw, "mint", badge="RESTART · 001")
+        self.assertEqual((raw["width"], raw["height"]), (1080, 1920))
+        self.assertEqual(raw["subtitles"]["box_colour"], theme.get("mint").box)
+        self.assertGreater(raw["subtitles"]["margin_v"], 1920 * 0.2, "clear of the platform's bottom area")
+        take, pic = raw["segments"][0]["overlays"]
+        self.assertEqual(take["shape"], "rounded")
+        self.assertTrue(0.22 <= take["size"] <= 0.26)
+        self.assertAlmostEqual(take["size"] * 1080 / (take["height"] * 1920), 3 / 4, delta=0.01)
+        self.assertNotIn("shape", pic, "an ordinary picture overlay is left alone")
+
+    def test_window_sits_upper_left_inside_the_margin(self):
+        fx, fy = (float(v) for v in theme.window_position("left").split(","))
+        self.assertAlmostEqual((1080 - 1080 * theme.WINDOW_W) * fx, 1080 * theme.MARGIN_X, delta=1)
+        self.assertLess(fy, 0.15)
+
+    def test_unknown_palette_falls_back_to_a_bright_one(self):
+        self.assertEqual(theme.get("nope").id, theme.PALETTES[0].id)
+
+    def test_every_palette_is_bright(self):
+        # the brief: 颜色明亮、鲜一点 — no box darker than mid-grey
+        for p in theme.PALETTES:
+            h = p.box.lstrip("#")
+            r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+            self.assertGreater(0.299 * r + 0.587 * g + 0.114 * b, 100, p.id)
+
+
+@unittest.skipUnless(_ff(), "ffmpeg not installed")
+class Badge(unittest.TestCase):
+    def test_badge_is_drawn_over_the_final_video(self):
+        td = Path(tempfile.mkdtemp())
+        try:
+            merged = td / "merged.mp4"
+            ffmpeg.run(["-y", "-f", "lavfi", "-i", "color=c=gray:s=540x960:r=30:d=2", "-f", "lavfi", "-i", "sine=d=2",
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(merged)])
+            p = proj.Project(title="t", segments=[], root=td, width=540, height=960, quality="draft", encoder="libx264",
+                             theme={"palette": "sunny", "badge": "RESTART · 001", "side": "left"})
+            out = td / "final.mp4"
+            render.finalize(p, merged, None, 2.0, out)
+            self.assertAlmostEqual(ffmpeg.duration(out), 2.0, delta=0.15)
+            frame = td / "f.png"
+            ffmpeg.run(["-y", "-ss", "1", "-i", str(out), "-frames:v", "1", str(frame)])
+            from PIL import Image
+            im = Image.open(frame).convert("RGB")
+            with Image.open(td / "badge.png") as badge:
+                bw, bh = badge.size
+            x, y = theme.badge_position("left", 540, 960, bw)
+            r, g, b = im.getpixel((x + 4, y + bh // 2))
+            self.assertGreater(r, 200, "white pill of the sunny badge")
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    unittest.main()

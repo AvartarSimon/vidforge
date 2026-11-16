@@ -2,62 +2,48 @@ import { useEffect, useRef, useState } from 'react'
 import { Box, Button, Chip, Slider, Stack, Switch, Tab, Tabs, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material'
 import UploadIcon from '@mui/icons-material/Upload'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
-import { apiGet } from '../api/client'
+import { apiGet, apiPost } from '../api/client'
+import { ROOMS, roomUrl } from './backdrops'
 import type { FxStatus } from './engine'
 import { DEFAULT_FX, FX_PRESETS, type Aspect, type BgMode, type FxSettings } from './settings'
 
 // Generated backdrops, so "换背景" works before anyone has a photo of a nice room. Each is drawn
 // once into a data URL; plain gradients never look like a fake room, which is the point.
 const BACKDROPS: { id: string; name: string; draw: (g: CanvasRenderingContext2D, w: number, h: number) => void }[] = [
-  {
-    id: 'studio',
-    name: '演播室',
-    draw: (g, w, h) => {
-      const r = g.createRadialGradient(w / 2, h * 0.45, h * 0.1, w / 2, h / 2, h)
-      r.addColorStop(0, '#5a6b7a')
-      r.addColorStop(1, '#141a20')
+  ...(
+    [
+      ['studio', '明亮演播室', '#f4f8fc', '#c9d8e8'],
+      ['sunny', '暖阳', '#fff1d6', '#ffb27a'],
+      ['mint', '薄荷', '#e6fbf3', '#8fdcc0'],
+      ['sky', '晴空', '#e8f3ff', '#7fb6ff'],
+    ] as const
+  ).map(([id, name, a, b]) => ({
+    id,
+    name,
+    draw: (g: CanvasRenderingContext2D, w: number, h: number) => {
+      const r = g.createRadialGradient(w * 0.5, h * 0.4, h * 0.05, w / 2, h / 2, h * 1.05)
+      r.addColorStop(0, a)
+      r.addColorStop(1, b)
       g.fillStyle = r
       g.fillRect(0, 0, w, h)
     },
-  },
-  {
-    id: 'warm',
-    name: '暖灰',
-    draw: (g, w, h) => {
-      const l = g.createLinearGradient(0, 0, w, h)
-      l.addColorStop(0, '#d9cbb8')
-      l.addColorStop(1, '#8c7b6b')
-      g.fillStyle = l
-      g.fillRect(0, 0, w, h)
-    },
-  },
-  {
-    id: 'navy',
-    name: '深蓝',
-    draw: (g, w, h) => {
-      const l = g.createLinearGradient(0, 0, 0, h)
-      l.addColorStop(0, '#1d3557')
-      l.addColorStop(1, '#0b1320')
-      g.fillStyle = l
-      g.fillRect(0, 0, w, h)
-    },
-  },
+  })),
   {
     id: 'bokeh',
     name: '光斑',
     draw: (g, w, h) => {
-      g.fillStyle = '#20252b'
+      g.fillStyle = '#fbeee0'
       g.fillRect(0, 0, w, h)
       let seed = 7
       const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
-      for (let i = 0; i < 40; i++) {
+      for (let i = 0; i < 46; i++) {
         const x = rnd() * w
         const y = rnd() * h
-        const r = 20 + rnd() * 90
+        const r = 30 + rnd() * 110
         const c = g.createRadialGradient(x, y, 0, x, y, r)
-        const hue = 25 + rnd() * 30
-        c.addColorStop(0, `hsla(${hue},80%,70%,0.35)`)
-        c.addColorStop(1, `hsla(${hue},80%,70%,0)`)
+        const hue = 20 + rnd() * 50
+        c.addColorStop(0, `hsla(${hue},95%,72%,0.55)`)
+        c.addColorStop(1, `hsla(${hue},95%,72%,0)`)
         g.fillStyle = c
         g.fillRect(x - r, y - r, r * 2, r * 2)
       }
@@ -114,11 +100,19 @@ function Swatches({ value, onChange, colours }: { value: string; onChange: (c: s
 }
 
 type ProjectImage = { path: string; kind: string; title?: string }
+type Candidate = { provider: string; id: string; thumb_url: string; title?: string; [k: string]: unknown }
+
+// real photos of rooms with books, from the openly licensed sources (no key needed)
+const STUDY_QUERIES = ['home library bookshelf', 'bookshelf room interior', 'study room books']
 
 /** The 美颜 / 美型 / 背景 / 换装 / 画幅 controls — shared by the recording studio and 视频美化. */
 export function FxPanel({ fx, onChange, status, showAspect = true }: { fx: FxSettings; onChange: (f: FxSettings) => void; status: FxStatus | null; showAspect?: boolean }) {
   const [tab, setTab] = useState(0)
   const [images, setImages] = useState<ProjectImage[]>([])
+  const [room, setRoom] = useState<{ id: string; seed: number } | null>(null)
+  const [photos, setPhotos] = useState<Candidate[] | null>(null)
+  const [photoBusy, setPhotoBusy] = useState(false)
+  const [photoErr, setPhotoErr] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const set = (p: Partial<FxSettings>) => onChange({ ...fx, ...p })
   const preset = FX_PRESETS.find((p) => Object.entries(p.values).every(([k, v]) => Math.abs((fx[k as keyof FxSettings] as number) - (v as number)) < 0.005))
@@ -129,6 +123,39 @@ export function FxPanel({ fx, onChange, status, showAspect = true }: { fx: FxSet
       .then((j) => setImages(j.items.filter((i) => i.kind === 'image').slice(0, 24)))
       .catch(() => setImages([]))
   }, [tab])
+
+  const pickRoom = (id: string, seed = 7) => {
+    setRoom({ id, seed })
+    set({ bg: 'image', bgSrc: roomUrl(id, seed) })
+  }
+
+  const searchPhotos = async () => {
+    setPhotoBusy(true)
+    setPhotoErr('')
+    const found: Candidate[] = []
+    for (const q of STUDY_QUERIES) {
+      try {
+        const j = await apiGet<{ candidates: Candidate[] }>(`/api/search?source=openverse&kind=image&q=${encodeURIComponent(q)}`)
+        for (const c of j.candidates) if (!found.some((x) => x.id === c.id)) found.push(c)
+      } catch (e) {
+        setPhotoErr(e instanceof Error ? e.message : String(e))
+      }
+      if (found.length >= 18) break
+    }
+    setPhotos(found.slice(0, 24))
+    setPhotoBusy(false)
+  }
+
+  const usePhoto = async (c: Candidate) => {
+    setPhotoBusy(true)
+    try {
+      const j = await apiPost<{ path: string }>('/api/assets/fetch', { candidate: c })
+      set({ bg: 'image', bgSrc: `/files/${j.path}` })
+    } catch (e) {
+      setPhotoErr(e instanceof Error ? e.message : String(e))
+    }
+    setPhotoBusy(false)
+  }
 
   const pickFile = (f: File) => {
     const url = URL.createObjectURL(f)
@@ -208,10 +235,42 @@ export function FxPanel({ fx, onChange, status, showAspect = true }: { fx: FxSet
               <ToggleButton value="color">纯色</ToggleButton>
             </ToggleButtonGroup>
             {fx.bg === 'blur' && <Row label="虚化" value={fx.bgBlur} onChange={(v) => set({ bgBlur: v })} />}
-            {fx.bg === 'color' && <Swatches value={fx.bgColor} onChange={(c) => set({ bgColor: c })} colours={['#1f6f78', '#264653', '#2a2a2a', '#f1ece4', '#00b140', '#ffffff']} />}
+            {fx.bg === 'color' && <Swatches value={fx.bgColor} onChange={(c) => set({ bgColor: c })} colours={['#ffd166', '#ff8a3d', '#14c38e', '#2f8cff', '#ff5c7a', '#f1ece4', '#ffffff', '#00b140']} />}
             {(fx.bg === 'image' || fx.bg === 'video') && (
               <>
-                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1 }}>
+                {fx.bg === 'image' && (
+                  <>
+                    <Typography variant="caption" color="text.secondary">
+                      书房（带景深虚化，像真的房间）
+                    </Typography>
+                    <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 0.5, mb: 1 }}>
+                      {ROOMS.map((r) => (
+                        <Chip key={r.id} size="small" label={r.name} color={room?.id === r.id ? 'primary' : 'default'} onClick={() => pickRoom(r.id)} />
+                      ))}
+                      {room && <Chip size="small" variant="outlined" label="换一种摆法" onClick={() => pickRoom(room.id, room.seed + 11)} />}
+                    </Stack>
+                    <Button size="small" variant="outlined" onClick={searchPhotos} disabled={photoBusy} sx={{ mb: 1 }}>
+                      {photoBusy ? '搜索中…' : '搜真实书房照片（免费授权）'}
+                    </Button>
+                    {photoErr && (
+                      <Typography variant="caption" color="warning.main" sx={{ display: 'block' }}>
+                        {photoErr}
+                      </Typography>
+                    )}
+                    {photos && (
+                      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0.5, mb: 1, maxHeight: 170, overflowY: 'auto' }}>
+                        {photos.length === 0 && <Typography variant="caption">没搜到</Typography>}
+                        {photos.map((c) => (
+                          <Box key={c.id} component="img" src={c.thumb_url} title={c.title} loading="lazy" onClick={() => usePhoto(c)} sx={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: 0.5, cursor: 'pointer' }} />
+                        ))}
+                      </Box>
+                    )}
+                    <Typography variant="caption" color="text.secondary">
+                      其他
+                    </Typography>
+                  </>
+                )}
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1, mt: 0.5 }}>
                   {fx.bg === 'image' &&
                     BACKDROPS.map((b) => (
                       <Chip key={b.id} size="small" label={b.name} onClick={() => set({ bgSrc: backdropUrl(b.id) })} />

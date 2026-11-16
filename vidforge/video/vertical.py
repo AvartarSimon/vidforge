@@ -167,6 +167,9 @@ def make(source: Path, out: Path, cut: Cut, *, mode: str = "blur", ratio: str = 
 
     chain = reframe_filter(mode, w, h)
     cues = subtitles_for(srt, cut) if (subtitles and srt) else []
+    if cues and not ffmpeg.has_filter("subtitles"):
+        log("  ⚠ 这个 ffmpeg 没有 libass，竖版字幕没有烧进去（macOS: brew install ffmpeg-full）")
+        cues = []
     if cues:
         ass = out.with_suffix(".ass")
         _ass(cues, ass, w, h, font)

@@ -8,7 +8,7 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 # a venv next to the repo is what install-mac.sh makes; it keeps vidforge off the system python
 if [ ! -x .venv/bin/python ] || ! .venv/bin/python -c "import vidforge, edge_tts" 2>/dev/null \
-   || ! command -v ffmpeg >/dev/null; then
+   || ! { [ -x /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg ] || [ -x /usr/local/opt/ffmpeg-full/bin/ffmpeg ] || command -v ffmpeg >/dev/null; }; then
   echo "[vidforge] first run: installing (a few minutes, only once) ..."
   bash ./install-mac.sh --minimal || { read -r -p "Install failed — press Enter to close"; exit 1; }
 fi

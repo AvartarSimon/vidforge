@@ -103,7 +103,9 @@ export function RecordStudio() {
   const [countdown, setCountdown] = useState(0)
   const [elapsed, setElapsed] = useState(0)
   const [take, setTake] = useState<{ blob: Blob; url: string; ext: string; seconds: number } | null>(null)
-  const [asVisual, setAsVisual] = useState(true)
+  // where the picture of a take goes: the segment's main frame, the 竖屏模板 small window, or nowhere
+  const [target, setTarget] = useState<'visual' | 'window' | 'none'>(() => (raw?.theme ? 'window' : 'visual'))
+  const asVisual = target !== 'none'
   const [asNarration, setAsNarration] = useState(true)
   const [asFootage, setAsFootage] = useState(false)
   const [jumpcut, setJumpcut] = useState(true)
@@ -304,6 +306,7 @@ export function RecordStudio() {
           ext: take.ext,
           as_narration: asNarration,
           as_visual: withVideo && asVisual,
+          as_window: withVideo && target === 'window',
           as_footage: withVideo && asFootage,
           jumpcut: withVideo && asVisual && jumpcut,
           // the look is already baked in by the live effects
@@ -317,7 +320,7 @@ export function RecordStudio() {
       const parts = [`录了 ${j.seconds.toFixed(1)} 秒`]
       if (j.trimmed && (j.trimmed[0] > 0.05 || j.trimmed[1] > 0.05)) parts.push(`掐掉首尾静音 ${j.trimmed[0]}s / ${j.trimmed[1]}s`)
       if (j.jumpcut && j.jumpcut.removed > 0.05) parts.push(`剪口播剪掉 ${j.jumpcut.removed.toFixed(1)}s（${j.jumpcut.cuts} 处）`)
-      if (j.visual) parts.push('已设为这一段的画面')
+      if (j.visual) parts.push(target === 'window' ? '已设为这一段的真人小窗' : '已设为这一段的画面')
       if (j.narration) parts.push('已设为这一段的旁白（字幕会自动对齐）')
       if (j.footage) parts.push(`已存进素材库：${j.footage}`)
       setStatus(parts.join('　·　'))
@@ -497,7 +500,11 @@ export function RecordStudio() {
             )}
             <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
               {withVideo && (
-                <FormControlLabel control={<Switch size="small" checked={asVisual} onChange={(e) => setAsVisual(e.target.checked)} />} label={<Typography variant="body2">当这一段的画面</Typography>} />
+                <ToggleButtonGroup size="small" exclusive value={target} onChange={(_, v) => v && setTarget(v)}>
+                  <ToggleButton value="visual">当这一段的主画面</ToggleButton>
+                  <ToggleButton value="window">当小窗（竖屏模板）</ToggleButton>
+                  <ToggleButton value="none">画面不用</ToggleButton>
+                </ToggleButtonGroup>
               )}
               {withVideo && asVisual && (
                 <FormControlLabel control={<Switch size="small" checked={jumpcut} onChange={(e) => setJumpcut(e.target.checked)} />} label={<Typography variant="body2">剪掉中间的停顿（剪口播）</Typography>} />
@@ -507,6 +514,11 @@ export function RecordStudio() {
                 <FormControlLabel control={<Switch size="small" checked={asFootage} onChange={(e) => setAsFootage(e.target.checked)} />} label={<Typography variant="body2">存进「我的镜头」</Typography>} />
               )}
             </Stack>
+            {withVideo && target === 'window' && !seg?.clips.length && (
+              <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 0.5 }}>
+                这一段还没有主画面——小窗下面要有图片或视频，先在「画面」里给它配图。
+              </Typography>
+            )}
             <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
               <Button variant="contained" startIcon={<SaveIcon />} onClick={save} disabled={busy}>
                 用这一条

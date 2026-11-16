@@ -17,9 +17,10 @@ _FONT_CANDIDATES = {
 
 def _font(size: int, text: str) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     cands = list(_FONT_CANDIDATES.get(platform.system(), []))
-    # CJK text needs a CJK-capable face first
+    # CJK text needs a CJK-capable face first — and PingFang is not a file on every macOS
     if any("\u4e00" <= ch <= "\u9fff" for ch in text):
-        cands = [c for c in cands if "msyh" in c or "PingFang" in c] + cands
+        from .theme import cjk_font
+        return cjk_font(size)
     for c in cands:
         if Path(c).exists():
             try:

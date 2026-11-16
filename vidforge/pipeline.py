@@ -477,7 +477,8 @@ def _stage_assemble(ctx: _Ctx) -> tuple[Path, list[dict], float]:
         subtitles.write_ass(cues, ass, font=p.subtitles.font, font_size=p.subtitles.font_size,
                             margin_v=p.subtitles.margin_v, box=p.subtitles.style == "box",
                             highlight=p.subtitles.highlight, colour=colour,
-                            width=p.width, height=p.height)
+                            width=p.width, height=p.height,
+                            box_colour=p.subtitles.box_colour, text_colour=p.subtitles.text_colour)
         burn_file = ass
         _log(f"  subtitles  {p.subtitles.highlight} highlight in {colour}")
     if not cues:
@@ -488,6 +489,8 @@ def _stage_assemble(ctx: _Ctx) -> tuple[Path, list[dict], float]:
     _set_progress("assemble", 1, 3)
     _check_cancel()
     final = bd / "final.mp4"
+    if cues and p.subtitles.burn and not ffmpeg.has_filter("subtitles"):
+        _log("warning: 这个 ffmpeg 没有 libass，字幕没有烧进画面（final.srt 照常生成）。macOS: brew install ffmpeg-full")
     render.finalize(p, merged, burn_file if cues else None, cursor + trail, final)
     _set_progress("assemble", 2, 3)
 

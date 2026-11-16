@@ -223,7 +223,7 @@ def _bgr(hex_colour: str) -> str:
 
 def write_ass(cues: list[Cue], path: Path, *, font: str, font_size: int, margin_v: int,
               box: bool, highlight: str = "keywords", colour: str = "#d4793a",
-              width: int = 1920, height: int = 1080) -> None:
+              width: int = 1920, height: int = 1080, box_colour: str = "", text_colour: str = "") -> None:
     """Burn-ready subtitles with the key words in the brand colour.
 
     highlight:
@@ -231,7 +231,9 @@ def write_ass(cues: list[Cue], path: Path, *, font: str, font_size: int, margin_
       karaoke  — each word lights up as it is spoken, figures stay lit afterwards
                  (one line per word; needs the word timings `build_cues` now keeps)
     """
-    hi, white = _bgr(colour), "&H00FFFFFF"
+    hi, white = _bgr(colour), (_bgr(text_colour) if text_colour else "&H00FFFFFF")
+    # a theme's box is a solid colour block (a little see-through); the default stays translucent black
+    back = ("&H20" + _bgr(box_colour)[4:]) if box_colour else "&H99000000"
     border = "BorderStyle=4,Outline=2,Shadow=0" if box else "BorderStyle=1,Outline=2,Shadow=0"
     head = [
         "[Script Info]", "ScriptType: v4.00+", "WrapStyle: 2", "ScaledBorderAndShadow: yes",
@@ -240,8 +242,8 @@ def write_ass(cues: list[Cue], path: Path, *, font: str, font_size: int, margin_
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, "
         "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        f"Style: Main,{font},{font_size},{white},{hi},&H00000000,&H99000000,0,0,0,0,100,100,0,0,"
-        f"{'4' if box else '1'},2,0,2,60,60,{margin_v},1", "",
+        f"Style: Main,{font},{font_size},{white},{hi},{back if box_colour else '&H00000000'},{back},{-1 if box_colour else 0},0,0,0,100,100,0,0,"
+        f"{'4' if box else '1'},{max(2, font_size // 6) if box_colour else 2},0,2,60,60,{margin_v},1", "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]

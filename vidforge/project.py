@@ -218,6 +218,8 @@ class SubtitleStyle:
     bilingual_lang: str = "zh"
     highlight: str = "keywords"      # none | keywords | karaoke — colour the figures being said
     highlight_colour: str = ""       # defaults to the brand accent
+    box_colour: str = ""             # box style background; "" = translucent black
+    text_colour: str = ""            # "" = white
 
 
 @dataclass
@@ -254,6 +256,7 @@ class Project:
     out_dir: Path = Path("build")
     bgm: Bgm | None = None
     subtitles: SubtitleStyle = field(default_factory=SubtitleStyle)
+    theme: dict[str, Any] = field(default_factory=dict)    # theme.py: {"palette", "badge", "side"}
     thumbnail_text: str | None = None
     tts: TtsConfig = field(default_factory=TtsConfig)
     youtube: YouTubeConfig = field(default_factory=YouTubeConfig)
@@ -585,6 +588,7 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         out_dir=Path(data.get("out_dir", "build")),
         bgm=bgm,
         subtitles=sub,
+        theme=dict(data.get("theme") or {}),
         thumbnail_text=data.get("thumbnail_text"),
         tts=tts,
         youtube=yt,

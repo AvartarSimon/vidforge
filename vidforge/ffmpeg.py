@@ -22,13 +22,19 @@ class FfmpegError(RuntimeError):
 def find_binary(name: str) -> str:
     """Resolve `ffmpeg` / `ffprobe`.
 
-    Order: VIDFORGE_FFMPEG_DIR env var -> PATH -> winget install folder (Windows)
-    -> Homebrew (macOS).
+    Order: VIDFORGE_FFMPEG_DIR env var -> Homebrew ffmpeg-full (macOS) -> PATH -> winget install
+    folder (Windows) -> Homebrew (macOS).
     """
     env_dir = os.environ.get("VIDFORGE_FFMPEG_DIR")
     exe = name + (".exe" if platform.system() == "Windows" else "")
     if env_dir and (Path(env_dir) / exe).exists():
         return str(Path(env_dir) / exe)
+
+    # Homebrew's plain `ffmpeg` (8+) has no libass and no rubberband, so burned subtitles and the
+    # pitch shift fail; `ffmpeg-full` is keg-only (not on PATH) but has both — prefer it when present
+    for keg in ("/opt/homebrew/opt/ffmpeg-full/bin/", "/usr/local/opt/ffmpeg-full/bin/"):
+        if platform.system() == "Darwin" and Path(keg + name).exists():
+            return keg + name
 
     found = shutil.which(name)
     if found:
