@@ -349,6 +349,12 @@ export function RecordStudio() {
     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0,1fr) 340px' }, gap: 2 }}>
       {/* stage */}
       <Box>
+        {!raw.segments.length && (
+          // an empty picker and "这一段 0 字" looked broken; the page is only waiting for a script
+          <Alert severity="info" sx={{ mb: 1 }}>
+            这个项目还没有脚本段落：先到「脚本」里写好或粘贴脚本，这里才有提词内容，录的片段也才有段落可以放。
+          </Alert>
+        )}
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
           <IconButton size="small" disabled={segIndex <= 0 || recording} onClick={() => go(-1)} aria-label="上一段">
             <NavigateBeforeIcon />
