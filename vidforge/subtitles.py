@@ -240,6 +240,8 @@ def write_ass(cues: list[Cue], path: Path, *, font: str, font_size: int, margin_
       keywords — figures stay coloured for the whole cue (one line per cue, cheapest, safest)
       karaoke  — each word lights up as it is spoken, figures stay lit afterwards
                  (one line per word; needs the word timings `build_cues` now keeps)
+      word     — the word being spoken is lit and a size larger, figures stay lit afterwards:
+                 the moving word-by-word caption of short-video editors (剪映 / Submagic)
     """
     hi, white = _bgr(colour), (_bgr(text_colour) if text_colour else "&H00FFFFFF")
     # a theme's box is a solid colour block (a little see-through); the default stays translucent black
@@ -274,7 +276,7 @@ def write_ass(cues: list[Cue], path: Path, *, font: str, font_size: int, margin_
             continue
         sep = "" if _is_cjk(cue.text) else " "
         keys = [is_key_word(w.text) for w in words]
-        if highlight == "karaoke":
+        if highlight in ("karaoke", "word"):
             # one line per word: everything up to the current word is lit, the rest is plain —
             # a figure that has been said stays lit so it can still be read a beat later
             for i, w in enumerate(words):
@@ -284,6 +286,10 @@ def write_ass(cues: list[Cue], path: Path, *, font: str, font_size: int, margin_
                     continue
                 parts = []
                 for j, w2 in enumerate(words):
+                    if highlight == "word" and j == i:
+                        # 112%, not more: the line is centred, so a bigger word nudges its neighbours
+                        parts.append(f"{{\\c{hi}\\fscx112\\fscy112}}{esc(w2.text)}{{\\c{white}\\fscx100\\fscy100}}")
+                        continue
                     lit = keys[j] and j <= i
                     parts.append(f"{{\\c{hi}}}{esc(w2.text)}{{\\c{white}}}" if lit else esc(w2.text))
                 lines.append(f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Main,,0,0,0,,{sep.join(parts)}")

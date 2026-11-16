@@ -104,7 +104,8 @@ def apply(raw: dict, palette: str, *, badge: str = "", side: str = "left") -> di
     raw["theme"] = {"palette": p.id, "badge": badge.strip(), "side": side}
     sub = raw.setdefault("subtitles", {})
     sub.update({
-        "burn": True, "style": "box", "highlight": "keywords",
+        # word by word: on a phone the eye follows the lit word, which is what keeps it on the line
+        "burn": True, "style": "box", "highlight": "word",
         # in subtitle script units (288 lines to the frame), like every other project's
         "font_size": round(SCRIPT_LINES * 0.034), "margin_v": round(SCRIPT_LINES * SUB_LIFT),
         # counted in Latin characters, and build_cues() halves it for Chinese: 24 is 12 glyphs,

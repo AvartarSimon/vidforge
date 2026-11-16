@@ -75,6 +75,20 @@ class Highlight(unittest.TestCase):
         self.assertNotIn(r"{\c&H003A79D4}", lines[0])     # before the figure is spoken
         self.assertIn(r"{\c&H003A79D4}5.2%", lines[-1])   # and it stays lit afterwards
 
+    def test_word_mode_lights_the_word_being_said_and_only_that_one(self):
+        import tempfile
+        from vidforge.subtitles import write_ass
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "w.ass"
+            write_ass(self.cues(), f, font="Arial", font_size=22, margin_v=48, box=False,
+                      highlight="word", colour="#d4793a")
+            lines = [l for l in f.read_text(encoding="utf-8").splitlines() if l.startswith("Dialogue")]
+        self.assertEqual(len(lines), 5)
+        self.assertIn(r"{\c&H003A79D4\fscx112\fscy112}中国{\c&H00FFFFFF\fscx100\fscy100}去年", lines[0])
+        self.assertEqual(lines[1].count(r"\fscx112"), 1, "one word at a time")
+        self.assertIn(r"{\c&H003A79D4\fscx112\fscy112}去年", lines[1])
+        self.assertIn(r"{\c&H003A79D4}5.2%{\c&H00FFFFFF}", lines[-1], "the figure stays lit once said")
+
     def test_none_mode_is_plain_text(self):
         import tempfile
         from vidforge.subtitles import write_ass

@@ -24,6 +24,7 @@ class Apply(unittest.TestCase):
         theme.apply(raw, "mint", badge="RESTART · 001")
         self.assertEqual((raw["width"], raw["height"]), (1080, 1920))
         self.assertEqual(raw["subtitles"]["box_colour"], theme.get("mint").box)
+        self.assertEqual(raw["subtitles"]["highlight"], "word")
         from vidforge.subtitles import SCRIPT_LINES
         self.assertGreater(raw["subtitles"]["margin_v"] / SCRIPT_LINES, 0.2, "clear of the platform's bottom area")
         self.assertTrue(0.03 <= raw["subtitles"]["font_size"] / SCRIPT_LINES <= 0.04, "a phone-sized line, not a headline")

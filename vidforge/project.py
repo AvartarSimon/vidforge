@@ -216,7 +216,7 @@ class SubtitleStyle:
     style: str = "outline"           # outline | box (semi-transparent background, YouTube-style)
     bilingual: bool = False          # second line in `bilingual_lang` (learner edition)
     bilingual_lang: str = "zh"
-    highlight: str = "keywords"      # none | keywords | karaoke — colour the figures being said
+    highlight: str = "keywords"      # none | keywords | karaoke | word — colour the figures / the word being said
     highlight_colour: str = ""       # defaults to the brand accent
     box_colour: str = ""             # box style background; "" = translucent black
     text_colour: str = ""            # "" = white
