@@ -427,8 +427,12 @@ def cmd_data(args: argparse.Namespace) -> int:
     """Public datasets -> a chart segment. `search` finds an indicator code, `chart` renders one."""
     from .data import bar_props, big_number_props, compare_props, line_props, worldbank
     if args.action == "search":
-        for hit in worldbank.search(args.query or "", limit=args.limit):
+        hits = worldbank.search(args.query or "", limit=args.limit)
+        for hit in hits:
             print(f"  {hit['id']:<24} {hit['name']}")
+        if not hits:
+            # only the ~20 common indicators carry a Chinese name; the other 16k are English
+            print(f"没有找到「{args.query}」。世界银行的指标名是英文，换英文词试试（例如 education、energy）。")
         return 0
 
     if not args.indicator:

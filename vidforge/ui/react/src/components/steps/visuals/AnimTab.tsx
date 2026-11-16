@@ -52,7 +52,10 @@ export function AnimTab({ seg, segId }: { seg: Segment; segId: string }) {
     try {
       const j = await apiGet<{ indicators: Indicator[] }>(`/api/data/search?q=${encodeURIComponent(q)}`)
       setHits(j.indicators)
-      if (j.indicators.length && !indicator) setIndicator(j.indicators[0].id)
+      // a selection left over from the previous search is not in the new list: the box showed blank
+      if (!j.indicators.some((h) => h.id === indicator)) setIndicator(j.indicators[0]?.id ?? '')
+      // only the ~20 common indicators carry a Chinese name; the other 16k are English
+      if (!j.indicators.length) setError(`没有找到「${q}」。世界银行的指标名是英文，换英文词试试（例如 education、energy）。`)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }

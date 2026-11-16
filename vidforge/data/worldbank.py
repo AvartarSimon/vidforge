@@ -89,16 +89,17 @@ def search(text: str, limit: int = 15) -> list[dict]:
 
     Matching happens locally over the full indicator list (one cached download) because the API's
     own search is exact-match only and misses the obvious words."""
-    text = text.strip().lower()
-    if not text:
+    # every word has to be there, in any order: "GDP 人均" must find "人均 GDP", "growth gdp" "GDP growth"
+    words = text.strip().lower().split()
+    if not words:
         return [{"id": k, "name": v, "source": "World Bank"} for k, v in COMMON.items()][:limit]
     hits = [{"id": k, "name": v, "source": "World Bank"} for k, v in COMMON.items()
-            if text in k.lower() or text in v.lower()]
+            if all(w in k.lower() or w in v.lower() for w in words)]
     data = _get("indicator", {"per_page": 25000})
     rows = data[1] if len(data) > 1 and isinstance(data[1], list) else []
     for row in rows:
         name = (row.get("name") or "")
-        if text in name.lower() or text == (row.get("id") or "").lower():
+        if all(w in name.lower() for w in words) or words == [(row.get("id") or "").lower()]:
             if not any(h["id"] == row["id"] for h in hits):
                 hits.append({"id": row["id"], "name": name,
                              "source": (row.get("sourceOrganization") or "World Bank")[:120]})

@@ -120,6 +120,17 @@ class WorldBank(unittest.TestCase):
             with self.assertRaises(DataError):
                 worldbank.fetch("NOPE", ["CHN"])
 
+    def test_search_matches_every_word_in_any_order(self):
+        # "GDP 人均" found nothing: the whole query had to appear as one run of text
+        listing = [{"total": 2}, [{"id": "NY.GDP.MKTP.KD.ZG", "name": "GDP growth (annual %)"},
+                                  {"id": "SE.XPD.TOTL.GD.ZS", "name": "Government expenditure on education, total (% of GDP)"}]]
+        with mock.patch("vidforge.data.worldbank._get", return_value=listing):
+            self.assertEqual(worldbank.search("GDP 人均")[0]["id"], "NY.GDP.PCAP.CD")
+            self.assertIn("NY.GDP.MKTP.KD.ZG", [h["id"] for h in worldbank.search("growth gdp")])
+            self.assertEqual([h["id"] for h in worldbank.search("education gdp")], ["SE.XPD.TOTL.GD.ZS"])
+            self.assertEqual([h["id"] for h in worldbank.search("se.xpd.totl.gd.zs")], ["SE.XPD.TOTL.GD.ZS"])
+            self.assertEqual(worldbank.search("growth 人均"), [], "a word that is nowhere still means no match")
+
     def test_the_api_error_envelope_is_surfaced(self):
         envelope = [{"message": [{"value": "The provided parameter value is not valid"}]}]
         with mock.patch("vidforge.data.worldbank.urllib.request.urlopen") as op:
