@@ -13,7 +13,7 @@ export function PickerPanel({ seg, segId, onAdded }: { seg: Segment; segId: stri
 
   return (
     <Card variant="outlined">
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
+      <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable" scrollButtons="auto" sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
         <Tab value="image" label="搜图片" />
         <Tab value="video" label="搜视频" />
         <Tab value="upload" label="本地文件" />

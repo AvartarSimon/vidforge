@@ -1716,6 +1716,9 @@ def make_handler(state: State):
                 except (ffmpeg.FfmpegError, KeyError) as e:
                     return self._error(f"录像转码失败：{e}")
                 rel = take.relative_to(state.root).as_posix()
+                # an old-style segment carries its one visual directly; `clips` replaces that shape
+                for legacy in ("image", "video", "remotion", "motion"):
+                    seg.pop(legacy, None)
                 seg["clips"] = [{"video": rel}]
                 if as_narration:
                     seg["narration"] = rel

@@ -84,7 +84,14 @@ export function RecordStudio() {
   const [cam, setCam] = useState('')
   const [mic, setMic] = useState('')
   const [withVideo, setWithVideo] = useState(true)
-  const [segId, setSegId] = useState('')
+  // the editor's 去录制棚 hands over which segment it was on
+  const [segId, setSegId] = useState(() => {
+    try {
+      return sessionStorage.getItem('vf.studio.seg') || ''
+    } catch {
+      return ''
+    }
+  })
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs)
   const [fx, setFx] = useState<FxSettings>(loadFx)
   const [level, setLevel] = useState(0)
@@ -124,7 +131,7 @@ export function RecordStudio() {
   }, [prefs])
   useEffect(() => () => stopEverything(), []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (raw?.segments.length && !segId) setSegId(raw.segments[0].id)
+    if (raw?.segments.length && !raw.segments.some((s) => s.id === segId)) setSegId(raw.segments[0].id)
   }, [raw?.segments.length, segId, raw])
 
   // keyboard: space = pause/resume the scroll, ↑/↓ = faster/slower, R = rewind the script

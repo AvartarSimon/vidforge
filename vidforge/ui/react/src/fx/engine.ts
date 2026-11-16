@@ -364,6 +364,7 @@ export class FxEngine {
         gl.uniform1i(u('u_bgMode'), bgMode)
         gl.uniform3fv(u('u_bgColor'), hex(s.bgColor))
         gl.uniform1f(u('u_hasMask'), hasMask ? 1 : 0)
+        gl.uniform2f(u('u_maskPx'), 1 / Math.max(1, this.maskSize[0]), 1 / Math.max(1, this.maskSize[1]))
         gl.uniform1f(u('u_smoothAmt'), hasMask ? s.smooth * on : 0)
         gl.uniform1f(u('u_whiten'), s.whiten * on)
         gl.uniform1f(u('u_rosy'), s.rosy * on)
@@ -441,6 +442,9 @@ export class FxEngine {
       const body = masks[2].getAsFloat32Array()
       const faceSkin = masks[3].getAsFloat32Array()
       const clothes = masks[4].getAsFloat32Array()
+      // "other" (glasses, hats, a mic) belongs to the person, but it is also the class the model
+      // falls back to for flat things it cannot place — a grey wall, a door — so it counts half
+      const other = masks.length > 5 ? masks[5].getAsFloat32Array() : null
       if (!this.mask || this.mask.length !== n * 4) {
         this.mask = new Float32Array(n * 4)
         this.maskBytes = new Uint8Array(n * 4)
@@ -453,7 +457,8 @@ export class FxEngine {
       const k = 0.55
       for (let i = 0; i < n; i++) {
         const j = i * 4
-        m[j] = m[j] * (1 - k) + (1 - bg[i]) * k
+        const person = other ? Math.min(1, hair[i] + body[i] + faceSkin[i] + clothes[i] + other[i] * 0.5) : 1 - bg[i]
+        m[j] = m[j] * (1 - k) + person * k
         m[j + 1] = m[j + 1] * (1 - k) + Math.min(1, body[i] + faceSkin[i]) * k
         m[j + 2] = m[j + 2] * (1 - k) + clothes[i] * k
         m[j + 3] = m[j + 3] * (1 - k) + hair[i] * k

@@ -104,6 +104,17 @@ uniform float u_hasMask;
 uniform float u_smoothAmt, u_whiten, u_rosy, u_sharpen, u_bright, u_contrast, u_sat, u_warm, u_edge;
 uniform float u_clothes, u_hair;
 uniform vec3 u_clothesC, u_hairC;
+uniform vec2 u_maskPx;    // one texel of the (256x256) mask
+
+// the model's mask is a few hundred texels across a 1080p frame: smooth it over a 3x3 texel
+// neighbourhood so the cut-out edge is a soft line rather than a staircase
+vec4 maskAt(vec2 uv) {
+  vec4 m = vec4(0.0);
+  for (int y = -1; y <= 1; y++)
+    for (int x = -1; x <= 1; x++)
+      m += texture(u_mask, uv + vec2(float(x), float(y)) * u_maskPx) * (x == 0 && y == 0 ? 0.25 : (x == 0 || y == 0 ? 0.125 : 0.0625));
+  return m;
+}
 
 vec3 rgb2hsl(vec3 c) {
   float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
@@ -140,7 +151,7 @@ vec3 recolour(vec3 col, vec3 target) {
 void main() {
   vec2 uv = u_crop.xy + v_uv * u_crop.zw;
   vec3 w = texture(u_warp, uv).rgb;
-  vec4 m = u_hasMask > 0.5 ? texture(u_mask, uv) : vec4(1.0, 0.0, 0.0, 0.0);
+  vec4 m = u_hasMask > 0.5 ? maskAt(uv) : vec4(1.0, 0.0, 0.0, 0.0);
   float skin = m.g;
   vec3 col = w;
   if (u_smoothAmt > 0.0) col = mix(col, texture(u_smooth, uv).rgb, clamp(u_smoothAmt * skin * 1.1, 0.0, 1.0));

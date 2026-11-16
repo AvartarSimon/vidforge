@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Box, Button, CircularProgress, CssBaseline, Stack, ThemeProvider, Toolbar, Typography } from '@mui/material'
+import { Alert, Box, Button, CircularProgress, CssBaseline, Stack, ThemeProvider, Typography } from '@mui/material'
 import type { PaletteMode } from '@mui/material'
 import { apiGet } from './api/client'
 import { NavRail, DRAWER_WIDTH, SECTIONS, stepDone } from './components/nav/NavRail'
+import { TopBar } from './components/nav/TopBar'
 import type { SectionId } from './components/nav/NavRail'
 import { TrendsSection } from './components/sections/TrendsSection'
+import { EditorSection } from './components/sections/EditorSection'
+import { RecordStudio } from './components/sections/voice/RecordStudio'
 import { VideoSection } from './components/sections/VideoSection'
 import { VoiceSection } from './components/sections/VoiceSection'
 import { ImagesSection } from './components/sections/ImagesSection'
@@ -18,13 +21,6 @@ import { ProjectProvider, useProject } from './state/ProjectContext'
 
 const STEP_LABELS: Record<number, string> = { 1: '脚本', 2: '配音', 3: '画面', 4: '渲染', 5: '发布' }
 
-const SAVE_LABEL: Record<string, string> = {
-  saved: '已保存',
-  dirty: '有改动，稍后自动保存…',
-  saving: '保存中…',
-  error: '未保存',
-}
-
 function readStoredMode(): PaletteMode {
   try {
     const v = localStorage.getItem('vf.react.theme')
@@ -37,7 +33,7 @@ function readStoredMode(): PaletteMode {
 }
 
 function Shell({ mode, onToggleMode }: { mode: PaletteMode; onToggleMode: () => void }) {
-  const { raw, view, loading, error, saveState, savedAt } = useProject()
+  const { raw, view, loading, error } = useProject()
   // steps keep their own local UI state (draft text, picker filters, …) that must not survive a
   // project switch — remounting the active step whenever the open project's path changes is
   // simpler and more thorough than hunting down every piece of that state individually.
@@ -50,7 +46,21 @@ function Shell({ mode, onToggleMode }: { mode: PaletteMode; onToggleMode: () => 
     }
   })
   // null = the wizard is showing; otherwise one of the material sections (视频 / 声音 / 图片)
-  const [section, setSection] = useState<SectionId | null>(null)
+  const [section, setSection] = useState<SectionId | null>(() => {
+    try {
+      const v = localStorage.getItem('vf.react.section')
+      return SECTIONS.some((x) => x.id === v) ? (v as SectionId) : null
+    } catch {
+      return null
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem('vf.react.section', section || '')
+    } catch {
+      // ignore (private browsing etc.)
+    }
+  }, [section])
 
   // The backend serves this page from disk on every request, so an instance started before an
   // update hands you today's UI while still answering yesterday's routes ("not found" on a button
@@ -70,39 +80,27 @@ function Shell({ mode, onToggleMode }: { mode: PaletteMode; onToggleMode: () => 
     }
   }, [step])
 
+  const goStep = (n: number) => {
+    setSection(null)
+    setStep(n)
+  }
+  const fullBleed = section === 'editor'
+
   return (
-    <Box sx={{ display: 'flex' }}>
-      <NavRail
-        activeStep={step}
-        onStep={(n) => {
-          setSection(null)
-          setStep(n)
-        }}
-        activeSection={section}
-        onSection={setSection}
-        mode={mode}
-        onToggleMode={onToggleMode}
-      />
-      <Box component="main" sx={{ flexGrow: 1, minHeight: '100vh', bgcolor: 'background.default' }}>
-        <Toolbar sx={{ justifyContent: 'space-between', borderBottom: '1px solid', borderColor: 'divider' }}>
-          <Typography variant="subtitle1" fontWeight={600}>
-            {!raw
-              ? 'vidforge'
-              : section
-                ? `${raw.title || '(未命名)'} · ${SECTIONS.find((x) => x.id === section)?.label}`
-                : `${raw.title || '(未命名)'} · 第 ${step} 步 · ${STEP_LABELS[step]}`}
-          </Typography>
-          {raw && (
-            <Typography
-              variant="body2"
-              color={saveState === 'error' ? 'error' : saveState === 'dirty' ? 'warning.main' : 'text.secondary'}
-            >
-              {SAVE_LABEL[saveState]}
-              {saveState === 'saved' && savedAt ? ` ${savedAt.toLocaleTimeString()}` : ''}
+    <Box>
+      <TopBar step={step} inWizard={section === null} onStep={goStep} />
+      <Box sx={{ display: 'flex' }}>
+      <NavRail activeSection={section} onSection={setSection} mode={mode} onToggleMode={onToggleMode} />
+      <Box component="main" sx={{ flexGrow: 1, minWidth: 0, minHeight: 'calc(100vh - 48px)', bgcolor: 'background.default' }}>
+        {!fullBleed && raw && (
+          <Stack direction="row" alignItems="baseline" spacing={1.5} sx={{ px: 3, pt: 2.5, pb: 0.5, maxWidth: 1480, mx: 'auto' }}>
+            <Typography variant="h6">{section ? SECTIONS.find((x) => x.id === section)?.label : `第 ${step} 步 · ${STEP_LABELS[step]}`}</Typography>
+            <Typography variant="body2" color="text.secondary">
+              {section ? SECTIONS.find((x) => x.id === section)?.sub : ''}
             </Typography>
-          )}
-        </Toolbar>
-        <Box sx={{ p: 3 }}>
+          </Stack>
+        )}
+        <Box sx={fullBleed ? {} : { p: 3, pt: 1.5, maxWidth: 1480, mx: 'auto' }}>
           {staleBackend && (
             <Alert severity="error" sx={{ mb: 2 }}>
               后端是旧版本（在这次更新之前启动的），新功能会报 “not found”。关掉 vidforge 的黑窗口，重新双击 start-vidforge 即可（新版会自动替换旧进程）。
@@ -121,6 +119,8 @@ function Shell({ mode, onToggleMode }: { mode: PaletteMode; onToggleMode: () => 
               还没有打开项目——点左上角的项目卡片，新建或打开一个。
             </Typography>
           )}
+          {!loading && !error && raw && section === 'editor' && <EditorSection key={`${stepKey}-editor`} onOpen={(w) => (w === 'studio' ? setSection('studio') : goStep(4))} />}
+          {!loading && !error && raw && section === 'studio' && <RecordStudio key={`${stepKey}-studio`} />}
           {!loading && !error && raw && section === 'trends' && <TrendsSection key={`${stepKey}-trends`} />}
           {!loading && !error && raw && section === 'video' && <VideoSection key={`${stepKey}-video`} />}
           {!loading && !error && raw && section === 'voice' && <VoiceSection key={`${stepKey}-voice`} />}
@@ -141,7 +141,7 @@ function Shell({ mode, onToggleMode }: { mode: PaletteMode; onToggleMode: () => 
               alignItems="center"
               sx={{ mt: 4, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}
             >
-              <Button size="small" disabled={step <= 1} onClick={() => setStep(step - 1)}>
+              <Button size="small" disabled={step <= 1} onClick={() => goStep(step - 1)}>
                 ← 上一步
               </Button>
               <Typography variant="caption" color="text.secondary" sx={{ flexGrow: 1 }}>
@@ -153,13 +153,14 @@ function Shell({ mode, onToggleMode }: { mode: PaletteMode; onToggleMode: () => 
                 size="small"
                 variant={stepDone(step, raw, view) ? 'contained' : 'outlined'}
                 disabled={step >= 5}
-                onClick={() => setStep(step + 1)}
+                onClick={() => goStep(step + 1)}
               >
                 下一步：{STEP_LABELS[step + 1] || ''} →
               </Button>
             </Stack>
           )}
         </Box>
+      </Box>
       </Box>
     </Box>
   )
