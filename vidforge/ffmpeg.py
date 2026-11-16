@@ -54,6 +54,18 @@ def find_binary(name: str) -> str:
     )
 
 
+@lru_cache(maxsize=None)
+def has_filter(name: str) -> bool:
+    """Is this filter compiled into the ffmpeg we found? Builds differ: Homebrew's ffmpeg 8+
+    ships without librubberband, gyan.dev's full build has it."""
+    try:
+        r = subprocess.run([find_binary("ffmpeg"), "-hide_banner", "-filters"], capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", timeout=30)
+    except (OSError, subprocess.SubprocessError, FfmpegError):
+        return False
+    return any(line.split()[1:2] == [name] for line in r.stdout.splitlines() if line.strip())
+
+
 def run(args: list[str], *, quiet: bool = True) -> None:
     """Run ffmpeg with the given arguments (without the leading binary)."""
     cmd = [find_binary("ffmpeg"), "-hide_banner", "-nostdin"]

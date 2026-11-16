@@ -70,9 +70,10 @@ class VoiceFxTest(unittest.TestCase):
     def test_pitch_is_off_at_zero_and_a_ratio_otherwise(self):
         self.assertEqual(voicefx.pitch_filter(0), "")
         self.assertEqual(voicefx.pitch_filter(0.001), "")
-        self.assertTrue(voicefx.pitch_filter(-1).startswith("rubberband=pitch=0.94"))
-        self.assertTrue(voicefx.pitch_filter(12).startswith("rubberband=pitch=2.0")
-                        if voicefx.MAX_PITCH >= 12 else True)
+        with mock.patch.object(voicefx.ffmpeg, "has_filter", return_value=True):
+            self.assertTrue(voicefx.pitch_filter(-1).startswith("rubberband=pitch=0.94"))
+        with mock.patch.object(voicefx.ffmpeg, "has_filter", return_value=False):
+            self.assertIn("asetrate=45306", voicefx.pitch_filter(-1))
 
     def test_pitch_is_comma_terminated_so_it_splices(self):
         self.assertTrue(voicefx.pitch_filter(-2).endswith(","))
@@ -104,8 +105,22 @@ class VoiceFxTest(unittest.TestCase):
             want = ffmpeg.duration(src)
             for p in voicefx.PRESETS:
                 out = td / f"{p.id}.mp3"
-                ffmpeg.run(["-y", "-i", str(src), "-af", p.chain or "anull", str(out)])
+                ffmpeg.run(["-y", "-i", str(src), "-af", voicefx.chain(p.id).rstrip(",") or "anull", str(out)])
                 self.assertAlmostEqual(ffmpeg.duration(out), want, delta=0.05, msg=p.id)
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
+
+    def test_the_fallback_shift_keeps_the_length_too(self):
+        # Homebrew's ffmpeg has no rubberband; the asetrate+atempo stand-in must not drift either
+        td = Path(tempfile.mkdtemp())
+        try:
+            src = tone(td / "src.mp3", 6.0)
+            want = ffmpeg.duration(src)
+            with mock.patch.object(voicefx.ffmpeg, "has_filter", return_value=False):
+                for st in (-3, -1, 2):
+                    out = td / f"p{st}.mp3"
+                    ffmpeg.run(["-y", "-i", str(src), "-af", voicefx.pitch_filter(st).rstrip(","), str(out)])
+                    self.assertAlmostEqual(ffmpeg.duration(out), want, delta=0.05, msg=st)
         finally:
             shutil.rmtree(td, ignore_errors=True)
 
