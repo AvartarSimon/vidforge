@@ -32,7 +32,15 @@ class EdgeProvider:
         return hashlib.sha1(f"wb1|{voice}|{self.rate}|{text}".encode("utf-8")).hexdigest()[:16]
 
     def synthesize(self, text: str, voice: str, out_path: Path) -> list[Word]:
-        return asyncio.run(self._synth(text, voice, out_path))
+        try:
+            return asyncio.run(self._synth(text, voice, out_path))
+        except RuntimeError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            # the library's own errors are not RuntimeError: the CLI printed a traceback and the UI an
+            # English line blaming "your parameters" for what is nearly always the service itself
+            raise RuntimeError(f"edge-tts 没有返回声音（{voice}）：{e}。这是微软的免费接口，偶尔会失败——已合成的段落"
+                               "都留着，稍后再试会从这一段接着来；一直不行就换一个声音。") from e
 
     async def _synth(self, text: str, voice: str, out_path: Path) -> list[Word]:
         communicate = edge_tts.Communicate(text, voice, rate=self.rate, boundary="WordBoundary")

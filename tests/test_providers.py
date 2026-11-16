@@ -65,6 +65,19 @@ PEXELS_VIDEOS = [{"id": 10, "width": 1920, "height": 1080, "duration": 12, "url"
                                   {"file_type": "video/mp4", "width": 3840, "height": 2160, "link": "uhd"}]}]
 
 
+class EdgeFailure(unittest.TestCase):
+    def test_a_service_failure_is_a_plain_message_not_a_traceback(self):
+        # NoAudioReceived is not a RuntimeError, so the CLI's handler let it through as a traceback
+        from edge_tts.exceptions import NoAudioReceived
+        from vidforge.tts.edge import EdgeProvider
+        with tempfile.TemporaryDirectory() as td, mock.patch("vidforge.tts.edge.edge_tts.Communicate") as com:
+            com.return_value.stream.side_effect = NoAudioReceived("No audio was received.")
+            with self.assertRaises(RuntimeError) as cm:
+                EdgeProvider().synthesize("hi", "en-US-AndrewNeural", Path(td) / "a.mp3")
+        self.assertIn("en-US-AndrewNeural", str(cm.exception))
+        self.assertIn("换一个声音", str(cm.exception))
+
+
 class Providers(unittest.TestCase):
     def test_pexels_mapping(self):
         prov = pexels.PexelsProvider()
