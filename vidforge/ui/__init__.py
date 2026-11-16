@@ -541,6 +541,8 @@ def make_handler(state: State):
             q = dict(urllib.parse.parse_qsl(url.query))
             path = url.path
             try:
+                if path == "/api/fx/save":                 # raw bytes: a processed video can be 100 MB
+                    return self.fx_save(q)
                 body = self._body()
                 if path == "/api/project":
                     return self.save_project(body, snapshot=bool(body.get("snapshot")))
@@ -1700,6 +1702,52 @@ def make_handler(state: State):
                 raw = state.read_raw()
                 raw["take_look"] = body["look"]
                 state.write_raw(raw)
+            return self._json(out)
+
+        def fx_save(self, q: dict):
+            """A video re-recorded through the live effects (视频美化 / 后期换背景), body = the bytes.
+
+            Lands in `<project>/assets/fx/` as h264/aac so the pipeline can use it like any clip.
+            `replace` swaps it in for the original wherever a segment shows that file — the same
+            length and the same moments, so `in`/`out` slices still point at the same words."""
+            from .. import me
+            n = int(self.headers.get("Content-Length") or 0)
+            if not n:
+                return self._error("视频是空的")
+            data = self.rfile.read(n)
+            ext = re.sub(r"[^a-z0-9]", "", (q.get("ext") or "webm").lower()) or "webm"
+            stem = re.sub(r"[^\w\-]+", "_", Path(q.get("name") or "video").stem).strip("_") or "video"
+            folder = state.root / "assets" / "fx"
+            folder.mkdir(parents=True, exist_ok=True)
+            raw_in = folder / f".{stem}.upload.{ext}"
+            raw_in.write_bytes(data)
+            dest = folder / f"{stem}_fx_{time.strftime('%H%M%S')}.mp4"
+            try:
+                ffmpeg.run(["-y", "-i", str(raw_in), "-c:v", "libx264", "-preset", "veryfast", "-crf", "19",
+                            "-pix_fmt", "yuv420p", "-r", str(state.read_raw().get("fps") or 30),
+                            "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dest)])
+            except ffmpeg.FfmpegError as e:
+                return self._error(f"转码失败：{e}")
+            finally:
+                raw_in.unlink(missing_ok=True)
+            rel = dest.relative_to(state.root).as_posix()
+            out: dict = {"path": rel, "seconds": ffmpeg.duration(dest), "replaced": []}
+            original = (q.get("replace") or "").replace("\\", "/")
+            if original:
+                raw = state.read_raw()
+                for seg in raw.get("segments") or []:
+                    for c in [*(seg.get("clips") or []), *(seg.get("overlays") or [])]:
+                        if isinstance(c.get("video"), str) and c["video"].replace("\\", "/") == original:
+                            c["video"] = rel
+                            out["replaced"].append(seg.get("id"))
+                if out["replaced"]:
+                    state.write_raw(raw, snapshot=True)
+            if q.get("to_me"):
+                lib = me.MeLibrary(me.library_dir(state.root))
+                lib.folder.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(dest, lib.folder / dest.name)
+                lib.scan()
+                out["footage"] = dest.name
             return self._json(out)
 
         def narration_upload(self, body: dict):
