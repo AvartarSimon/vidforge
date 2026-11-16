@@ -70,9 +70,14 @@ def listing() -> list[dict]:
     return [{**asdict(p), "best": list(p.best)} for p in PLATFORMS]
 
 
-def check(p: Platform, seconds: float) -> list[str]:
-    """Warnings for a video of `seconds` on platform `p` — advice, never a refusal."""
+def check(p: Platform, seconds: float, size: tuple[int, int] | None = None) -> list[str]:
+    """Warnings for a video of `seconds` (and frame `size`) on platform `p` — advice, never a refusal."""
     out = []
+    if size and size[0] < size[1] and p.ratio == "16:9":
+        # the copy is still made (blurred sides), but an upright picture in a landscape feed is
+        # a third of the screen — and 头条's 中视频 programme does not count such videos at all
+        out.append(f"成片是竖屏，{p.name} 是横屏平台：导出的横版两侧是虚化填充，画面只占中间三分之一——"
+                   "要认真做这个平台，把项目画幅改成 1920×1080 另渲染一条")
     if p.max_seconds and seconds > p.max_seconds:
         out.append(f"{p.name} 目前最长 {p.max_seconds // 60} 分钟，这条 {seconds / 60:.1f} 分钟——要先剪短（或做成切片）")
     elif seconds < p.best[0] or seconds > p.best[1] * 2:
@@ -82,8 +87,9 @@ def check(p: Platform, seconds: float) -> list[str]:
     return out
 
 
-def post_text(project, p: Platform) -> str:
-    """What to paste into the upload form: title, description, tags, the AI-content line."""
+def post_text(project, p: Platform, credits: str = "") -> str:
+    """What to paste into the upload form: title, description, tags, the AI-content line, and the
+    credits the pictures' licences ask for (`credits` = the build's credits.txt)."""
     yt = project.youtube
     title = (yt.title or project.title or "").strip()
     lang = project.language or "zh"
@@ -99,6 +105,10 @@ def post_text(project, p: Platform) -> str:
     ai = yt.disclosure.lines(lang)
     if ai:
         lines += ["", "AI 内容声明（贴在简介末尾，并在发布页勾选平台的 AI 标识）：", *ai]
+    if credits.strip():
+        # CC BY / CC BY-SA pictures may only be used with their author named, on every platform the
+        # video goes to — not only in the YouTube description, which was the one place that had them
+        lines += ["", "素材署名（授权要求署名，贴在简介末尾；放不下就贴在置顶评论）：", credits.strip()]
     lines += ["", "提示：", p.tips]
     return "\n".join(lines) + "\n"
 
@@ -132,8 +142,10 @@ def export(project, source: Path, out_dir: Path, pid: str, *, mode: str = "blur"
                     "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out)])
     seconds = ffmpeg.duration(out)
     text = out_dir / f"{pid}.txt"
-    text.write_text(post_text(project, p), encoding="utf-8")
-    warnings = check(p, seconds)
+    credits = source.parent / "credits.txt"      # written by the build, beside the finished video
+    text.write_text(post_text(project, p, credits.read_text(encoding="utf-8") if credits.is_file() else ""),
+                    encoding="utf-8")
+    warnings = check(p, seconds, (sw, sh))
     for w in warnings:
         log(f"  ⚠ {w}")
     mb = out.stat().st_size / 1e6

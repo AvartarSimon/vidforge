@@ -46,6 +46,18 @@ class Rules(unittest.TestCase):
         self.assertIn("截断", t)
         self.assertIn("人工智能生成内容", t)
 
+    def test_post_text_carries_the_credits_the_licences_ask_for(self):
+        p = proj.Project(title="t", segments=[], root=Path("."), language="zh")
+        credits = "Media credits\nWikimedia Commons:\n  Jane Doe — CC BY-SA 4.0 — https://commons.wikimedia.org/x"
+        self.assertIn("Jane Doe — CC BY-SA 4.0", platforms.post_text(p, platforms.get("douyin"), credits))
+        self.assertNotIn("署名", platforms.post_text(p, platforms.get("douyin")))
+
+    def test_an_upright_master_on_a_landscape_platform_is_flagged(self):
+        yt, dy = platforms.get("youtube"), platforms.get("douyin")
+        self.assertTrue(any("竖屏" in w for w in platforms.check(yt, 120, (1080, 1920))))
+        self.assertFalse(any("竖屏" in w for w in platforms.check(dy, 120, (1080, 1920))))
+        self.assertFalse(any("竖屏" in w for w in platforms.check(yt, 120, (1920, 1080))))
+
 
 @unittest.skipUnless(_ff(), "ffmpeg not installed")
 class Export(unittest.TestCase):
@@ -55,12 +67,14 @@ class Export(unittest.TestCase):
             src = td / "final.mp4"
             ffmpeg.run(["-y", "-f", "lavfi", "-i", "testsrc=s=640x360:r=30:d=2", "-f", "lavfi", "-i", "sine=d=2",
                         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(src)])
+            (td / "credits.txt").write_text("Media credits\n  Jane Doe — CC BY 4.0 — http://x", encoding="utf-8")
             p = proj.Project(title="t", segments=[], root=td)
             for pid, size in (("douyin", (1080, 1920)), ("youtube", (1920, 1080))):
                 r = platforms.export(p, src, td / "out", pid, log=lambda *_: None)
                 self.assertEqual(ffmpeg.video_size(r["path"]), size, pid)
                 self.assertAlmostEqual(r["seconds"], 2.0, delta=0.15)
                 self.assertTrue(Path(r["text"]).is_file())
+                self.assertIn("Jane Doe", Path(r["text"]).read_text(encoding="utf-8"))
         finally:
             shutil.rmtree(td, ignore_errors=True)
 
