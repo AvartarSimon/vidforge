@@ -206,6 +206,16 @@ def _clean_zh(v: object) -> str:
     return v if re.search(r"[一-鿿]", v) and 2 <= len(v) <= 20 else ""
 
 
+# The format example in the Chinese prompt. A 3B model sometimes hands it straight back as its
+# answer — "秦国 青铜器" for a script about Rome — so the parser has to know it by sight.
+_EXAMPLE_ZH = ("秦国 青铜器", "兵马俑 陶俑", "战国 地图")
+
+
+def _parroted(phrase: str, text: str) -> bool:
+    """Is this the prompt's own example rather than something the narration mentions?"""
+    return phrase in _EXAMPLE_ZH and not any(w in text for w in phrase.split())
+
+
 def ranked_prompt(items: dict[str, str], topic: str = "", n: int = 4, zh: bool = True) -> str:
     """Prompt for `n` picture subjects per segment, most important first, in one language.
 
@@ -221,7 +231,7 @@ def ranked_prompt(items: dict[str, str], topic: str = "", n: int = 4, zh: bool =
                 "第一个是这段主要在讲的，最后一个是次要细节。\n"
                 "只能写具体的人名、地名、建筑、器物、artwork、地图或有年份的事件；"
                 "不要写抽象词（崛起、权力、策略、身份、关系、问题），不要写动词、代词、标点。\n"
-                "每个写成 2-3 个中文词，用空格分开，像博物馆的藏品标签，例如：秦国 青铜器 / 兵马俑 陶俑 / 战国 地图。\n"
+                "每个写成 2-3 个中文词，用空格分开，像博物馆的藏品标签，例如：" + " / ".join(_EXAMPLE_ZH) + "。\n"
                 '只输出 JSON：{"<段落id>": ["…", "…"]}\n\n' + listing)
     return (head +
             f"For each narration segment below, list {n} things a picture could show, most important first.\n"
@@ -245,12 +255,14 @@ def parse_ranked_answer(text: str, items: dict[str, str], n: int = 4, zh: bool =
         if str(k) not in items or not isinstance(v, list):
             continue
         picks: list[str] = []
-        for entry in v[:n]:
-            phrase = _clean_zh(entry) if zh else (_clean_phrase(entry) or "")
-            if phrase and phrase not in picks:
-                picks.append(phrase)
+        for entry in v:
+            # the example separates its phrases with a slash, and an answer often copies that too
+            for part in (re.split(r"\s*[/／]\s*", entry) if isinstance(entry, str) else [entry]):
+                phrase = _clean_zh(part) if zh else (_clean_phrase(part) or "")
+                if phrase and phrase not in picks and not (zh and _parroted(phrase, items[str(k)])):
+                    picks.append(phrase)
         if picks:
-            out[str(k)] = picks
+            out[str(k)] = picks[:n]
     return out
 
 
@@ -276,13 +288,26 @@ def keywords_ranked(items: dict[str, str], topic: str = "", n: int = 4, chunk: i
 
 
 def translate_batch(phrases: list[str]) -> dict[str, str]:
-    """Chinese search phrases -> English ones, in one call. Unusable answers are simply absent.
+    """Chinese search phrases -> English ones, in one call when the model answers them all.
+    Unusable answers are simply absent.
 
     Needed because the big archives (Commons, Internet Archive) index English: a Chinese query
     there either finds nothing or, worse, has words dropped until something unrelated matches."""
     phrases = [p for p in dict.fromkeys(phrases) if p.strip()]
     if not phrases:
         return {}
+    out: dict[str, str] = {}
+    todo = phrases
+    for _ in range(2):      # a 3B model often answers entry 0 and stops: ask once more for the rest
+        got = _translate_once(todo)
+        out.update(got)
+        todo = [p for p in todo if p not in out]
+        if not got or not todo:     # nothing at all means no model, and asking again only waits twice
+            break
+    return out
+
+
+def _translate_once(phrases: list[str]) -> dict[str, str]:
     listing = "\n".join(f"{i}: {p}" for i, p in enumerate(phrases))
     try:
         data = json.loads(chat(
