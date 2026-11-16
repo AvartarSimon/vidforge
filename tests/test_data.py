@@ -131,6 +131,19 @@ class WorldBank(unittest.TestCase):
             self.assertEqual([h["id"] for h in worldbank.search("se.xpd.totl.gd.zs")], ["SE.XPD.TOTL.GD.ZS"])
             self.assertEqual(worldbank.search("growth 人均"), [], "a word that is nowhere still means no match")
 
+    def test_a_slow_first_answer_is_asked_for_again_before_giving_up(self):
+        ok = mock.MagicMock()
+        ok.__enter__.return_value.read.return_value = json.dumps(self.REPLY).encode()
+        with mock.patch("vidforge.data.worldbank.CACHE", worldbank.CACHE / "test-miss"), \
+                mock.patch("vidforge.data.worldbank.Path.write_text"), mock.patch("vidforge.data.worldbank.Path.mkdir"):
+            with mock.patch("vidforge.data.worldbank.urllib.request.urlopen", side_effect=[TimeoutError("timed out"), ok]) as op:
+                self.assertEqual(worldbank._get("country/CHN/indicator/X", {}), self.REPLY)
+                self.assertEqual(op.call_count, 2)
+            with mock.patch("vidforge.data.worldbank.urllib.request.urlopen", side_effect=TimeoutError("timed out")):
+                with self.assertRaises(DataError) as cm:
+                    worldbank._get("country/CHN/indicator/X", {})
+        self.assertIn("再试一次", str(cm.exception))
+
     def test_the_api_error_envelope_is_surfaced(self):
         envelope = [{"message": [{"value": "The provided parameter value is not valid"}]}]
         with mock.patch("vidforge.data.worldbank.urllib.request.urlopen") as op:

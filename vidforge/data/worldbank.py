@@ -69,13 +69,22 @@ def _get(path: str, params: dict, timeout: int = 60) -> list:
             return json.loads(key.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             pass
-    try:
-        with urllib.request.urlopen(url, timeout=timeout) as r:
-            data = json.loads(r.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        raise DataError(f"世界银行接口 HTTP {e.code}：{url}") from None
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
-        raise DataError(f"世界银行接口不可用：{e}") from None
+    for attempt in (1, 2):
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as e:
+            raise DataError(f"世界银行接口 HTTP {e.code}：{url}") from None
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+            slow = isinstance(e, TimeoutError) or isinstance(getattr(e, "reason", None), TimeoutError)
+            if slow and attempt == 1:
+                # measured: a query nobody has asked for lately takes the API 30-60 s or more to
+                # work out, and the same query a moment later answers in 0.1 s
+                continue
+            if slow:
+                raise DataError("世界银行接口超时：这组数据它第一次算要很久，过一分钟再试一次通常就有了") from None
+            raise DataError(f"世界银行接口不可用：{e}") from None
     if isinstance(data, list) and data and isinstance(data[0], dict) and data[0].get("message"):
         msg = data[0]["message"][0].get("value", "")
         raise DataError(f"世界银行接口报错：{msg}")
