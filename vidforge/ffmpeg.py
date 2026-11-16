@@ -6,6 +6,7 @@ import glob
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -90,7 +91,18 @@ def duration(path: str | Path) -> float:
     proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if proc.returncode != 0:
         raise FfmpegError(f"ffprobe failed on {path}:\n{proc.stderr.strip()}")
-    return float(json.loads(proc.stdout)["format"]["duration"])
+    value = json.loads(proc.stdout).get("format", {}).get("duration")
+    if value not in (None, "N/A"):
+        return float(value)
+    # A browser's MediaRecorder writes webm without a duration in the header (it does not know
+    # the length until the end, and never goes back). Decoding is the only way to find out.
+    dec = subprocess.run([find_binary("ffmpeg"), "-hide_banner", "-nostdin", "-i", str(path), "-f", "null", "-"],
+                         capture_output=True, text=True, encoding="utf-8", errors="replace")
+    stamps = re.findall(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)", dec.stderr)
+    if not stamps:
+        raise FfmpegError(f"cannot tell how long {path} is:\n{dec.stderr.strip()[-500:]}")
+    h, m, sec = stamps[-1]
+    return int(h) * 3600 + int(m) * 60 + float(sec)
 
 
 def pcm(path: str | Path, *, rate: int = 16000) -> bytes:
