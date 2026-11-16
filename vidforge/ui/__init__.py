@@ -2348,6 +2348,19 @@ def serve(project: str | Path | None, port: int = 8765, open_browser: bool = Tru
                 return
 
     threading.Thread(target=idle_watch, daemon=True).start()
+
+    def awake_watch() -> None:
+        """Hold off the system's idle sleep while a job runs (see awake.py): a picture run or an
+        export started from the browser is exactly when nobody touches the computer."""
+        from .. import awake
+        while True:
+            time.sleep(5)
+            if state.busy:
+                with awake.hold():
+                    while state.busy:
+                        time.sleep(5)
+
+    threading.Thread(target=awake_watch, daemon=True).start()
     url = f"http://127.0.0.1:{port}/"
     which = "新界面" if react_ready() else "旧界面（装 Node.js 后重启可切到新界面）"
     print(f"vidforge ui · {project_path or 'project picker'}\n  {url}   {which}   (Ctrl+C to stop)")

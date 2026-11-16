@@ -24,7 +24,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from . import env, ffmpeg, render, subtitles, thumbnail
+from . import awake, env, ffmpeg, render, subtitles, thumbnail
 from .narration import prepare as prepare_own
 from .project import Project, RemotionSpec, Segment
 from .tts import get_provider, synthesize_cached
@@ -553,6 +553,11 @@ def _with_brand(ctx, bd: Path, clips: list[Path]) -> tuple[list[Path], float, fl
 
 def build(project: Project, *, only_tts: bool = False, burn: bool | None = None) -> Path:
     """TTS -> (title cards) -> assets -> remotion -> render segments -> assemble."""
+    with awake.hold():      # a render outlasts a laptop's idle-sleep timer, and nobody is typing
+        return _build(project, only_tts=only_tts, burn=burn)
+
+
+def _build(project: Project, *, only_tts: bool, burn: bool | None) -> Path:
     _cancel.clear()
     t0 = time.time()
     bd = project.build_dir
