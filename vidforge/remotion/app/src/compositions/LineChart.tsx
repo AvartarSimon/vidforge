@@ -1,6 +1,6 @@
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
 import { Base, mergeTheme } from "../theme";
-import { Stage, useLayout } from "../layout";
+import { Stage, isChinese, useLayout } from "../layout";
 
 export type LinePoint = { x: number; y: number };
 export type LineSeries = { label: string; points: LinePoint[]; color?: string };
@@ -50,12 +50,29 @@ export const LineChart: React.FC<LineChartProps> = ({
 
   const gridY = [0, 0.25, 0.5, 0.75, 1].map((f) => yMin + (yMax - yMin) * f);
 
+  const drawn = lines.map((l) => {
+    const pts = [...l.points].sort((a, b) => a.x - b.x);
+    return pts.slice(0, Math.max(2, Math.ceil(pts.length * progress)));
+  });
+  // two lines that end close together printed their values on top of each other (14.1 over 14.0):
+  // the labels are spread to a line's height apart, around the place they wanted to be
+  const gap = 38 * scale;
+  const wanted = drawn.map((d, i) => ({ i, y: py(d[d.length - 1]?.y ?? yMin) - 22 * scale })).sort((a, b) => a.y - b.y);
+  for (let pass = 0; pass < wanted.length; pass++) {
+    for (let k = 1; k < wanted.length; k++) {
+      const short = gap - (wanted[k].y - wanted[k - 1].y);
+      if (short > 0) { wanted[k - 1].y -= short / 2; wanted[k].y += short / 2; }
+    }
+  }
+  const labelY: number[] = [];
+  wanted.forEach((w) => { labelY[w.i] = w.y; });
+
   return (
     <Stage theme={t}>
       {title && (
         <div style={{ position: "absolute", top: height * 0.09, left, color: t.fg, fontSize: 60 * scale, fontWeight: 700 }}>
           {title}
-          {unit && <span style={{ color: t.muted, fontSize: 30 * scale, marginLeft: 16 * scale }}>（{unit}）</span>}
+          {unit && <span style={{ color: t.muted, fontSize: 30 * scale, marginLeft: 16 * scale }}>{isChinese(title, unit) ? `（${unit}）` : `(${unit})`}</span>}
         </div>
       )}
 
@@ -76,20 +93,18 @@ export const LineChart: React.FC<LineChartProps> = ({
         ))}
 
         {lines.map((l, li) => {
-          const pts = [...l.points].sort((a, b) => a.x - b.x);
-          const shown = Math.max(2, Math.ceil(pts.length * progress));
-          const drawn = pts.slice(0, shown);
           const colour = l.color ?? PALETTE[li % PALETTE.length];
-          const d = drawn.map((p, i) => `${i ? "L" : "M"}${px(p.x)},${py(p.y)}`).join(" ");
-          const last = drawn[drawn.length - 1];
+          const d = drawn[li].map((p, i) => `${i ? "L" : "M"}${px(p.x)},${py(p.y)}`).join(" ");
+          const last = drawn[li][drawn[li].length - 1];
           return (
             <g key={li}>
               <path d={d} fill="none" stroke={colour} strokeWidth={6 * scale} strokeLinejoin="round" strokeLinecap="round" />
               {highlightLast && last && (
                 <>
                   <circle cx={px(last.x)} cy={py(last.y)} r={10 * scale} fill={colour} />
-                  <text x={px(last.x) - 18 * scale} y={py(last.y) - 22 * scale} fill={colour}
-                        fontSize={34 * scale} fontWeight={700} textAnchor="end">
+                  {/* outlined in the page colour: a moved label can sit across another line */}
+                  <text x={px(last.x) - 18 * scale} y={labelY[li]} fill={colour} stroke={t.bg} strokeWidth={8 * scale}
+                        paintOrder="stroke" strokeLinejoin="round" fontSize={34 * scale} fontWeight={700} textAnchor="end">
                     {fmt(last.y)}
                   </text>
                 </>
