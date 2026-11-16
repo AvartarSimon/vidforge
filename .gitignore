@@ -14,3 +14,4 @@ examples/*/build*/
 last-project.txt
 examples/*/.history/
 .DS_Store
+/assets/
