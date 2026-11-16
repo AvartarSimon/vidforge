@@ -86,7 +86,9 @@ def apply(raw: dict, palette: str, *, badge: str = "", side: str = "left") -> di
     sub.update({
         "burn": True, "style": "box", "highlight": "keywords",
         "font_size": round(1920 * 0.034), "margin_v": round(1920 * SUB_LIFT),
-        "max_chars": 14,                       # a phone-width line of Chinese
+        # counted in Latin characters, and build_cues() halves it for Chinese: 24 is 12 glyphs,
+        # which at this font size is the width of the frame less its margins
+        "max_chars": 24,
         "highlight_colour": p.accent, "box_colour": p.box, "text_colour": p.text,
     })
     for seg in raw.get("segments") or []:

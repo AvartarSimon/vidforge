@@ -31,6 +31,17 @@ class Apply(unittest.TestCase):
         self.assertAlmostEqual(take["size"] * 1080 / (take["height"] * 1920), 3 / 4, delta=0.01)
         self.assertNotIn("shape", pic, "an ordinary picture overlay is left alone")
 
+    def test_a_subtitle_line_is_a_phone_width_of_chinese_not_half_of_one(self):
+        # max_chars is counted in Latin characters and halved for Chinese; the template once set
+        # 14 meaning fourteen glyphs and got seven, two or three words per cue
+        from vidforge.subtitles import build_cues
+        from vidforge.tts import Word
+        raw = {"title": "t", "segments": []}
+        theme.apply(raw, "mint")
+        words = [Word(ch, i * 0.2, 0.2) for i, ch in enumerate("睡眠超过九小时的人白天反而更容易感到疲劳")]
+        longest = max(len(c.text) for c in build_cues(words, offset=0, max_chars=raw["subtitles"]["max_chars"]))
+        self.assertTrue(9 <= longest <= 12, longest)
+
     def test_window_sits_upper_left_inside_the_margin(self):
         fx, fy = (float(v) for v in theme.window_position("left").split(","))
         self.assertAlmostEqual((1080 - 1080 * theme.WINDOW_W) * fx, 1080 * theme.MARGIN_X, delta=1)
