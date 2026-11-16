@@ -13,6 +13,8 @@ import {
   ListItemText,
   Stack,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
   Chip,
 } from '@mui/material'
@@ -29,6 +31,7 @@ export function ProjectSwitcher({ open, onClose }: { open: boolean; onClose: () 
   const [error, setError] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
   const [newTitle, setNewTitle] = useState('')
+  const [newLang, setNewLang] = useState<'zh' | 'en'>('zh')
   const [filter, setFilter] = useState('')
   const [job, setJob] = useState<{ state: string; project: string; title: string; done: number; total: number } | null>(null)
 
@@ -76,7 +79,7 @@ export function ProjectSwitcher({ open, onClose }: { open: boolean; onClose: () 
 
   const createNew = async () => {
     try {
-      await apiPost('/api/new', { name: newName, title: newTitle })
+      await apiPost('/api/new', { name: newName, title: newTitle, language: newLang })
       setNewName('')
       setNewTitle('')
       onClose()
@@ -134,6 +137,13 @@ export function ProjectSwitcher({ open, onClose }: { open: boolean; onClose: () 
             onChange={(e) => setNewTitle(e.target.value)}
             fullWidth
           />
+          {/* the language picks the voice and the subtitle font; guessing it from a folder name got it wrong */}
+          <ToggleButtonGroup size="small" exclusive value={newLang} onChange={(_, v) => v && setNewLang(v)}>
+            <ToggleButton value="zh" sx={{ whiteSpace: 'nowrap' }}>
+              中文
+            </ToggleButton>
+            <ToggleButton value="en">EN</ToggleButton>
+          </ToggleButtonGroup>
           <Button variant="contained" onClick={createNew} sx={{ whiteSpace: 'nowrap' }}>
             创建
           </Button>

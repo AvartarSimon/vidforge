@@ -628,3 +628,37 @@ TEMPLATE: dict[str, Any] = {
          "remotion": {"composition": "TitleCard", "props": {"title": "Part 2"}}},
     ],
 }
+
+
+def cjk_font_family() -> str:
+    """The Chinese typeface this system certainly has, by the name libass looks fonts up with."""
+    import platform
+    return {"Darwin": "PingFang SC", "Windows": "Microsoft YaHei"}.get(platform.system(), "Noto Sans CJK SC")
+
+
+def blank(title: str, language: str | None = None) -> dict[str, Any]:
+    """An empty project for the UI's 新建 — TEMPLATE without the parts that are only examples.
+
+    TEMPLATE is a tutorial: an English video with a Chinese translation, placeholder cover text,
+    a placeholder description. A project started from the UI gets its script pasted in next, and
+    whatever is left of the tutorial then ships: an American voice reading Chinese, "MY FIRST
+    VIDEO" on the cover, "#history" in the upload copy. So: the language is the title's unless
+    stated, a Chinese project is Chinese at the top level rather than a translation of an English
+    one, and the cover and description start from the title and from nothing."""
+    tpl = json.loads(json.dumps(TEMPLATE, ensure_ascii=False))
+    language = language or ("zh" if re.search(r"[\u4e00-\u9fff]", title or "") else "en")
+    tpl.update({"title": title, "language": language, "segments": [], "thumbnail_text": title})
+    tpl["youtube"].update({"description": "", "tags": []})
+    variants = tpl["variants"]
+    if language.startswith("zh"):
+        zh = variants["zh"]
+        tpl.update({"voice": zh["voice"], "rate": zh["rate"]})
+        tpl["subtitles"].update({**zh["subtitles"], "font": cjk_font_family()})
+        del tpl["variants"]          # they were translations *of* the English original
+    else:
+        for v in variants.values():  # a variant without its own title or cover inherits the video's
+            for k in ("title", "thumbnail_text", "youtube"):
+                v.pop(k, None)
+            if "font" in (v.get("subtitles") or {}):
+                v["subtitles"]["font"] = cjk_font_family()
+    return tpl

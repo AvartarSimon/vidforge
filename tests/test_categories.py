@@ -151,6 +151,26 @@ class ServerIntegration(unittest.TestCase):
         self.assertEqual(data["tts"]["provider"], "edge")
         self.assertEqual(data["outro_vocab"], 4)
 
+    def test_new_project_is_in_the_language_of_its_title_and_carries_no_template_leftovers(self):
+        # the UI never said which language; every project came out English with "MY FIRST VIDEO"
+        # on the cover and "#history" in the upload copy
+        st, j = self.call("/api/new", {"name": "p3", "title": "为什么越睡越累", "dir": str(self.td / "work")})
+        self.assertEqual(st, 200)
+        data = json.loads(Path(j["opened"]).read_text(encoding="utf-8"))
+        self.assertEqual(data["language"], "zh")
+        self.assertTrue(data["voice"].startswith("zh-"))
+        self.assertNotIn("variants", data, "a Chinese project is not a translation of an English one")
+        self.assertEqual(data["thumbnail_text"], "为什么越睡越累")
+        self.assertEqual((data["youtube"]["description"], data["youtube"]["tags"]), ("", []))
+
+    def test_new_english_project_keeps_its_variants_without_placeholder_titles(self):
+        st, j = self.call("/api/new", {"name": "p4", "title": "Why Rome fell", "dir": str(self.td / "work")})
+        data = json.loads(Path(j["opened"]).read_text(encoding="utf-8"))
+        self.assertEqual((data["language"], data["voice"][:3]), ("en", "en-"))
+        self.assertEqual(data["thumbnail_text"], "Why Rome fell")
+        self.assertNotIn("title", data["variants"]["zh"])
+        self.assertTrue(data["variants"]["zh"]["voice"].startswith("zh-"))
+
     def test_new_project_unknown_category_is_ignored_not_fatal(self):
         st, j = self.call("/api/new", {"name": "p2", "title": "T", "category": "no-such-category", "dir": str(self.td / "work")})
         self.assertEqual(st, 200)

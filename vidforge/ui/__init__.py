@@ -596,22 +596,21 @@ def make_handler(state: State):
                     if (root / "project.json").exists():
                         return self._error("同名项目已存在")
                     (root / "assets").mkdir(parents=True, exist_ok=True)
-                    tpl = json.loads(json.dumps(proj.TEMPLATE, ensure_ascii=False))
-                    tpl["title"] = body.get("title") or name
-                    tpl["language"] = body.get("language", "en")
-                    tpl["segments"] = []
+                    cat = None
                     if body.get("category"):
                         from .. import categories as cat_mod
                         cat = cat_mod.load(body["category"])
-                        if cat:
-                            tpl["category"] = cat["id"]
-                            for k, v in (cat.get("defaults") or {}).items():
-                                if k in ("voice", "rate", "language", "lipsync", "outro_vocab"):
-                                    tpl[k] = v
-                                elif k == "tts_provider":
-                                    tpl.setdefault("tts", {})["provider"] = v
-                                elif k == "subtitles_bilingual":
-                                    tpl.setdefault("subtitles", {})["bilingual"] = v
+                    defaults = (cat or {}).get("defaults") or {}
+                    tpl = proj.blank(body.get("title") or name, body.get("language") or defaults.get("language"))
+                    if cat:
+                        tpl["category"] = cat["id"]
+                        for k, v in defaults.items():
+                            if k in ("voice", "rate", "language", "lipsync", "outro_vocab"):
+                                tpl[k] = v
+                            elif k == "tts_provider":
+                                tpl.setdefault("tts", {})["provider"] = v
+                            elif k == "subtitles_bilingual":
+                                tpl.setdefault("subtitles", {})["bilingual"] = v
                     (root / "project.json").write_text(json.dumps(tpl, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
                     state.open(root)
                     return self._json({"opened": str(state.project_path)})

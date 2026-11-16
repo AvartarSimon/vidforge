@@ -58,6 +58,23 @@ export function SplitPreviewDialog({
     }
     const cleaned = rows.filter((p) => p.text.trim())
     patch((r) => {
+      // A Chinese script pasted into a project that is still English: it is a Chinese video.
+      // Left alone, an American voice reads it and the subtitles are set in a Latin typeface.
+      const chinese = cleaned.filter((p) => /[\u4e00-\u9fff]/.test(p.text)).length > cleaned.length / 2
+      if (chinese && !(r.language || 'en').startsWith('zh')) {
+        const zh = (r.variants?.zh || {}) as { voice?: string; rate?: string; subtitles?: Record<string, unknown> }
+        r.language = 'zh'
+        if (!r.voice || r.voice.startsWith('en-')) {
+          r.voice = zh.voice || 'zh-CN-YunxiNeural'
+          if (zh.rate) r.rate = zh.rate
+        }
+        if (zh.subtitles) r.subtitles = { ...r.subtitles, ...zh.subtitles }
+        // both described translations of the English original, which no longer exists
+        if (r.variants) {
+          delete r.variants.zh
+          if (r.variants['en-zh']?.text_from === 'en') delete r.variants['en-zh']
+        }
+      }
       r.segments = cleaned.map((pc, i): Segment => {
         const s: Segment = { id: `seg${i + 1}`, text: pc.text.trim(), clips: [] }
         if (pc.label) s.label = pc.label.trim()
