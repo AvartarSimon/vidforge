@@ -289,12 +289,17 @@ def _stage_assets(ctx: _Ctx) -> None:
 
 
 def _graphics_props(project: Project, spec: RemotionSpec) -> dict:
-    """A chart's props, in the template's colours unless the segment chose its own."""
+    """A chart's props, in the template's colours unless the segment chose its own, and told how
+    much of the bottom a burned subtitle line takes (landscape; the vertical band is already clear)."""
     from . import theme
+    props = spec.props
     colours = theme.graphics_theme(project.theme)
-    if colours and "theme" not in spec.props:
-        return {**spec.props, "theme": colours}
-    return spec.props
+    if colours and "theme" not in props:
+        props = {**props, "theme": colours}
+    sub = project.subtitles
+    if sub.burn and project.width >= project.height and "clearBottom" not in props:
+        props = {**props, "clearBottom": subtitles.band(sub.font_size, sub.margin_v, 2 if sub.bilingual else 1)}
+    return props
 
 
 def _stage_remotion(ctx: _Ctx) -> None:

@@ -1,4 +1,4 @@
-import { AbsoluteFill, useVideoConfig } from "remotion";
+import { AbsoluteFill, getInputProps, useVideoConfig } from "remotion";
 import { Theme } from "./theme";
 
 // Where a composition may draw, and how large its text is. A landscape frame is all usable and
@@ -6,15 +6,18 @@ import { Theme } from "./theme";
 // series badge and the presenter window, the lower third to the subtitles and the platform's own
 // caption — and text sized against 1920 px comes out half as large as the subtitles next to it.
 // `height` is the height of that usable band, so `height * 0.1` means the same thing in both.
+// A landscape project that burns its subtitles in passes `clearBottom`, the share of the frame the
+// subtitle line takes: the band stops above it, or the line sits across a chart's axis.
 export const useLayout = () => {
   const { width, height } = useVideoConfig();
   const tall = height > width;
+  const clear = tall ? 0 : Math.min(0.4, Number((getInputProps() as { clearBottom?: number }).clearBottom) || 0);
   return {
     tall,
     width,
     top: tall ? height * 0.27 : 0,
-    height: tall ? height * 0.39 : height,
-    scale: Math.max(width / 1920, Math.min(width, height) / 1350),
+    height: tall ? height * 0.39 : height * (1 - clear),
+    scale: Math.max(width / 1920, Math.min(width, height) / 1350) * (1 - clear / 2),
   };
 };
 

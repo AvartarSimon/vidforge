@@ -50,6 +50,19 @@ class Highlight(unittest.TestCase):
         self.assertIn(r"{\c&H003A79D4}5.2%{\c&H00FFFFFF}", line)   # #d4793a as ASS BGR
         self.assertNotIn(r"{\c&H003A79D4}中国", line)
 
+    def test_burned_size_is_the_same_share_of_the_frame_as_a_burned_srt(self):
+        # font_size 22 went into a 1080-line file as 22 pixels: a third of the size the same
+        # project got with highlighting off, and too small to read on a phone
+        import tempfile
+        from vidforge.subtitles import write_ass
+        for height, width in ((1080, 1920), (1920, 1080), (2160, 3840)):
+            with tempfile.TemporaryDirectory() as td:
+                f = Path(td) / "a.ass"
+                write_ass(self.cues(), f, font="Arial", font_size=22, margin_v=48, box=False, width=width, height=height)
+                style = [l for l in f.read_text(encoding="utf-8").splitlines() if l.startswith("Style:")][0].split(",")
+            self.assertAlmostEqual(int(style[2]) / height, 22 / 288, delta=0.002)
+            self.assertAlmostEqual(int(style[-2]) / height, 48 / 288, delta=0.002)
+
     def test_karaoke_mode_emits_one_line_per_word_and_keeps_figures_lit(self):
         import tempfile
         from vidforge.subtitles import write_ass

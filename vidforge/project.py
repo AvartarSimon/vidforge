@@ -527,6 +527,10 @@ def load(path: str | Path, lang: str | None = None) -> Project:
 
     sub = SubtitleStyle(**{k: v for k, v in data.get("subtitles", {}).items()
                            if k in SubtitleStyle.__dataclass_fields__})
+    # The vertical template wrote these two in pixels on its first day (2026-11-16); everything
+    # else has always been in script units. This is that template's one pair of values.
+    if (sub.font_size, sub.margin_v) == (65, 461):
+        sub.font_size, sub.margin_v = 10, 69
 
     fps = int(data.get("fps", 30))
     if fps <= 0:

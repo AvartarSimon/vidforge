@@ -221,6 +221,16 @@ def _bgr(hex_colour: str) -> str:
     return f"&H00{h[4:6]}{h[2:4]}{h[0:2]}".upper()
 
 
+# font_size and margin_v are counted on a script 288 lines tall, whatever the video's real height:
+# the units ffmpeg gives a burned .srt, and what the defaults (22 / 48) were chosen in.
+SCRIPT_LINES = 288
+
+
+def band(font_size: int, margin_v: int, lines: int = 1) -> float:
+    """Share of the frame, from the bottom edge up, that burned subtitles take."""
+    return round((margin_v + lines * font_size * 1.3) / SCRIPT_LINES, 3)
+
+
 def write_ass(cues: list[Cue], path: Path, *, font: str, font_size: int, margin_v: int,
               box: bool, highlight: str = "keywords", colour: str = "#d4793a",
               width: int = 1920, height: int = 1080, box_colour: str = "", text_colour: str = "") -> None:
@@ -234,16 +244,21 @@ def write_ass(cues: list[Cue], path: Path, *, font: str, font_size: int, margin_
     hi, white = _bgr(colour), (_bgr(text_colour) if text_colour else "&H00FFFFFF")
     # a theme's box is a solid colour block (a little see-through); the default stays translucent black
     back = ("&H20" + _bgr(box_colour)[4:]) if box_colour else "&H99000000"
-    border = "BorderStyle=4,Outline=2,Shadow=0" if box else "BorderStyle=1,Outline=2,Shadow=0"
+    # this file is written at the frame's own resolution, so the sizes are converted here; passing
+    # them through unconverted burned every default project's subtitles 3.75x smaller than its .srt
+    k = height / SCRIPT_LINES
+    size, lift = round(font_size * k), round(margin_v * k)
+    outline = max(2, size // 6) if box_colour else max(2, round((2 if box else 1) * k))
     head = [
-        "[Script Info]", "ScriptType: v4.00+", "WrapStyle: 2", "ScaledBorderAndShadow: yes",
+        # 0 = wrap a line that does not fit rather than let it run off both edges
+        "[Script Info]", "ScriptType: v4.00+", "WrapStyle: 0", "ScaledBorderAndShadow: yes",
         f"PlayResX: {width}", f"PlayResY: {height}", "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, "
         "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        f"Style: Main,{font},{font_size},{white},{hi},{back if box_colour else '&H00000000'},{back},{-1 if box_colour else 0},0,0,0,100,100,0,0,"
-        f"{'4' if box else '1'},{max(2, font_size // 6) if box_colour else 2},0,2,60,60,{margin_v},1", "",
+        f"Style: Main,{font},{size},{white},{hi},{back if box_colour else '&H00000000'},{back},{-1 if box_colour else 0},0,0,0,100,100,0,0,"
+        f"{'4' if box else '1'},{outline},0,2,60,60,{lift},1", "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
