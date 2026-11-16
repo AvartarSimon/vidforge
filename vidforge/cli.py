@@ -173,14 +173,17 @@ def cmd_structure(args: argparse.Namespace) -> int:
             print(f"  {'':<18} {t['about']}")
         return 0
 
-    if args.action == "outline":
-        for i, r in enumerate(st.outline(args.template, args.minutes), 1):
-            print(f"  {i}. {r['label']:<10} 约 {r['seconds']:>3}s / {r['zh_words']:>4}字 · {r['role']}")
-        return 0
+    try:
+        if args.action == "outline":
+            for i, r in enumerate(st.outline(args.template, args.minutes), 1):
+                print(f"  {i}. {r['label']:<10} 约 {r['seconds']:>3}s / {r['zh_words']:>4}字 · {r['role']}")
+            return 0
 
-    if args.action == "prompt":
-        print(st.prompt_block(args.template, args.minutes, zh=not args.en))
-        return 0
+        if args.action == "prompt":
+            print(st.prompt_block(args.template, args.minutes, zh=not args.en))
+            return 0
+    except KeyError as e:              # a mistyped template id: say which ones exist, no traceback
+        raise RuntimeError(e.args[0]) from e
 
     # check
     if not args.project:
