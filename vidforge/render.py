@@ -393,15 +393,51 @@ def _position_expr(position: str, margin: int) -> tuple[str, str]:
     return x, y
 
 
+def _even(n: float) -> int:
+    return max(2, int(round(n / 2)) * 2)
+
+
+def _source_size(o) -> tuple[int, int]:
+    if o.video is not None:
+        return ffmpeg.video_size(o.video)
+    from PIL import Image
+    with Image.open(o.image) as im:
+        return im.size
+
+
+def _shape_png(path: Path, lw: int, lh: int, shape: str, fill) -> Path:
+    """Antialiased shape (drawn 4x, scaled down): an L-mode mask, or an RGBA plate for the border."""
+    from PIL import Image, ImageDraw
+    k = 4
+    mode = "L" if isinstance(fill, int) else "RGBA"
+    im = Image.new(mode, (lw * k, lh * k), 0 if mode == "L" else (0, 0, 0, 0))
+    box = [0, 0, lw * k - 1, lh * k - 1]
+    d = ImageDraw.Draw(im)
+    if shape == "circle":
+        d.ellipse(box, fill=fill)
+    else:
+        d.rounded_rectangle(box, radius=round(min(lw, lh) * k * ROUNDED), fill=fill)
+    im.resize((lw, lh), Image.LANCZOS).save(path)
+    return path
+
+
+ROUNDED = 0.08     # corner radius of the "rounded" shape, as a fraction of the shorter side
+
+
 def apply_overlays(project: Project, overlays: list, visual: Path, total: float, out: Path, encoder: str) -> Path:
     """Composite picture-in-picture layers onto the segment's visual. Layers are muted; a video
     layer shorter than its window loops; `animate` slides the layer in from its nearest edge or
-    fades it in; `border` draws a thin light frame."""
+    fades it in; `border` draws a thin frame.
+
+    `shape` circle/rounded cuts the layer with an antialiased mask (the round talking-head window);
+    `height` turns the layer into a fixed box filled edge to edge (cropped to cover), which is what
+    split-screen layouts are made of."""
     w, h = project.width, project.height
     margin = max(24, round(w * 0.02))
     args: list[str] = ["-y", "-i", str(visual)]
     filters: list[str] = []
     prev = "[0:v]"
+    n_in = 0
     for i, o in enumerate(overlays, start=1):
         dur = o.duration if o.duration is not None else max(0.1, total - o.at)
         dur = min(dur, max(0.1, total - o.at))
@@ -413,11 +449,42 @@ def apply_overlays(project: Project, overlays: list, visual: Path, total: float,
                 args += ["-ss", f"{o.in_:.3f}"]
             slice_len = (o.out - (o.in_ or 0)) if o.out is not None else None
             args += ["-t", f"{min(dur, slice_len) if slice_len else dur:.3f}", "-i", str(o.video)]
-        lw = max(16, round(w * o.size))
-        chain = f"[{i}:v]scale={lw}:-2:flags=lanczos,fps={project.fps},format=rgba"
-        if o.border:
-            b = max(2, round(w / 640))
-            chain += f",pad=iw+{2 * b}:ih+{2 * b}:{b}:{b}:color=white@0.9"
+        n_in += 1
+        src = n_in
+        shape = getattr(o, "shape", "rect")
+        box_h = getattr(o, "height", None)
+        b = max(2, round(w / 640)) if o.border else 0
+        lw = _even(max(16, w * o.size))
+        if box_h or shape == "circle":
+            lh = _even(h * box_h) if box_h else lw
+            chain = (f"[{src}:v]scale={lw}:{lh}:force_original_aspect_ratio=increase:flags=lanczos,"
+                     f"crop={lw}:{lh},fps={project.fps},format=rgba")
+        elif shape != "rect":
+            sw, sh = _source_size(o)
+            lh = _even(lw * sh / max(1, sw))
+            chain = f"[{src}:v]scale={lw}:{lh}:flags=lanczos,fps={project.fps},format=rgba"
+        else:
+            lh = 0
+            chain = f"[{src}:v]scale={lw}:-2:flags=lanczos,fps={project.fps},format=rgba"
+
+        if shape != "rect":
+            mask = _shape_png(out.parent / f"ov{i}_mask.png", lw, lh, shape, 255)
+            args += ["-loop", "1", "-t", f"{dur:.3f}", "-i", str(mask)]
+            n_in += 1
+            filters.append(f"{chain}[l{i}]")
+            filters.append(f"[{n_in}:v]fps={project.fps},format=gray[m{i}]")
+            chain = f"[l{i}][m{i}]alphamerge"
+            if b:
+                colour = tuple(int(o.border_color[k:k + 2], 16) for k in (1, 3, 5)) + (235,)
+                plate = _shape_png(out.parent / f"ov{i}_plate.png", lw + 2 * b, lh + 2 * b, shape, colour)
+                args += ["-loop", "1", "-t", f"{dur:.3f}", "-i", str(plate)]
+                n_in += 1
+                filters.append(f"{chain}[a{i}]")
+                filters.append(f"[{n_in}:v]fps={project.fps},format=rgba[p{i}]")
+                chain = f"[p{i}][a{i}]overlay={b}:{b}:shortest=1"
+        elif b:
+            colour = getattr(o, "border_color", "#ffffff").replace("#", "0x")
+            chain += f",pad=iw+{2 * b}:ih+{2 * b}:{b}:{b}:color={colour}@0.9"
         if o.animate == "fade":
             chain += ",fade=t=in:st=0:d=0.4:alpha=1"
         chain += f",setpts=PTS+{o.at:.3f}/TB[ov{i}]"

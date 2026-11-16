@@ -25,6 +25,10 @@ export interface Overlay {
   at?: number
   duration?: number
   animate?: string
+  border?: boolean
+  shape?: 'rect' | 'rounded' | 'circle'
+  height?: number // fraction of frame height: the layer fills this box (split screens)
+  border_color?: string
   [key: string]: unknown
 }
 

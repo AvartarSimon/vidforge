@@ -70,6 +70,44 @@ class Composite(unittest.TestCase):
             self.assertGreater(b0, r0, "background navy before the overlay appears")
             self.assertGreater(r1, b1, "orange still visible while the overlay is on")
 
+    def test_circle_window_and_split_box(self):
+        # a round talking-head window: inside the circle is the layer, the box's corner is not;
+        # a box with `height` fills it edge to edge (left half of a split screen)
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            bg, pip, audio, out = root / "bg.png", root / "pip.png", root / "n.mp3", root / "seg.mp4"
+            ffmpeg.run(["-y", "-f", "lavfi", "-i", "color=c=navy:s=640x360", "-frames:v", "1", str(bg)])
+            ffmpeg.run(["-y", "-f", "lavfi", "-i", "color=c=orange:s=300x200", "-frames:v", "1", str(pip)])
+            ffmpeg.run(["-y", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "2", str(audio)])
+            p = proj.Project(title="t", segments=[], root=root, width=640, height=360, fps=30, quality="draft")
+            seg = Segment(id="o", text="x", pause_after=0, clips=[Clip(image=bg)], overlays=[
+                Overlay(image=pip, position="0,0", size=0.3, shape="circle", border=True, animate="none"),
+                Overlay(image=pip, position="1,0", size=0.5, height=1.0, border=False, animate="none"),
+            ])
+            render.render_segment(p, seg, audio, out, encoder="libx264")
+            frame = root / "f.png"
+            ffmpeg.run(["-y", "-ss", "1", "-i", str(out), "-frames:v", "1", str(frame)])
+            from PIL import Image
+            im = Image.open(frame).convert("RGB")
+            side = round(640 * 0.3)
+            cr, _, cb = im.getpixel((side // 2, side // 2))          # centre of the circle
+            kr, _, kb = im.getpixel((3, 3))                          # corner of its box
+            self.assertGreater(cr, cb, "circle centre shows the layer")
+            self.assertGreater(kb, kr, "box corner outside the circle is background")
+            for x, y in ((330, 5), (635, 355), (480, 180)):           # right half filled, corners too
+                r, _, b = im.getpixel((x, y))
+                self.assertGreater(r, b, f"split box covers {(x, y)}")
+
+    def test_shape_and_height_are_validated(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "a.jpg").write_bytes(b"x")
+            for bad in ({"shape": "star"}, {"height": 2}, {"border_color": "red"}):
+                (root / "project.json").write_text(json.dumps({"title": "t", "segments": [{"id": "a", "text": "x",
+                    "overlays": [{"image": "a.jpg", **bad}]}]}), encoding="utf-8")
+                with self.assertRaises(proj.ProjectError, msg=bad):
+                    proj.load(root)
+
 
 if __name__ == "__main__":
     unittest.main()

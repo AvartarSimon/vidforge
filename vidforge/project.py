@@ -91,6 +91,12 @@ class Overlay:
     border: bool = True
     animate: str = "slide"           # slide | fade | none
     credit: str | None = None
+    shape: str = "rect"              # one of SHAPES: rect | rounded | circle
+    height: float | None = None      # box height as a fraction of the frame; set = fill the box (crop to cover)
+    border_color: str = "#ffffff"
+
+
+SHAPES = ("rect", "rounded", "circle")
 
 
 @dataclass
@@ -471,6 +477,16 @@ def load(path: str | Path, lang: str | None = None) -> Project:
             ov.border = bool(o.get("border", True))
             ov.animate = str(o.get("animate", "slide"))
             ov.credit = o.get("credit")
+            ov.shape = str(o.get("shape", "rect"))
+            if ov.shape not in SHAPES:
+                raise ProjectError(f"{octx}: shape must be one of {SHAPES}")
+            if o.get("height") is not None:
+                ov.height = float(o["height"])
+                if not 0.05 <= ov.height <= 1.0:
+                    raise ProjectError(f"{octx}: height must be between 0.05 and 1.0 (fraction of frame height)")
+            ov.border_color = str(o.get("border_color") or "#ffffff")
+            if not re.fullmatch(r"#[0-9a-fA-F]{6}", ov.border_color):
+                raise ProjectError(f"{octx}: border_color must look like #rrggbb")
             overlays.append(ov)
 
         fit = s.get("fit", "stretch")

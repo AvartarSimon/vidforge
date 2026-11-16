@@ -19,7 +19,7 @@ import type { Clip, Overlay, ResolvedClip, ResolvedSegment, Segment } from '../.
 import { useProject } from '../../../state/ProjectContext'
 import { fileUrl, fmtDuration } from '../../../utils'
 import { SegmentHistoryDialog } from '../../shared/SegmentHistoryDialog'
-import { OverlayDialog } from './OverlayDialog'
+import { PipEditor } from './PipEditor'
 import { TrimDialog, type TrimRange } from './TrimDialog'
 import { PropsEditorDialog } from './PropsEditorDialog'
 
@@ -130,15 +130,8 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
   const addAvatarOverlay = () =>
     mutateOverlays((overlays) => overlays.push({ avatar: true, position: 'bottom-right', size: 0.28 }))
   const removeOverlay = (i: number) => mutateOverlays((overlays) => overlays.splice(i, 1))
-  const saveOverlay = (o: Overlay) => {
-    mutateOverlays((overlays) => {
-      if (overlayEditor?.index != null) overlays[overlayEditor.index] = o
-      else overlays.push(o)
-    })
-    setOverlayEditor(null)
-  }
   const overlayLabel = (o: Overlay) =>
-    `${o.avatar ? '主持人' : o.me ? '🎥 我' : o.video ? '视频' : '图片'} · ${o.position || 'bottom-right'} · ${Math.round((o.size || 0.3) * 100)}% · ${o.at || 0}s${o.duration ? `→${(o.at || 0) + o.duration}s` : '→末'}`
+    `${o.avatar ? '主持人' : o.me ? '🎥 我' : o.video ? '视频' : '图片'}${o.shape === 'circle' ? '（圆）' : typeof o.height === 'number' ? '（分屏）' : ''} · ${Math.round((o.size || 0.3) * 100)}% · ${o.at || 0}s${o.duration ? `→${(o.at || 0) + o.duration}s` : '→末'}`
 
   const preview = async () => {
     if (!seg.clips.length) {
@@ -278,12 +271,12 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
               key={i}
               size="small"
               label={overlayLabel(o)}
-              onClick={o.avatar || o.me ? undefined : () => setOverlayEditor({ index: i })}
+              onClick={() => setOverlayEditor({ index: i })}
               onDelete={() => removeOverlay(i)}
             />
           ))}
           <Button size="small" onClick={() => setOverlayEditor({ index: null })}>
-            ＋ 图片/视频
+            ＋ 画中画 / 分屏
           </Button>
           <Button size="small" onClick={addAvatarOverlay} title="这一段加数字主持人（第 4 步可设外观）">
             ＋ 主持人
@@ -324,13 +317,18 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
         )}
         <SegmentHistoryDialog segId={segId} open={historyOpen} onClose={() => setHistoryOpen(false)} />
         {overlayEditor && (
-          <OverlayDialog
+          <PipEditor
             open
             seg={seg}
-            existing={overlayEditor.index != null ? seg.overlays?.[overlayEditor.index] || null : null}
+            segId={segId}
             need={need}
+            initial={overlayEditor.index}
+            background={(() => {
+              const c0 = r.clips?.[0]
+              if (!c0?.path) return null
+              return c0.kind === 'video' ? `/api/poster/${encodeURIComponent(segId)}/0` : fileUrl(c0.path)
+            })()}
             onClose={() => setOverlayEditor(null)}
-            onSave={saveOverlay}
           />
         )}
         {trimTarget && (
