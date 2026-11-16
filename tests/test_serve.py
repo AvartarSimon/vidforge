@@ -102,19 +102,24 @@ class SpawnInstance(unittest.TestCase):
 
     def tearDown(self):
         if self.url:
-            port = int(self.url.rstrip("/").rsplit(":", 1)[1])
-            self._kill_by_port(port)   # spawn_instance() starts a real detached process — clean it up
+            self._stop(self.url)       # spawn_instance() starts a real detached process — clean it up
         shutil.rmtree(self.td, ignore_errors=True)
 
     @staticmethod
-    def _kill_by_port(port: int) -> None:
+    def _stop(url: str) -> None:
+        """Ask the spawned copy to quit the way the UI's 退出 does. Looking the process up by port
+        (netstat + taskkill) only ever worked on Windows; on macOS and Linux every test run left
+        a `vidforge ui` process behind, holding a port until the next reboot."""
         try:
-            import subprocess
-            out = subprocess.run(["netstat", "-ano"], capture_output=True, text=True, timeout=5).stdout
-            for line in out.splitlines():
-                if f":{port} " in line and "LISTENING" in line:
-                    pid = line.split()[-1]
-                    subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True, timeout=5)
+            req = urllib.request.Request(url + "api/shutdown", data=b'{"force": true}', method="POST",
+                                         headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=5).read()
+            for _ in range(50):            # wait until it has really let go of the port
+                try:
+                    urllib.request.urlopen(url + "api/health", timeout=0.5)
+                    time.sleep(0.1)
+                except Exception:  # noqa: BLE001
+                    return
         except Exception:  # noqa: BLE001 — best-effort cleanup, never fail the test over it
             pass
 
