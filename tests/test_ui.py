@@ -208,6 +208,23 @@ class UiApi(unittest.TestCase):
             raw["segments"] = [s for s in raw["segments"] if not s["id"].startswith("d")]
             self.state.write_raw(raw)
 
+    def test_autofill_says_when_a_chinese_script_had_no_ai_to_write_search_phrases(self):
+        # without Ollama a Chinese script found nothing, and the UI reported "0 张图" with no reason
+        raw = self.state.read_raw()
+        raw["segments"].append({"id": "z1", "text": "公元前二十七年，屋大维成为罗马的第一位皇帝。"})
+        self.state.write_raw(raw)
+        try:
+            with mock.patch("vidforge.assets.search", lambda *a, **k: []), \
+                    mock.patch("vidforge.llm.available", return_value=None), mock.patch.dict("os.environ", {"PEXELS_API_KEY": "", "PIXABAY_API_KEY": ""}):
+                st, j = self.call("/api/autofill", {"source": "commons", "sync": True, "vision": False})
+            self.assertEqual(st, 200)
+            self.assertTrue(j["no_ai"])
+            self.assertTrue(any("没有 AI" in line for line in self.state.autofill["lines"]))
+        finally:
+            raw = self.state.read_raw()
+            raw["segments"] = [s for s in raw["segments"] if s["id"] != "z1"]
+            self.state.write_raw(raw)
+
     def test_upload_asset(self):
         import io
         from PIL import Image

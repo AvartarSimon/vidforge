@@ -36,6 +36,8 @@ type AutofillStatus = {
     generic: string[]
     topic_pool: string[]
     vision: string | null
+    no_ai?: boolean
+    error?: string
   } | null
 }
 
@@ -157,10 +159,16 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
         const generic = r.generic?.length
           ? `；其中 ${r.generic.length} 段旁白太抽象或搜不到，用主题素材补足（${r.topic_pool.join('、')}），建议自己换`
           : ''
+        // a Chinese script without any model finds almost nothing; the count alone looks like a bug
+        const noAi = r.no_ai
+          ? ' 这次没有 AI 帮忙想搜索词，中文稿子因此很难搜到图：启动本地 Ollama（终端里运行 ./install-mac.sh --with-ai 可以装好），或在「搜索词」下拉里选一个浏览器 AI，再配一次。'
+          : ''
         setMsg(
-          r.cancelled
-            ? `已停止。这次配好 ${r.segments_with_pictures} 段共 ${r.resolved} ${unit}，都已保存；没轮到的段保持原样，再点一次可以接着配。`
-            : `已为 ${r.segments_with_pictures}/${r.filled} 段配好 ${r.resolved} ${unit}（${how}）${generic}${failed}。不满意的段点开重选。`,
+          r.error
+            ? `配图中断：${r.error}。已配好的 ${r.resolved} ${unit}都已保存，再点一次可以接着配。`
+            : r.cancelled
+              ? `已停止。这次配好 ${r.segments_with_pictures} 段共 ${r.resolved} ${unit}，都已保存；没轮到的段保持原样，再点一次可以接着配。`
+              : `已为 ${r.segments_with_pictures}/${r.filled} 段配好 ${r.resolved} ${unit}（${how}）${generic}${failed}。不满意的段点开重选。${noAi}`,
         )
       }
       await reload()

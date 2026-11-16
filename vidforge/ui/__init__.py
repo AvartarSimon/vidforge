@@ -1058,6 +1058,11 @@ def make_handler(state: State):
                         log(f"本地模型给出 {len(ranked)} 段关键词（每段最多 {per_keyword} 个，按重要性排序）")
                     except llm.LlmError as e:
                         log(f"本地模型不可用，改用启发式关键词：{e}")
+                # Without a model a Chinese script is left with word-frequency keywords, which find next
+                # to nothing on archives indexed in English. Say so — "0 张图" alone reads as a bug.
+                no_ai = bool(pending) and zh_project and not used_llm
+                if no_ai:
+                    log("没有 AI 来想搜索词（本地 Ollama 没在运行，也没选浏览器 AI）：中文稿子只靠关键词提取，多半搜不到图")
                 # One translation call for every Chinese phrase in the script: the big archives
                 # (Commons, Internet Archive) only index English, so each keyword needs both forms.
                 english: dict[str, str] = {}
@@ -1353,7 +1358,7 @@ def make_handler(state: State):
                                             "cancelled": bool(state.autofill.get("cancel")),
                                             "segments_with_pictures": state.autofill["done"] - len(failed),
                                             "source": source, "kind": kind, "llm": used_llm, "site": site,
-                                            "generic": generic, "topic_pool": topic_pool,
+                                            "generic": generic, "topic_pool": topic_pool, "no_ai": no_ai,
                                             "vision": llm.vision_model() if vision else None}
                 state.autofill["state"] = "done"
 
