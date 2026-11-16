@@ -127,6 +127,7 @@ class State:
         self.build = {"state": "idle", "lines": [], "lang": None, "started": None, "finished": None, "error": None}
         self.autofill = {"state": "idle", "done": 0, "total": 0, "lines": [], "result": None, "cancel": False}
         self.heads = {"state": "idle", "lines": [], "result": None, "error": None}
+        self.export = {"state": "idle", "lines": [], "results": [], "error": None}
         self.last_request = time.time()
         self.checks: list[str] = []          # hand-picked files waiting for the (slow) vision check
         self.check_current: str | None = None
@@ -152,7 +153,7 @@ class State:
     @property
     def busy(self) -> bool:
         """Is something running that must not be interrupted?"""
-        return "running" in (self.build["state"], self.autofill["state"], self.heads["state"])
+        return "running" in (self.build["state"], self.autofill["state"], self.heads["state"], self.export["state"])
 
     def enqueue_check(self, rel: str) -> None:
         """Vision-check a downloaded picture in the background; the verdict lands in assets/index.json
@@ -466,6 +467,19 @@ def make_handler(state: State):
                     return self._json({"sources": trends.available(), "kinds": trends.KINDS})
                 if path == "/api/trends":
                     return self.trends(q)
+                if path == "/api/platforms":
+                    from .. import platforms
+                    folder = state.build_dir(q.get("lang")) / "platforms"
+                    done = []
+                    for f in sorted(folder.glob("*.json")) if folder.is_dir() else []:
+                        try:
+                            r = json.loads(f.read_text(encoding="utf-8"))
+                            if Path(r["path"]).is_file():
+                                done.append({**r, "path": state.rel(Path(r["path"])), "text": state.rel(Path(r["text"])),
+                                             "copy": Path(r["text"]).read_text(encoding="utf-8")})
+                        except (OSError, ValueError, KeyError):
+                            continue
+                    return self._json({"platforms": platforms.listing(), "exported": done, "job": state.export})
                 if path == "/api/videofx":
                     from .. import videofx
                     raw = state.read_raw()
@@ -753,6 +767,8 @@ def make_handler(state: State):
                     return self.face_talk(body)
                 if path == "/api/data/chart":
                     return self.data_chart(body)
+                if path == "/api/platforms/export":
+                    return self.platform_export(body)
                 if path == "/api/short":
                     return self.make_short(body)
                 if path == "/api/voicefx/preview":
@@ -1453,6 +1469,47 @@ def make_handler(state: State):
             if body.get("sync"):
                 run()
                 return self._json({"started": True, **(state.heads["result"] or {"error": state.heads["error"]})})
+            threading.Thread(target=run, daemon=True).start()
+            return self._json({"started": True})
+
+        def platform_export(self, body: dict):
+            """One copy per chosen platform from the finished video, in the background."""
+            from .. import platforms
+            from ..video import vertical
+            if state.export["state"] == "running":
+                return self._error("上一次导出还没完成")
+            ids = [x for x in (body.get("platforms") or []) if x]
+            if not ids:
+                return self._error("选至少一个平台")
+            bd = state.build_dir(body.get("lang"))
+            try:
+                p = state.load(body.get("lang"))
+                source = vertical.pick_source(bd, p.subtitles.burn) if body.get("clean", False) else bd / "final.mp4"
+                for pid in ids:
+                    platforms.get(pid)
+            except (platforms.PlatformError, proj.ProjectError) as e:
+                return self._error(str(e))
+            except Exception as e:  # noqa: BLE001
+                return self._error(str(e))
+            if not source.is_file():
+                return self._error("还没有成片——先在第 4 步渲染")
+            srt = bd / "final.srt" if body.get("subtitles", True) and (bd / "final.srt").is_file() else None
+            if p.subtitles.burn:
+                srt = None                     # final.mp4 already carries burned captions
+            state.export = {"state": "running", "lines": [], "results": [], "error": None}
+            log = state.export["lines"].append
+
+            def run():
+                try:
+                    for pid in ids:
+                        log(f"导出 {platforms.get(pid).name} …")
+                        r = platforms.export(p, source, bd / "platforms", pid, mode=body.get("mode", "blur"), srt=srt, log=log)
+                        state.export["results"].append({**r, "path": state.rel(Path(r["path"]))})
+                except Exception as e:  # noqa: BLE001
+                    state.export["error"] = str(e)
+                finally:
+                    state.export["state"] = "done"
+
             threading.Thread(target=run, daemon=True).start()
             return self._json({"started": True})
 

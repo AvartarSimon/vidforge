@@ -16,6 +16,7 @@ import {
 import { apiPost } from '../../api/client'
 import type { RawProject } from '../../api/types'
 import { useProject } from '../../state/ProjectContext'
+import { PlatformExport } from './publish/PlatformExport'
 
 const CATEGORIES = [
   [27, 'Education'],
@@ -77,6 +78,7 @@ export function PublishStep() {
 
   return (
     <Stack spacing={2}>
+      <PlatformExport />
       <Card variant="outlined">
         <CardContent>
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
