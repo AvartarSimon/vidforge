@@ -37,3 +37,7 @@ export const Stage: React.FC<{
     </AbsoluteFill>
   );
 };
+
+// The few words a chart writes itself ("since 1960", "higher") follow the words it was given: an
+// English project's chart said 倍 and 更高 next to English labels.
+export const isChinese = (...given: (string | undefined)[]) => /[\u3400-\u9fff]/.test(given.join(""));

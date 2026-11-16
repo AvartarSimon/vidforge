@@ -1960,20 +1960,23 @@ def make_handler(state: State):
             chart = body.get("chart", "line")
             if not indicator or not countries:
                 return self._error("要选指标和至少一个国家")
+            # Chinese names, units and source line unless the project says it is in another language
+            lang = state.read_raw().get("language") if state.has_project else None
+            zh = str(lang or "zh").lower().startswith("zh")
             try:
-                series = worldbank.fetch(indicator, countries, body.get("start"), body.get("end"))
+                series = worldbank.fetch(indicator, countries, body.get("start"), body.get("end"), zh=zh)
                 title = body.get("title") or ""
                 if chart == "line":
-                    props, comp = line_props(series, title), "LineChart"
+                    props, comp = line_props(series, title, zh), "LineChart"
                 elif chart == "bar":
-                    props, comp = bar_props(series, title, body.get("year")), "BarChart"
+                    props, comp = bar_props(series, title, body.get("year"), zh), "BarChart"
                 elif chart == "big":
-                    props, comp = big_number_props(series, (series.labels or [None])[0], title), "BigNumber"
+                    props, comp = big_number_props(series, (series.labels or [None])[0], title, zh), "BigNumber"
                 elif chart == "compare":
                     if len(series.labels) < 2:
                         return self._error("对比图需要两个国家")
                     props, comp = compare_props(series, series.labels[0], series.labels[1],
-                                                body.get("year"), title), "Compare"
+                                                body.get("year"), title, zh), "Compare"
                 else:
                     return self._error(f"未知图表类型 {chart}")
             except DataError as e:

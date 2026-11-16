@@ -131,8 +131,8 @@ def fetch(indicator: str, countries: list[str], start: int | None = None, end: i
     if not rows:
         raise DataError(f"{indicator} 在 {', '.join(codes)} 上没有数据（指标代码写对了吗？）")
     name = rows[0].get("indicator", {}).get("value", indicator)
-    series = Series(name=COMMON.get(indicator, name), unit="",
-                    source=f"数据来源：世界银行（{indicator}）")
+    series = Series(name=COMMON.get(indicator, name) if zh else name, unit="",
+                    source=f"数据来源：世界银行（{indicator}）" if zh else f"Source: World Bank ({indicator})")
     for row in rows:
         if row.get("value") is None:
             continue

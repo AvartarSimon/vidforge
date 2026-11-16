@@ -1,6 +1,6 @@
 import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { Base, mergeTheme } from "../theme";
-import { Stage, useLayout } from "../layout";
+import { Stage, isChinese, useLayout } from "../layout";
 
 export type CompareSide = { label: string; value: string; raw?: number; caption?: string; color?: string };
 export type CompareProps = Base & {
@@ -20,6 +20,7 @@ export const Compare: React.FC<CompareProps> = ({ title, unit = "", left, right,
   const { fps } = useVideoConfig();
   const { width, height, scale } = useLayout();
   const t = mergeTheme(theme);
+  const zh = isChinese(title, left.label, right.label, source);
 
   const bars = [left, right].map((s) => s.raw ?? (parseFloat(s.value.replace(/,/g, "")) || 0));
   const peak = Math.max(...bars, 1);
@@ -55,9 +56,9 @@ export const Compare: React.FC<CompareProps> = ({ title, unit = "", left, right,
             width: width * 0.14, textAlign: "center", color: t.muted, fontSize: 40 * scale, fontWeight: 700,
             opacity: interpolate(frame, [fps * 0.8, fps * 1.3], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }),
           }}>
-            {ratio >= 1 ? `${ratio.toFixed(2)} 倍` : `${(1 / ratio).toFixed(2)} 倍`}
+            {(ratio >= 1 ? ratio : 1 / ratio).toFixed(2)}{zh ? " 倍" : "×"}
             <div style={{ fontSize: 24 * scale, marginTop: 6 * scale }}>
-              {ratio >= 1 ? `${left.label} 更高` : `${right.label} 更高`}
+              {ratio >= 1 ? left.label : right.label} {zh ? "更高" : "higher"}
             </div>
           </div>
         )}

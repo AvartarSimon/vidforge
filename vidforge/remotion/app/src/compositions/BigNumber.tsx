@@ -1,6 +1,6 @@
 import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { Base, mergeTheme } from "../theme";
-import { Stage, useLayout } from "../layout";
+import { Stage, isChinese, useLayout } from "../layout";
 
 export type BigNumberProps = Base & {
   title?: string;        // what the figure measures
@@ -53,7 +53,7 @@ export const BigNumber: React.FC<BigNumberProps> = ({
           color: up ? "#2a9d8f" : "#e63946",
           opacity: interpolate(frame, [fps * 0.9, fps * 1.4], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }),
         }}>
-          {up ? "▲" : "▼"} {Math.abs(change).toFixed(1)}%{changeSince ? `（较 ${changeSince} 年）` : ""}
+          {up ? "▲" : "▼"} {Math.abs(change).toFixed(1)}%{changeSince ? (isChinese(title, caption, unit, source) ? `（较 ${changeSince} 年）` : ` (since ${changeSince})`) : ""}
         </div>
       )}
       {source && (

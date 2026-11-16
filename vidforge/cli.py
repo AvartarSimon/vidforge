@@ -438,27 +438,31 @@ def cmd_data(args: argparse.Namespace) -> int:
     if not args.indicator:
         raise SystemExit("`vidforge data chart --indicator <代码> --countries CHN,USA`（代码用 `data search` 找）")
     countries = [c.strip() for c in (args.countries or "CHN").replace("，", ",").split(",") if c.strip()]
-    series = worldbank.fetch(args.indicator, countries, args.start, args.end)
+    path, raw = None, {}
+    if args.project:
+        root = Path(args.project).resolve()
+        path = root / "project.json" if root.is_dir() else root
+        if not path.is_file():
+            raise SystemExit(f"找不到项目：{path}")
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    # Chinese names, units and source line unless the project says it is in another language
+    zh = str(raw.get("language") or "zh").lower().startswith("zh")
+    series = worldbank.fetch(args.indicator, countries, args.start, args.end, zh=zh)
     builders = {
-        "line": lambda: line_props(series, args.title or ""),
-        "bar": lambda: bar_props(series, args.title or "", args.year),
-        "big": lambda: big_number_props(series, args.label or None, args.title or ""),
-        "compare": lambda: compare_props(series, *(args.label or "").split(",")[:2], args.year, args.title or ""),
+        "line": lambda: line_props(series, args.title or "", zh),
+        "bar": lambda: bar_props(series, args.title or "", args.year, zh),
+        "big": lambda: big_number_props(series, args.label or None, args.title or "", zh),
+        "compare": lambda: compare_props(series, *(args.label or "").split(",")[:2], args.year, args.title or "", zh),
     }
     if args.chart == "compare" and len((args.label or "").split(",")) < 2:
         raise SystemExit("compare 需要 --label 中国,美国")
     props = builders[args.chart]()
     composition = {"line": "LineChart", "bar": "BarChart", "big": "BigNumber", "compare": "Compare"}[args.chart]
     clip = {"remotion": {"composition": composition, "props": props}}
-    if not args.project:
+    if path is None:
         print(json.dumps(clip, ensure_ascii=False, indent=1))
         return 0
 
-    root = Path(args.project).resolve()
-    path = root / "project.json" if root.is_dir() else root
-    if not path.is_file():
-        raise SystemExit(f"找不到项目：{path}")
-    raw = json.loads(path.read_text(encoding="utf-8"))
     target = next((sg for sg in raw["segments"] if sg["id"] == args.segment), None) if args.segment else None
     if args.segment and target is None:
         raise SystemExit(f"项目里没有段落 {args.segment}")

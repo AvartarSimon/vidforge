@@ -109,6 +109,14 @@ class WorldBank(unittest.TestCase):
         s = self.fetch()
         self.assertEqual(s.labels, ["中国", "美国"])
 
+    def test_an_english_project_gets_english_names_units_and_source(self):
+        # the demo project's chart said 总人口 / 英国 / 万 / 数据来源 under English narration
+        s = self.fetch(zh=False)
+        self.assertEqual(s.labels, ["China", "United States"])
+        self.assertEqual(s.name, "GDP (current US$)")
+        self.assertTrue(s.source.startswith("Source: World Bank"))
+        self.assertEqual(line_props(s, zh=False)["unit"], "T")
+
     def test_null_years_are_dropped_rather_than_plotted_as_zero(self):
         self.assertEqual(len(self.fetch().points["中国"]), 1)
 

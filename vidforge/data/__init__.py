@@ -99,7 +99,7 @@ def bar_props(s: Series, title: str = "", year: float | None = None, zh: bool = 
     picks.sort(key=lambda p: -p[1])
     shown_year = year if year is not None else max(p[0] for pts in s.points.values() for p in pts)
     return {
-        "title": title or f"{s.name}（{shown_year:.0f}）",
+        "title": title or (f"{s.name}（{shown_year:.0f}）" if zh else f"{s.name} ({shown_year:.0f})"),
         "unit": f"{suffix}{s.unit}".strip(),
         "source": s.source,
         "items": [{"label": k, "value": v / div} for k, v in picks],
