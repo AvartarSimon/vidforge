@@ -223,6 +223,12 @@ class SubtitleStyle:
 
 
 @dataclass
+class HookCard:
+    text: str = ""                   # big type over the first seconds (hook.py); "" = off
+    seconds: float = 3.0
+
+
+@dataclass
 class Project:
     title: str
     segments: list[Segment]
@@ -257,6 +263,7 @@ class Project:
     bgm: Bgm | None = None
     subtitles: SubtitleStyle = field(default_factory=SubtitleStyle)
     theme: dict[str, Any] = field(default_factory=dict)    # theme.py: {"palette", "badge", "side"}
+    hook: HookCard = field(default_factory=HookCard)
     thumbnail_text: str | None = None
     tts: TtsConfig = field(default_factory=TtsConfig)
     youtube: YouTubeConfig = field(default_factory=YouTubeConfig)
@@ -290,6 +297,17 @@ def _voice_pitch(value: Any) -> float:
     except KeyError as e:
         raise ProjectError(str(e)) from None
     return float(value)
+
+
+def _hook(value: Any) -> HookCard:
+    if not isinstance(value, dict):
+        return HookCard()
+    try:
+        seconds = float(value.get("seconds", 3.0) or 3.0)
+    except (TypeError, ValueError):
+        raise ProjectError(f"hook.seconds must be a number, got {value.get('seconds')!r}") from None
+    # past ~6 s it is no longer the opening beat, it is a caption covering the picture
+    return HookCard(text=str(value.get("text") or "").strip(), seconds=min(6.0, max(1.0, seconds)))
 
 
 def _take_look(value: Any) -> str:
@@ -593,6 +611,7 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         bgm=bgm,
         subtitles=sub,
         theme=dict(data.get("theme") or {}),
+        hook=_hook(data.get("hook")),
         thumbnail_text=data.get("thumbnail_text"),
         tts=tts,
         youtube=yt,

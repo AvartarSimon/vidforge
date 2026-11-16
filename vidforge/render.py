@@ -523,14 +523,17 @@ def concat(clips: list[Path], out: Path) -> None:
     ffmpeg.run(["-y", "-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", str(out)])
 
 
-def finalize(project: Project, merged: Path, srt: Path | None, total: float, out: Path) -> None:
+def finalize(project: Project, merged: Path, srt: Path | None, total: float, out: Path,
+             hook_at: float = 0.0) -> None:
     """Mix BGM under the narration (ducked while the voice speaks) and optionally burn
-    subtitles. One encode pass; video is stream-copied when nothing is burned."""
+    subtitles. One encode pass; video is stream-copied when nothing is burned.
+    `hook_at`: where the narration starts (after the channel opener) — the hook card's start."""
     args: list[str] = ["-y", "-i", str(merged)]
     filters: list[str] = []
     maps: list[str] = []
     # the theme's series badge sits over the whole video, so it is laid on here, once
     vin = "[0:v]"
+    n_in = 1
     badge_text = (project.theme or {}).get("badge", "").strip()
     if badge_text:
         from . import theme as th
@@ -540,9 +543,24 @@ def finalize(project: Project, merged: Path, srt: Path | None, total: float, out
             bw = im.width
         x, y = th.badge_position(project.theme.get("side", "left"), project.width, project.height, bw)
         args += ["-loop", "1", "-i", str(png)]
-        filters.append(f"[0:v][1:v]overlay={x}:{y}:shortest=1[bv]")
-        vin = "[bv]"
-    audio_in = 2 if badge_text else 1
+        filters.append(f"[0:v][{n_in}:v]overlay={x}:{y}:shortest=1[bv]")
+        vin, n_in = "[bv]", n_in + 1
+    if project.hook.text:
+        from . import brand as brandkit, hook
+        png = hook.card_png(project.hook.text, out.with_name("hook.png"), width=project.width, height=project.height,
+                            theme=project.theme or None, accent=brandkit.load(project.raw).accent)
+        from PIL import Image
+        with Image.open(png) as im:
+            cw, ch = im.size
+        x, y = hook.position(project.width, project.height, cw, ch)
+        start, end = hook_at, hook_at + project.hook.seconds
+        args += ["-loop", "1", "-framerate", str(project.fps), "-t", f"{end:.3f}", "-i", str(png)]
+        # alpha fades rather than a cut: a card that snaps on and off reads as a glitch
+        filters.append(f"[{n_in}:v]format=rgba,fade=t=in:st={start:.3f}:d=0.2:alpha=1,"
+                       f"fade=t=out:st={end - 0.3:.3f}:d=0.3:alpha=1[hk];"
+                       f"{vin}[hk]overlay={x}:{y}:eof_action=pass[hv]")
+        vin, n_in = "[hv]", n_in + 1
+    audio_in = n_in
     if srt is not None and project.subtitles.burn and not ffmpeg.has_filter("subtitles"):
         # an ffmpeg without libass cannot burn anything; a finished video with the .srt beside it
         # beats a failed build (pipeline logs the warning)
@@ -565,8 +583,8 @@ def finalize(project: Project, merged: Path, srt: Path | None, total: float, out
         # the encoder the project picked, not a hard-coded libx264: burning already costs a full
         # re-encode, so doing it on the CPU when a GPU/QSV encoder is available is pure loss
         maps += ["-map", "[v]", *video_codec_args(project)]
-    elif badge_text:
-        maps += ["-map", "[bv]", *video_codec_args(project)]
+    elif vin != "[0:v]":
+        maps += ["-map", vin, *video_codec_args(project)]
     else:
         maps += ["-map", "0:v", "-c:v", "copy"]
 
