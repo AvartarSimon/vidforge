@@ -16,6 +16,7 @@ export default defineConfig({
     proxy: {
       '/api': { target: `http://127.0.0.1:${backendPort}`, changeOrigin: true },
       '/files': { target: `http://127.0.0.1:${backendPort}`, changeOrigin: true },
+      '/mediapipe': { target: `http://127.0.0.1:${backendPort}`, changeOrigin: true },
     },
   },
 })

@@ -50,6 +50,8 @@ from ..tts.silent import estimate_seconds
 STATIC = Path(__file__).resolve().parent / "static"          # the original UI, kept as a fallback
 REACT_DIST = Path(__file__).resolve().parent / "react" / "dist"
 REACT_SRC = Path(__file__).resolve().parent / "react"
+# streaming WASM compilation insists on this exact type; Python before 3.12 does not know it
+mimetypes.add_type("application/wasm", ".wasm")
 
 
 def react_ready() -> bool:
@@ -372,6 +374,20 @@ def make_handler(state: State):
                 if path.startswith("/files/"):
                     p = self._safe_path(path[len("/files/"):])
                     return self._file(p) if p else self._error("forbidden", HTTPStatus.FORBIDDEN)
+                if path.startswith("/mediapipe/wasm/"):          # runtime for the camera effects
+                    from .. import webmodels
+                    d = webmodels.wasm_dir()
+                    name = path.rsplit("/", 1)[-1]
+                    if not d or not re.fullmatch(r"[\w.\-]+\.(js|wasm)", name):
+                        return self._error("MediaPipe 运行库不在（重新构建界面：cd vidforge/ui/react && npm install）",
+                                           HTTPStatus.NOT_FOUND)
+                    return self._file(d / name)
+                if path.startswith("/api/models/"):              # model files, fetched on first use
+                    from .. import webmodels
+                    try:
+                        return self._file(webmodels.path(path.rsplit("/", 1)[-1]))
+                    except webmodels.ModelError as e:
+                        return self._error(str(e), HTTPStatus.BAD_GATEWAY)
                 if path == "/api/project":
                     if not state.has_project:
                         return self._json({"home": True, "projects": recent_projects(), "workspace": str(workspace_dir())})
@@ -394,6 +410,10 @@ def make_handler(state: State):
                     items = lib.scan() if q.get("scan") or not lib.items() else lib.items()
                     return self._json({"folder": str(lib.folder), "items": items,
                                        "tags": sorted({t for i in items for t in i.get("tags", [])})})
+                if path.startswith("/api/me/file/"):            # a take itself, for the browser to replay
+                    from .. import me
+                    lib = me.MeLibrary(me.library_dir(state.root))
+                    return self._file(lib.folder / Path(urllib.parse.unquote(path[len("/api/me/file/"):])).name)
                 if path.startswith("/api/me/poster/"):
                     from .. import me
                     lib = me.MeLibrary(me.library_dir(state.root))
@@ -1574,8 +1594,9 @@ def make_handler(state: State):
             seg_id = body.get("segment") or ""
             as_narration = bool(body.get("as_narration", True))
             as_footage = bool(body.get("as_footage", False))
-            if not as_narration and not as_footage:
-                return self._error("这条录像要用来做什么？旁白、素材库，至少选一个")
+            as_visual = bool(body.get("as_visual", False))
+            if not as_narration and not as_footage and not as_visual:
+                return self._error("这条录像要用来做什么？旁白、画面、素材库，至少选一个")
             try:
                 data = base64.b64decode(body.get("data") or "", validate=True)
             except (ValueError, TypeError):
@@ -1586,7 +1607,7 @@ def make_handler(state: State):
 
             raw = state.read_raw()
             seg = next((x for x in (raw.get("segments") or []) if x.get("id") == seg_id), None)
-            if as_narration and seg is None:
+            if (as_narration or as_visual) and seg is None:
                 return self._error(f"没有段落 '{seg_id}'")
 
             out: dict = {}
@@ -1601,6 +1622,38 @@ def make_handler(state: State):
                 saved.unlink(missing_ok=True)
                 return self._error(f"这个文件读不出时长，可能没录上：{e}")
             out["seconds"] = seconds
+
+            if as_visual:
+                # The take becomes this segment's picture *and* (if asked) its voice, from one mp4
+                # cut at the first and last sound. Narration trimming then has nothing left to cut,
+                # so voice and picture start on the same frame — lips on the words.
+                try:
+                    a, b = narr.speech_edges(saved)
+                    look = body.get("look") or "none"
+                    chain = videofx.chain(look).rstrip(",")
+                    folder = state.root / "assets" / "takes"
+                    folder.mkdir(parents=True, exist_ok=True)
+                    safe = re.sub(r"[^\w-]+", "_", seg_id) or "take"
+                    take = folder / f"{safe}_{time.strftime('%Y%m%d-%H%M%S')}.mp4"
+                    args = ["-y", "-ss", f"{a:.3f}", "-i", str(saved), "-t", f"{b - a:.3f}"]
+                    if chain:
+                        args += ["-vf", chain]
+                    args += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p",
+                             "-r", str(raw.get("fps") or 30), "-c:a", "aac", "-b:a", "192k",
+                             "-movflags", "+faststart", str(take)]
+                    ffmpeg.run(args)
+                except (ffmpeg.FfmpegError, KeyError) as e:
+                    return self._error(f"录像转码失败：{e}")
+                rel = take.relative_to(state.root).as_posix()
+                seg["clips"] = [{"video": rel}]
+                if as_narration:
+                    seg["narration"] = rel
+                state.write_raw(raw, snapshot=True)
+                out["visual"] = rel
+                out["trimmed"] = [round(a, 2), round(seconds - b, 2)]
+                if as_narration:
+                    out["narration"] = rel
+                as_narration = False        # done, from the cut take rather than the raw upload
 
             if as_narration:
                 try:

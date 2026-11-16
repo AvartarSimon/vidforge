@@ -85,6 +85,10 @@ class PlannedClip:
     clip: Clip
     seconds: float
     loop: bool = False       # video shorter than `seconds`: loop it
+    hold: float = 0.0        # ...or, when only a little short, freeze the last frame this long
+
+
+HOLD_MAX = 1.5               # seconds a video may fall short and still be held rather than looped
 
 
 def plan_clips(seg: Segment, target: float) -> list[PlannedClip]:
@@ -149,8 +153,16 @@ def plan_clips(seg: Segment, target: float) -> list[PlannedClip]:
     for c, s in zip(seg.clips, seconds):
         if s <= 0.05:
             continue
-        loop = c.video is not None and c.remotion is None and (c.slice_length or ffmpeg.duration(c.video) - (c.in_ or 0.0)) < s - 0.05
-        planned.append(PlannedClip(c, round(s, 3), loop))
+        loop, hold = False, 0.0
+        if c.video is not None and c.remotion is None:
+            short = s - (c.slice_length or ffmpeg.duration(c.video) - (c.in_ or 0.0))
+            # a fraction of a second short (the pause after the narration, AAC padding) is held on
+            # the last frame; looping there jumps a talking head back to its first frame mid-blink
+            if short > HOLD_MAX:
+                loop = True
+            elif short > 0.05:
+                hold = round(short, 3)
+        planned.append(PlannedClip(c, round(s, 3), loop, hold))
     return planned
 
 
@@ -197,6 +209,10 @@ def render_clip(project: Project, pc: PlannedClip, out: Path, encoder: str) -> N
         grade = look_filter(project)
         if grade:
             vf = f"{vf},{grade}"
+        if pc.hold:
+            # stop at the clip's own end (`out`, if sliced) before padding, or tpad would pad after
+            # frames that were never meant to be shown
+            vf = f"trim=duration={dur - pc.hold:.3f},setpts=PTS-STARTPTS,{vf},tpad=stop_mode=clone:stop_duration={pc.hold:.3f}"
         args += ["-i", str(c.video), "-an", "-vf", vf, "-t", f"{dur:.3f}", *codec, str(out)]
         ffmpeg.run(args)
         return

@@ -72,6 +72,29 @@ def extract(source: Path, out: Path, *, trim: bool = True, log=None) -> float:
     return after
 
 
+def speech_edges(source: Path, *, threshold_db: float = -45.0, min_silence: float = 0.1) -> tuple[float, float]:
+    """(first sound, last sound) in seconds, with the same threshold the narration trim uses.
+
+    For a take that is both the voice and the picture of a segment: cutting the video at these
+    points leaves the audio with no edge silence for `extract()` to remove, so the trimmed mp3
+    and the picture start on the same frame and the lips stay on the words."""
+    import subprocess
+    total = ffmpeg.duration(source)
+    r = subprocess.run([ffmpeg.find_binary("ffmpeg"), "-hide_banner", "-nostdin", "-i", str(source), "-vn",
+                        "-af", f"silencedetect=noise={threshold_db}dB:d={min_silence}", "-f", "null", "-"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    starts = [float(x) for x in re.findall(r"silence_start: (-?[\d.]+)", r.stderr)]
+    ends = [float(x) for x in re.findall(r"silence_end: ([\d.]+)", r.stderr)]
+    first, last = 0.0, total
+    if starts and starts[0] <= 0.05 and ends:
+        first = ends[0]
+    if starts and (len(ends) < len(starts) or ends[-1] >= total - 0.05):
+        last = starts[-1]
+    if last - first < 0.3:                 # all silence (or nearly): keep the take as it is
+        return 0.0, total
+    return max(0.0, first), min(total, last)
+
+
 def _key(source: Path, text: str, trim: bool) -> str:
     st = source.stat()
     model = os.environ.get("VIDFORGE_WHISPER_MODEL", aligner.DEFAULT_MODEL)
