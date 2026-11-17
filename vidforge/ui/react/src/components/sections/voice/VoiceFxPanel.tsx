@@ -29,7 +29,7 @@ export function VoiceFxPanel({ onChanged }: { onChanged?: () => void }) {
   const { raw, patch, saveNow } = useProject()
   const [state, setState] = useState<VoiceFxState | null>(null)
   const [pair, setPair] = useState<{ before: string; after: string; preset: string } | null>(null)
-  const [trying, setTrying] = useState('warm')
+  const [trying, setTrying] = useState('magnetic')
   const [busy, setBusy] = useState(false)
   const [pitch, setPitch] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -62,6 +62,7 @@ export function VoiceFxPanel({ onChanged }: { onChanged?: () => void }) {
       const j = await apiPost<{ before: string; after: string; preset: string }>('/api/voicefx/preview', {
         preset: trying,
         source,
+        pitch,
       })
       setPair({
         before: `/files/${j.before}?t=${Date.now()}`,
@@ -162,6 +163,7 @@ export function VoiceFxPanel({ onChanged }: { onChanged?: () => void }) {
             <Box sx={{ flex: '1 1 260px' }}>
               <Typography variant="caption" color="text.secondary">
                 {state.presets.find((p) => p.id === pair.preset)?.name}
+                {pitch ? `（音高 ${pitch > 0 ? '+' : ''}${pitch}）` : ''}
               </Typography>
               <Box component="audio" src={pair.after} controls sx={{ width: '100%' }} />
             </Box>

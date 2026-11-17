@@ -87,7 +87,7 @@ class VoiceFxTest(unittest.TestCase):
         # measured with autocorrelation on real speech: deep -0.97 semitones, warm +0.10, radio
         # +0.20. warm and radio reshape the tone; shifting pitch is deep's whole job.
         self.assertIn("rubberband", voicefx.get("deep").chain)
-        for other in ("warm", "clear", "radio", "clean", "phone"):
+        for other in ("warm", "magnetic", "clear", "radio", "clean", "phone"):
             self.assertNotIn("rubberband", voicefx.get(other).chain, other)
 
     def test_no_preset_uses_a_filter_that_changes_length(self):
@@ -531,6 +531,20 @@ class NarrationApi(unittest.TestCase):
         self.assertTrue(j["chain"])
         for rel in (j["before"], j["after"]):
             self.assertTrue((self.td / rel).is_file(), rel)
+
+    def test_the_preview_is_what_the_render_applies_pitch_included(self):
+        data = base64.b64encode((self.td / "assets" / "take.mp3").read_bytes()).decode()
+        self.call("/api/narration/upload", {"segment": "s1", "data": data, "ext": "mp3"})
+        with mock.patch.object(aligner, "available", return_value=False):
+            _, flat = self.call("/api/voicefx/preview", {"preset": "magnetic", "source": "s1"})
+            status, low = self.call("/api/voicefx/preview", {"preset": "magnetic", "source": "s1", "pitch": -2})
+            self.assertEqual(status, 200, low)
+            self.assertNotEqual(flat["after"], low["after"], "the slider is heard before the render")
+            self.assertAlmostEqual(low["duration"], flat["duration"], delta=0.05)
+            with mock.patch.object(voicefx.ffmpeg, "has_filter", return_value=False):
+                status, j = self.call("/api/voicefx/preview", {"preset": "deep", "source": "s1"})
+            self.assertEqual(status, 200, "without rubberband the fallback shift is used, as in the render")
+            self.assertEqual(self.call("/api/voicefx/preview", {"preset": "warm", "source": "s1", "pitch": 9})[0], 400)
 
     def test_voicefx_preview_rejects_an_unknown_preset(self):
         status, _ = self.call("/api/voicefx/preview", {"preset": "sparkly"})

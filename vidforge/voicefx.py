@@ -49,6 +49,18 @@ PRESETS: tuple[Preset, ...] = (
         "acompressor=threshold=-18dB:ratio=3:attack=12:release=220",
     ),
     Preset(
+        "magnetic", "浑厚磁性（自然）", "胸腔共鸣加厚、泛音加一点、齿音压一点，音高不动——还是你自己的声音，"
+        "只是更饱满、更有磁性。想要「浑厚有磁性」又怕不自然，选这个。",
+        "highpass=f=70,afftdn=nr=8:nf=-32,"
+        "equalizer=f=100:t=q:w=0.8:g=3,"      # chest: this is most of "浑厚"
+        "equalizer=f=250:t=q:w=1.0:g=-1.5,"   # keeps the extra low end from turning muddy
+        "equalizer=f=3200:t=q:w=1.5:g=1.5,"   # presence, so a fuller voice is not a duller one
+        "deesser=i=0.3,"
+        "aexciter=amount=1:blend=0,"          # a little harmonic sheen; deep's 1.5 starts to sound processed
+        # gentle and slow: heavy, fast compression is what makes a voice sound "processed"
+        "acompressor=threshold=-20dB:ratio=2.5:attack=15:release=250",
+    ),
+    Preset(
         "clear", "清亮口播", "提亮 3 kHz 的咬字，适合语速快、信息密的段落。",
         "highpass=f=90,afftdn=nr=10:nf=-30,"
         "equalizer=f=200:t=q:w=1.0:g=-1.5,"

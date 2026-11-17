@@ -33,6 +33,7 @@ import { useProject } from '../../../state/ProjectContext'
 import { FxPanel } from '../../../fx/FxPanel'
 import { PrompterLine, Teleprompter, type PrompterPlace } from '../../../fx/Teleprompter'
 import { TakesLibrary } from './TakesLibrary'
+import { VoiceFxPanel } from './VoiceFxPanel'
 import { loadFx, saveFx, type FxSettings } from '../../../fx/settings'
 import { useFxEngine } from '../../../fx/useFxEngine'
 
@@ -409,6 +410,9 @@ export function RecordStudio() {
   const mirrorCss = prefs.mirrorPreview ? 'scaleX(-1)' : undefined
 
   return (
+    <Stack spacing={2}>
+    {/* the settings column is sticky, and sticky stays inside its grid: the rows below live
+        outside it, or the column slides down over them */}
     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0,1fr) 340px' }, gap: 2 }}>
       {/* stage */}
       <Box>
@@ -718,9 +722,12 @@ export function RecordStudio() {
           </>
         )}
       </Paper>
-      <Box sx={{ gridColumn: '1 / -1' }}>
-        {segId && <TakesLibrary segId={segId} refreshKey={kept} />}
-      </Box>
     </Box>
+    {segId && <TakesLibrary segId={segId} refreshKey={kept} />}
+    {/* 声音美化 belongs where the voice is recorded too: the panel also sits under 声音, but
+        nobody recording a take thinks to look there. It changes no take, only how every
+        take is rendered, so it is safe to try at any point. */}
+    <VoiceFxPanel key={kept} />
+    </Stack>
   )
 }

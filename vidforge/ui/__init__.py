@@ -1817,10 +1817,17 @@ def make_handler(state: State):
                 prov = get_provider(p.tts.provider, rate=p.rate, config=p.tts.__dict__)
                 synthesize_cached(prov, text, body.get("voice") or p.voice, dry)
 
-            wet = folder / f"{preset.id}.mp3"
+            # exactly what the render applies (render.render_segment): the preset through chain(),
+            # which swaps in the fallback pitch shift when this ffmpeg has no rubberband, then the
+            # pitch slider. Hearing one thing here and getting another in the video defeats the point.
+            try:
+                pitch = float(body["pitch"]) if body.get("pitch") is not None else p.voice_pitch
+                fx = voicefx.chain(preset.id) + voicefx.pitch_filter(pitch)
+            except (KeyError, ValueError, TypeError) as e:
+                return self._error(str(e.args[0]) if e.args else str(e))
+            wet = folder / f"{preset.id}_{pitch:+.1f}.mp3"
             chain = preset.chain
-            ffmpeg.run(["-y", "-i", str(dry), "-af",
-                        (f"{chain}," if chain else "") + "loudnorm=I=-16:TP=-1.5:LRA=11", str(wet)])
+            ffmpeg.run(["-y", "-i", str(dry), "-af", fx + "loudnorm=I=-16:TP=-1.5:LRA=11", str(wet)])
             return self._json({"before": state.rel(dry), "after": state.rel(wet),
                                "preset": preset.id, "chain": chain,
                                "duration": ffmpeg.duration(wet)})
