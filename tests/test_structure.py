@@ -174,6 +174,15 @@ class CheckTest(unittest.TestCase):
         issues = st.check(segs, {"s1": 15.0, "s2": 20.0})
         self.assertFalse(any("回到开场" in i.what for i in issues))
 
+    def test_the_same_figure_in_chinese_numerals_is_a_callback_too(self):
+        # 「六十一年」 at the end answered 「六十一年来」 up front, and was reported missing
+        segs = [self.seg("s1", "2022年，中国人口六十一年来第一次减少。"),
+                self.seg("s2", "六十一年来第一次减少，只是开始。")]
+        self.assertFalse(any("回到开场" in i.what for i in st.check(segs, {"s1": 15.0, "s2": 20.0})))
+        segs[1] = self.seg("s2", "这是第一次，下期再见。")
+        self.assertTrue(any("回到开场" in i.what for i in st.check(segs, {"s1": 15.0, "s2": 20.0})),
+                        "「第一次」 is not a figure")
+
     def test_length_is_estimated_from_the_text_when_nothing_is_rendered(self):
         # 240 字/分钟 means roughly four Chinese characters a second
         long_zh = self.seg("s1", "字" * 200)

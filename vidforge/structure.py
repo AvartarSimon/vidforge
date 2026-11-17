@@ -223,6 +223,18 @@ _NUMBER = re.compile(
 _QUESTION = re.compile(r"[?？]|为什么|怎么|凭什么|会不会|是不是|多少|how |why |what |will ")
 
 
+def callback_numbers(text: str) -> set[str]:
+    """The figures a sentence states, as digits — 「六十一年」 and 「61年」 are the same callback.
+    Single digits are left out: 「第一次」 is not a figure, and counting it matched every ending."""
+    from .platforms import cn_number
+    out = {d.replace(",", "") for d in re.findall(r"\d[\d,.]*", text) if len(d.replace(",", "").split(".")[0]) >= 2}
+    for run in re.findall(r"[零〇一二两三四五六七八九十百千万亿]{2,}", text):
+        n = cn_number(run)
+        if n is not None and n >= 10:
+            out.add(str(n))
+    return out
+
+
 @dataclass
 class Issue:
     level: str        # "problem" | "advice"
@@ -298,8 +310,8 @@ def check(segments: list[dict], durations: dict[str, float] | None = None) -> li
                             "给每段写个章节名：六分钟以上的视频加章节能提高会话时长"))
 
     last_text = (segments[-1].get("text") or "")
-    first_key = set(re.findall(r"\d[\d,.]*", first_text))
-    if first_key and not (first_key & set(re.findall(r"\d[\d,.]*", last_text))):
+    first_key = callback_numbers(first_text)
+    if first_key and not (first_key & callback_numbers(last_text)):
         issues.append(Issue("advice", segments[-1].get("id", ""),
                             "结尾没有回到开场那个数字",
                             "把开场的数字在结尾再说一次并给出结论——回扣是完播率最省力的做法"))
