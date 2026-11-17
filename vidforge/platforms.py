@@ -113,6 +113,29 @@ def post_text(project, p: Platform, credits: str = "") -> str:
     return "\n".join(lines) + "\n"
 
 
+# 抖音 / 快手 / 视频号 show a creator's videos as a grid of 3:4 tiles; the 9:16 cover is the one the
+# feed shows. Landscape apps take a 16:9 picture (YouTube's custom thumbnail is 1280x720).
+GRID = ("douyin", "kuaishou", "shipinhao")
+
+
+def make_covers(project, p: Platform, source: Path, video: Path, out_dir: Path) -> list[Path]:
+    """The cover pictures this platform asks for, drawn from the build's cover picture (or a
+    frame of the export when there is none) with the cover text on top."""
+    from . import thumbnail
+    src = source.parent / "cover_src.jpg"
+    if not src.is_file():
+        src = out_dir / f"{p.id}_frame.jpg"
+        ffmpeg.run(["-y", "-ss", "1", "-i", str(video), "-frames:v", "1", str(src)])
+    text = (project.thumbnail_text or project.youtube.title or project.title or "").strip()
+    sizes = [(1080, 1920)] + ([(1080, 1440)] if p.id in GRID else []) if p.ratio == "9:16" else [(1280, 720)]
+    out = []
+    for w, h in sizes:
+        f = out_dir / f"{p.id}_cover_{w}x{h}.jpg"
+        thumbnail.make(src, text, f, size=(w, h))
+        out.append(f)
+    return out
+
+
 def export(project, source: Path, out_dir: Path, pid: str, *, mode: str = "blur", srt: Path | None = None,
            log=print) -> dict:
     """One platform's copy of `source` in `out_dir`, plus its upload text."""
@@ -141,6 +164,7 @@ def export(project, source: Path, out_dir: Path, pid: str, *, mode: str = "blur"
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", *rate, "-pix_fmt", "yuv420p",
                     "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out)])
     seconds = ffmpeg.duration(out)
+    covers = make_covers(project, p, source, out, out_dir)
     text = out_dir / f"{pid}.txt"
     credits = source.parent / "credits.txt"      # written by the build, beside the finished video
     text.write_text(post_text(project, p, credits.read_text(encoding="utf-8") if credits.is_file() else ""),
@@ -151,7 +175,7 @@ def export(project, source: Path, out_dir: Path, pid: str, *, mode: str = "blur"
     mb = out.stat().st_size / 1e6
     log(f"  {p.name}: {p.width}x{p.height} · {seconds:.1f}s · {mb:.1f} MB -> {out.name}")
     result = {"id": pid, "name": p.name, "path": str(out), "text": str(text), "seconds": seconds,
-              "mb": round(mb, 1), "warnings": warnings}
+              "mb": round(mb, 1), "warnings": warnings, "covers": [str(c) for c in covers]}
     (out_dir / f"{pid}.json").write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
     return result
 

@@ -5,7 +5,7 @@ import { apiGet, apiPost } from '../../../api/client'
 import { fileUrl } from '../../../utils'
 
 type Platform = { id: string; name: string; ratio: string; width: number; height: number; best: number[]; max_seconds: number | null; tips: string }
-type Exported = { id: string; name: string; path: string; seconds: number; mb: number; warnings: string[]; copy?: string }
+type Exported = { id: string; name: string; path: string; seconds: number; mb: number; warnings: string[]; copy?: string; covers?: string[] }
 type Job = { state: string; lines: string[]; results: Exported[]; error: string | null }
 
 const KEY = 'vf.platforms.v1'
@@ -147,6 +147,17 @@ export function PlatformExport() {
                     </Tooltip>
                   )}
                 </Stack>
+                {!!d.covers?.length && (
+                  <Stack direction="row" spacing={1} alignItems="flex-end" sx={{ mt: 1 }}>
+                    {d.covers.map((c) => (
+                      <Tooltip key={c} title={`封面 ${c.split('_cover_').pop()?.replace('.jpg', '')}，点一下下载`}>
+                        <Box component="a" href={fileUrl(c) || ''} download={c.split('/').pop()} sx={{ display: 'block', lineHeight: 0 }}>
+                          <Box component="img" src={fileUrl(c) || ''} alt="封面" sx={{ height: 72, borderRadius: 0.5, border: '1px solid', borderColor: 'divider' }} />
+                        </Box>
+                      </Tooltip>
+                    ))}
+                  </Stack>
+                )}
                 {d.warnings.map((w) => (
                   <Typography key={w} variant="caption" color="warning.main" sx={{ display: 'block' }}>
                     ⚠ {w}

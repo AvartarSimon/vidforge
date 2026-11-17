@@ -19,8 +19,9 @@ def _font(size: int, text: str) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     cands = list(_FONT_CANDIDATES.get(platform.system(), []))
     # CJK text needs a CJK-capable face first — and PingFang is not a file on every macOS
     if any("\u4e00" <= ch <= "\u9fff" for ch in text):
-        from .theme import cjk_font
-        return cjk_font(size)
+        # bold: the regular CJK fallback is the light weight on most Macs, too thin for a cover
+        from .hook import bold_font
+        return bold_font(size)
     for c in cands:
         if Path(c).exists():
             try:
@@ -30,7 +31,29 @@ def _font(size: int, text: str) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     return ImageFont.load_default(size=size)
 
 
+def wrap_for(text: str, size: tuple[int, int]) -> str:
+    """An upright cover is narrow: a title on one line would shrink to nothing, so it is broken
+    into two or three balanced lines. A line break the user typed is kept as it is."""
+    text = text.strip()
+    if "\n" in text or size[1] <= size[0]:
+        return text
+    cjk = any("\u4e00" <= ch <= "\u9fff" for ch in text)
+    units = list(text) if cjk else text.split()
+    per = 7 if cjk else 3                                   # glyphs / words a line holds at cover size
+    n = min(3, -(-len(units) // per))
+    if n <= 1:
+        return text
+    base, extra = divmod(len(units), n)                     # balanced: no one-word last line
+    lines, i = [], 0
+    for j in range(n):
+        k = base + (1 if j < extra else 0)
+        lines.append(("" if cjk else " ").join(units[i:i + k]))
+        i += k
+    return "\n".join(lines)
+
+
 def make(image: Path, text: str, out: Path, size: tuple[int, int] = (1280, 720)) -> None:
+    text = wrap_for(text, size)
     img = Image.open(image).convert("RGB")
     # cover-fit
     ratio = max(size[0] / img.width, size[1] / img.height)

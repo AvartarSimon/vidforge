@@ -535,6 +535,13 @@ def _stage_assemble(ctx: _Ctx) -> tuple[Path, list[dict], float]:
         thumb_src = bd / "thumb_src.jpg"
         ffmpeg.run(["-y", "-ss", "1", "-i", str(ctx.clips[p.segments[0].id]), "-frames:v", "1", str(thumb_src)])
     thumbnail.make(thumb_src, p.thumbnail_text or p.title, bd / "thumbnail.jpg")
+    try:
+        # kept for the per-platform covers, which are drawn at each app's own shape at export
+        from PIL import Image
+        with Image.open(thumb_src) as im:
+            im.convert("RGB").save(bd / "cover_src.jpg", quality=92)
+    except OSError:
+        pass
     credits = _credits(p)
     if credits:
         (bd / "credits.txt").write_text(credits, encoding="utf-8")

@@ -75,8 +75,25 @@ class Export(unittest.TestCase):
                 self.assertAlmostEqual(r["seconds"], 2.0, delta=0.15)
                 self.assertTrue(Path(r["text"]).is_file())
                 self.assertIn("Jane Doe", Path(r["text"]).read_text(encoding="utf-8"))
+            from PIL import Image
+
+            def size(c):
+                with Image.open(c) as im:
+                    return im.size
+            shapes = {pid: [size(c) for c in platforms.export(p, src, td / "out", pid, log=lambda *_: None)["covers"]]
+                      for pid in ("douyin", "tiktok", "youtube")}
+            self.assertEqual(shapes, {"douyin": [(1080, 1920), (1080, 1440)], "tiktok": [(1080, 1920)],
+                                      "youtube": [(1280, 720)]}, "each app's own cover shapes, the 3:4 grid tile where it has one")
         finally:
             shutil.rmtree(td, ignore_errors=True)
+
+    def test_a_title_on_an_upright_cover_is_broken_into_lines(self):
+        from vidforge import thumbnail
+        self.assertEqual(thumbnail.wrap_for("中国人口六十一年来第一次减少", (1080, 1920)), "中国人口六十一\n年来第一次减少")
+        self.assertEqual(thumbnail.wrap_for("中国人口六十一年来第一次减少", (1280, 720)), "中国人口六十一年来第一次减少")
+        self.assertEqual(thumbnail.wrap_for("自己\n分的行", (1080, 1920)), "自己\n分的行")
+        self.assertEqual(thumbnail.wrap_for("Why did 1816 have no summer at all", (1080, 1920)),
+                         "Why did 1816\nhave no summer\nat all")
 
 
 class SuggestText(unittest.TestCase):

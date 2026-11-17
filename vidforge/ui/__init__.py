@@ -481,7 +481,8 @@ def make_handler(state: State):
                             r = json.loads(f.read_text(encoding="utf-8"))
                             if Path(r["path"]).is_file():
                                 done.append({**r, "path": state.rel(Path(r["path"])), "text": state.rel(Path(r["text"])),
-                                             "copy": Path(r["text"]).read_text(encoding="utf-8")})
+                                             "copy": Path(r["text"]).read_text(encoding="utf-8"),
+                                             "covers": [state.rel(Path(c)) for c in r.get("covers") or [] if Path(c).is_file()]})
                         except (OSError, ValueError, KeyError):
                             continue
                     return self._json({"platforms": platforms.listing(), "exported": done, "job": state.export})
