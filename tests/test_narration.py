@@ -326,12 +326,15 @@ class NarrationTest(unittest.TestCase):
             words = narration.prepare(src, out, ZH)
         self.assertTrue(words)
 
-    def test_save_upload_replaces_the_previous_take(self):
+    def test_re_recording_keeps_the_previous_take(self):
+        # a re-recording deleted the take before it; a take cannot be made again
         first = narration.save_upload(self.td, "seg1", b"aaa", "webm")
-        second = narration.save_upload(self.td, "seg1", b"bbb", "m4a")
-        self.assertFalse(first.exists(), "re-recording should not pile up files")
-        self.assertEqual(second.read_bytes(), b"bbb")
+        second = narration.save_upload(self.td, "seg1", b"bbb", "webm")
+        self.assertTrue(first.exists())
+        self.assertNotEqual(first, second)
+        self.assertEqual((first.read_bytes(), second.read_bytes()), (b"aaa", b"bbb"))
         self.assertEqual(second.parent, self.td / "assets" / "narration")
+        self.assertTrue(second.name.startswith("seg1_"))
 
     def test_save_upload_sanitises_the_segment_id(self):
         path = narration.save_upload(self.td, "../../evil seg", b"x", "wav")
@@ -479,10 +482,10 @@ class NarrationApi(unittest.TestCase):
         data = base64.b64encode((self.td / "assets" / "take.mp3").read_bytes()).decode()
         status, j = self.call("/api/narration/upload", {"segment": "s1", "data": data, "ext": "mp3"})
         self.assertEqual(status, 200)
-        self.assertEqual(j["narration"], "assets/narration/s1.mp3")
+        self.assertRegex(j["narration"], r"^assets/narration/s1_[\d-]+\.mp3$")
         self.assertAlmostEqual(j["seconds"], 3.0, delta=0.4)
         on_disk = json.loads((self.td / "project.json").read_text(encoding="utf-8"))
-        self.assertEqual(on_disk["segments"][0]["narration"], "assets/narration/s1.mp3")
+        self.assertEqual(on_disk["segments"][0]["narration"], j["narration"])
         self.assertNotIn("narration", on_disk["segments"][1])
         _, listing = self.call("/api/voicefx")
         self.assertEqual(listing["own_segments"], ["s1"])

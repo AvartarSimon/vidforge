@@ -131,7 +131,7 @@ def prepare(source: Path, out: Path, text: str, *, lang: str | None = None,
 def save_upload(root: Path, seg_id: str, data: bytes, suffix: str) -> Path:
     """Store a recording made in the browser next to the project, and say where it went.
 
-    `<project>/assets/narration/<seg>.<ext>` — inside the project, because a narration track is as
+    `<project>/assets/narration/<seg>_<time>.<ext>` — inside the project, because a narration track is as
     much a part of the video as its pictures: copy the folder and it still builds."""
     if not data:
         raise NarrationError("录音是空的")
@@ -143,10 +143,14 @@ def save_upload(root: Path, seg_id: str, data: bytes, suffix: str) -> Path:
     safe = re.sub(r"_+", "_", re.sub(r"[^\w-]", "_", seg_id)).strip("_") or "segment"
     folder = Path(root) / "assets" / "narration"
     folder.mkdir(parents=True, exist_ok=True)
-    # one recording per segment: re-recording replaces the take rather than piling up files, and
-    # the old alignment is dropped because its key no longer matches the new size/mtime
-    for old in folder.glob(f"{safe}.*"):
-        old.unlink(missing_ok=True)
-    path = folder / f"{safe}{suffix}"
+    # every recording is kept: re-recording a segment used to delete the previous take, and a take
+    # is the one thing that cannot be made again. Each gets its own timestamped name; the project
+    # simply points at the newest, and the studio lists the rest so any of them can be put back.
+    import time
+    path = folder / f"{safe}_{time.strftime('%Y%m%d-%H%M%S')}{suffix}"
+    n = 1
+    while path.exists():
+        path = folder / f"{safe}_{time.strftime('%Y%m%d-%H%M%S')}-{n}{suffix}"
+        n += 1
     path.write_bytes(data)
     return path
