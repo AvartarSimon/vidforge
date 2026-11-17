@@ -22,6 +22,7 @@ import re
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
@@ -175,7 +176,12 @@ def download(url: str, dest: Path, referer: str | None = None, retries: int = 3)
             tmp.unlink(missing_ok=True)
             if e.code in (429, 503) and attempt < retries:
                 continue
-            raise AssetError(f"download failed: {e}") from None
+            host = urllib.parse.urlparse(url).netloc
+            if e.code == 429:
+                # the site's own text ("contact noc@wikimedia.org…") was shown as is; the user needs
+                # to know it is the site's limit, not their project, and that it passes
+                raise AssetError(f"download failed: HTTP 429 — {host} 暂时限流（短时间内请求太多），过一两分钟再试") from None
+            raise AssetError(f"download failed: HTTP {e.code} — {host}") from None
         except urllib.error.URLError as e:
             tmp.unlink(missing_ok=True)
             raise AssetError(f"download failed: {e}") from None

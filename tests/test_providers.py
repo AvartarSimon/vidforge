@@ -78,6 +78,21 @@ class EdgeFailure(unittest.TestCase):
         self.assertIn("换一个声音", str(cm.exception))
 
 
+class DownloadLimits(unittest.TestCase):
+    def test_a_rate_limit_says_so_in_plain_words(self):
+        # Commons' own reply ("contact noc@wikimedia.org…") was shown to the user as the reason
+        import urllib.error
+        from vidforge import assets
+        err = urllib.error.HTTPError("https://upload.wikimedia.org/x.jpg", 429, "Too many requests", {}, None)
+        with tempfile.TemporaryDirectory() as td, mock.patch("urllib.request.urlopen", side_effect=err), \
+                mock.patch("time.sleep"):
+            with self.assertRaises(assets.AssetError) as cm:
+                assets.download("https://upload.wikimedia.org/x.jpg", Path(td) / "x.jpg", retries=1)
+        self.assertIn("429", str(cm.exception), "wikimedia.fetch keys its thumbnail fallback on it")
+        self.assertIn("限流", str(cm.exception))
+        self.assertNotIn("noc@", str(cm.exception))
+
+
 class Providers(unittest.TestCase):
     def test_pexels_mapping(self):
         prov = pexels.PexelsProvider()
