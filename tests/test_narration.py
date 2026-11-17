@@ -410,6 +410,20 @@ class ProjectFieldTest(unittest.TestCase):
         self.assertNotEqual(pipeline._segment_key(a, a.segments[0], audio, enc),
                             pipeline._segment_key(b, b.segments[0], audio, enc))
 
+    def test_every_picture_setting_is_part_of_the_clip_cache_key(self):
+        # 统一调色 / 转场方式 / 段间黑场 changed in the UI and the rebuild reused the old clips
+        from vidforge import pipeline, render
+        base = self.write()
+        audio = self.td / "assets" / "take.mp3"
+        enc = render.pick_encoder(base)
+        key = pipeline._segment_key(base, base.segments[0], audio, enc)
+        for change in ({"look": "warm"}, {"look": "warm", "look_strength": 0.5}, {"transition_style": "dissolve"},
+                       {"segment_fade": 0.3}):
+            other = self.write(**change)
+            if "look_strength" in change:
+                key = pipeline._segment_key(self.write(look="warm"), base.segments[0], audio, enc)
+            self.assertNotEqual(key, pipeline._segment_key(other, other.segments[0], audio, enc), change)
+
     def test_voice_pitch_defaults_to_zero_and_round_trips(self):
         self.assertEqual(self.write().voice_pitch, 0.0)
         self.assertEqual(self.write(voice_pitch=-1.5).voice_pitch, -1.5)

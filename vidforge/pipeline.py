@@ -412,8 +412,12 @@ def _segment_key(project: Project, seg: Segment, audio: Path, encoder: str) -> s
         if isinstance(o, dict):
             return {k: enc(v) for k, v in o.items()}
         return o
+    # every project setting render_segment reads: one left out here is a setting that changes in
+    # the UI and silently does nothing until the cache is cleared (look, transition style and the
+    # segment fade did exactly that)
     settings = [project.width, project.height, project.fps, project.quality, encoder, project.motion_amount,
-                project.effective_supersample, project.transition, project.normalize_audio,
+                project.effective_supersample, project.transition, project.transition_style, project.segment_fade,
+                project.look, project.look_strength, project.normalize_audio,
                 project.voice_fx, project.voice_pitch, project.presenter.provider]
     blob = json.dumps([enc(seg), enc(audio), settings], sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:10]
