@@ -112,6 +112,11 @@ def recent_projects() -> list[dict]:
 
 
 def remember_project(root: Path) -> None:
+    import tempfile
+    # a project in the system's temp folder is a test's or a throwaway's: every test run added one
+    # to the user's own list, until the project picker showed nothing but folders that were gone
+    if root.resolve().is_relative_to(Path(tempfile.gettempdir()).resolve()):
+        return
     CONFIG_DIR.mkdir(exist_ok=True)
     items = [it for it in recent_projects() if Path(it["path"]) != root.resolve()]
     items.insert(0, {"path": str(root.resolve()), "opened": time.time()})
