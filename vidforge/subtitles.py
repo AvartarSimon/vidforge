@@ -201,8 +201,9 @@ _KEY = re.compile(
 
 
 def is_key_word(text: str) -> bool:
-    """Does this token carry a figure worth lighting up?"""
-    return bool(_KEY.match(text.strip()))
+    """Does this token carry a figure worth lighting up? edge-tts sometimes times two words as one
+    ("In 1815,"), so each part is asked on its own."""
+    return any(_KEY.match(t) for t in text.split())
 
 
 def _ass_time(t: float) -> str:
@@ -268,6 +269,12 @@ def write_ass(cues: list[Cue], path: Path, *, font: str, font_size: int, margin_
     def esc(t: str) -> str:
         return t.replace("\\", "\\\\").replace("{", "(").replace("}", ")").replace("\n", " ")
 
+    def lit(t: str) -> str:
+        """Only the figure lit, not the word it was timed together with."""
+        if " " not in t.strip():
+            return f"{{\\c{hi}}}{esc(t)}{{\\c{white}}}"
+        return " ".join(f"{{\\c{hi}}}{esc(x)}{{\\c{white}}}" if _KEY.match(x) else esc(x) for x in t.split(" "))
+
     lines: list[str] = []
     for cue in cues:
         words = cue.words
@@ -290,12 +297,10 @@ def write_ass(cues: list[Cue], path: Path, *, font: str, font_size: int, margin_
                         # 112%, not more: the line is centred, so a bigger word nudges its neighbours
                         parts.append(f"{{\\c{hi}\\fscx112\\fscy112}}{esc(w2.text)}{{\\c{white}\\fscx100\\fscy100}}")
                         continue
-                    lit = keys[j] and j <= i
-                    parts.append(f"{{\\c{hi}}}{esc(w2.text)}{{\\c{white}}}" if lit else esc(w2.text))
+                    parts.append(lit(w2.text) if keys[j] and j <= i else esc(w2.text))
                 lines.append(f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Main,,0,0,0,,{sep.join(parts)}")
         else:
-            parts = [f"{{\\c{hi}}}{esc(w.text)}{{\\c{white}}}" if keys[i] else esc(w.text)
-                     for i, w in enumerate(words)]
+            parts = [lit(w.text) if keys[i] else esc(w.text) for i, w in enumerate(words)]
             lines.append(f"Dialogue: 0,{_ass_time(cue.start)},{_ass_time(cue.end)},Main,,0,0,0,,{sep.join(parts)}")
 
     Path(path).write_text("\n".join(head + lines) + "\n", encoding="utf-8")

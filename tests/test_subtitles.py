@@ -89,6 +89,19 @@ class Highlight(unittest.TestCase):
         self.assertIn(r"{\c&H003A79D4\fscx112\fscy112}去年", lines[1])
         self.assertIn(r"{\c&H003A79D4}5.2%{\c&H00FFFFFF}", lines[-1], "the figure stays lit once said")
 
+    def test_a_figure_timed_together_with_a_word_is_still_lit_alone(self):
+        # edge-tts gives "In 1815," as one word; the year went unlit in every English video
+        import tempfile
+        from vidforge.subtitles import Cue, is_key_word, write_ass
+        self.assertTrue(is_key_word("In 1815,"))
+        self.assertFalse(is_key_word("In the"))
+        cue = Cue(0, 2, "In 1815, a volcano", [Word("In 1815,", 0, 1), Word("a", 1, .5), Word("volcano", 1.5, .5)])
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "g.ass"
+            write_ass([cue], f, font="Arial", font_size=22, margin_v=48, box=False, highlight="keywords", colour="#d4793a")
+            line = [l for l in f.read_text(encoding="utf-8").splitlines() if l.startswith("Dialogue")][0]
+        self.assertIn(r"In {\c&H003A79D4}1815,{\c&H00FFFFFF} a volcano", line)
+
     def test_none_mode_is_plain_text(self):
         import tempfile
         from vidforge.subtitles import write_ass
