@@ -87,8 +87,15 @@ class Timeline(unittest.TestCase):
     """Where the brand clips land, without rendering anything."""
 
     def _ctx(self, raw):
-        project = mock.Mock(raw=raw, width=1920, height=1080, fps=30)
+        project = mock.Mock(raw=raw, width=1920, height=1080, fps=30, theme={})
         return mock.Mock(project=project)
+
+    def setUp(self):
+        # matching the cards to the segments' stream format is an encode; these tests are about order
+        from vidforge import render
+        patcher = mock.patch.object(render, "match_clip", side_effect=lambda clip, like, p, enc, out: clip)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def test_opener_goes_first_and_the_end_card_last(self):
         from vidforge import pipeline

@@ -13,6 +13,20 @@ from pathlib import Path
 from vidforge import structure as st, ui
 
 
+def setUpModule():
+    # the user's own frameworks (~/.vidforge/structures) are not this module's business: these tests
+    # are about the built-in skeletons, on any machine
+    import tempfile
+    from unittest import mock
+    global _user_dir
+    _user_dir = mock.patch.object(st, "USER_DIR", Path(tempfile.mkdtemp()) / "structures")
+    _user_dir.start()
+
+
+def tearDownModule():
+    _user_dir.stop()
+
+
 class TemplateTest(unittest.TestCase):
     def test_every_template_is_listed_with_its_beats(self):
         listed = st.list_templates()
