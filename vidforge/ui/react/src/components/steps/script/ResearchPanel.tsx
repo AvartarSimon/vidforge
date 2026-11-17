@@ -21,6 +21,8 @@ import { apiGet, apiPost } from '../../../api/client'
 import type { AnalyzeResult, ChatSite, YoutubeSummary, YoutubeVideo } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
 import { fmtDuration } from '../../../utils'
+import TravelExploreIcon from '@mui/icons-material/TravelExplore'
+import { PanelTitle } from '../../shared/ui'
 
 const VERDICT_LABEL: Record<string, string> = { do: '值得做', do_with_angle: '换视角做', skip: '跳过' }
 const VERDICT_COLOR: Record<string, 'success' | 'error' | 'warning'> = { do: 'success', skip: 'error', do_with_angle: 'warning' }
@@ -91,7 +93,7 @@ export function ResearchPanel({ onUseAngle }: { onUseAngle: (angle: string) => v
   return (
     <Accordion>
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-        <Typography variant="subtitle1">🔎 选题助手：看 YouTube 上同类视频的数据，让 AI 判断值不值得做、用什么视角</Typography>
+        <PanelTitle icon={<TravelExploreIcon />} tone="blue" mb={0} title="选题助手" sub="看 YouTube 上同类视频的数据，让 AI 判断值不值得做、用什么视角" />
       </AccordionSummary>
       <AccordionDetails>
         <Stack spacing={1.5}>

@@ -10,6 +10,8 @@ import { fileUrl, takeFiles } from '../../../utils'
 import { FxPanel } from '../../../fx/FxPanel'
 import { loadFx, saveFx, type FxSettings } from '../../../fx/settings'
 import { useFxEngine } from '../../../fx/useFxEngine'
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh'
+import { PanelTitle } from '../../shared/ui'
 
 type Source = { label: string; url: string; rel?: string; name: string }
 
@@ -158,9 +160,7 @@ export function VideoBeautify() {
   return (
     <Card variant="outlined">
       <CardContent>
-        <Typography variant="subtitle1" gutterBottom>
-          ✨ 视频美化 / 换背景
-        </Typography>
+        <PanelTitle icon={<AutoFixHighIcon />} tone="pink" mb={1} title={<>视频美化 / 换背景</>} />
         <Typography variant="body2" color="text.secondary" gutterBottom>
           已经录好的视频也能用录制棚那一套：美颜、瘦脸、换背景、衣服换色。调好后按原速播放一遍并重新录下来（1 分钟的视频要 1 分钟）。
         </Typography>

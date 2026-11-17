@@ -18,6 +18,8 @@ import UploadFileIcon from '@mui/icons-material/UploadFile'
 import { apiGet, apiPost } from '../../../api/client'
 import type { AlignResult, VoiceFxState } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
+import MicIcon from '@mui/icons-material/Mic'
+import { PanelTitle } from '../../shared/ui'
 
 /**
  * 用我自己的声音. Record a segment here, or drop in a file you recorded on your phone; the backend
@@ -135,15 +137,13 @@ export function OwnVoicePanel() {
   return (
     <Card variant="outlined">
       <CardContent>
-        <Typography variant="subtitle1" gutterBottom>
-          🎙 用我自己的声音
+        <PanelTitle icon={<MicIcon />} tone="coral" mb={1} title={<>用我自己的声音
           <Chip
             size="small"
             sx={{ ml: 1 }}
             color={own ? 'primary' : 'default'}
             label={own ? `${own}/${raw.segments.length} 段` : '全部是合成声音'}
-          />
-        </Typography>
+          /></>} />
         <Typography variant="body2" color="text.secondary">
           按段录，不是整条录：一个段落就是一个意思、两到四句，念错只重录这一段。
           录完会和这一段的脚本<b>强制对齐</b>，所以字幕、关键词高亮、章节点和竖版切片照旧准确。

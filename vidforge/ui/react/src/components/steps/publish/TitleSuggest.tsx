@@ -3,6 +3,8 @@ import { Alert, Box, Button, Card, CardContent, Chip, LinearProgress, Stack, Typ
 import { apiPost } from '../../../api/client'
 import type { RawProject } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
+import { IconTile } from '../../shared/ui'
 
 type Suggestion = { titles: string[]; description: string; tags: string[]; dropped: string[]; lengths: Record<string, number> }
 
@@ -47,7 +49,10 @@ export function TitleSuggest() {
     <Card variant="outlined">
       <CardContent>
         <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Typography variant="subtitle1">✨ 标题、简介和话题</Typography>
+          <Stack direction="row" spacing={1.25} alignItems="center">
+            <IconTile icon={<AutoAwesomeIcon />} tone="violet" />
+            <Typography variant="subtitle1">标题、简介和话题</Typography>
+          </Stack>
           <Button variant="outlined" size="small" onClick={run} disabled={busy}>
             {s ? '再写一组' : '用本地 AI 从旁白里写'}
           </Button>

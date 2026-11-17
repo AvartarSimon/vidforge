@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Alert, Box, Button, CircularProgress, CssBaseline, Stack, ThemeProvider, Typography } from '@mui/material'
 import type { PaletteMode } from '@mui/material'
 import { apiGet } from './api/client'
-import { NavRail, DRAWER_WIDTH, SECTIONS, stepDone } from './components/nav/NavRail'
+import { NavRail, DRAWER_WIDTH, SECTIONS, STEPS, stepDone } from './components/nav/NavRail'
+import { PageHeader } from './components/shared/ui'
 import { TopBar } from './components/nav/TopBar'
 import type { SectionId } from './components/nav/NavRail'
 import { TrendsSection } from './components/sections/TrendsSection'
@@ -93,12 +94,21 @@ function Shell({ mode, onToggleMode }: { mode: PaletteMode; onToggleMode: () => 
       <NavRail activeSection={section} onSection={setSection} mode={mode} onToggleMode={onToggleMode} />
       <Box component="main" sx={{ flexGrow: 1, minWidth: 0, minHeight: 'calc(100vh - 48px)', bgcolor: 'background.default' }}>
         {!fullBleed && raw && (
-          <Stack direction="row" alignItems="baseline" spacing={1.5} sx={{ px: 3, pt: 2.5, pb: 0.5, maxWidth: 1480, mx: 'auto' }}>
-            <Typography variant="h6">{section ? SECTIONS.find((x) => x.id === section)?.label : `第 ${step} 步 · ${STEP_LABELS[step]}`}</Typography>
-            <Typography variant="body2" color="text.secondary">
-              {section ? SECTIONS.find((x) => x.id === section)?.sub : ''}
-            </Typography>
-          </Stack>
+          <Box sx={{ px: 3, pt: 2.5, pb: 0.5, maxWidth: 1480, mx: 'auto' }}>
+            {(() => {
+              const sec = section ? SECTIONS.find((x) => x.id === section) : null
+              const st = STEPS.find((x) => x.n === step) || STEPS[0]
+              const Icon = sec ? sec.icon : st.icon
+              return (
+                <PageHeader
+                  icon={<Icon />}
+                  tone={sec ? sec.tone : st.tone}
+                  title={sec ? sec.label : `第 ${step} 步 · ${st.label}`}
+                  sub={sec ? sec.sub : st.sub}
+                />
+              )
+            })()}
+          </Box>
         )}
         <Box sx={fullBleed ? {} : { p: 3, pt: 1.5, maxWidth: 1480, mx: 'auto' }}>
           {staleBackend && (

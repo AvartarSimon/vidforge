@@ -3,17 +3,16 @@ import {
   Button,
   Dialog,
   DialogContent,
-  DialogTitle,
-  IconButton,
   MenuItem,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
 import { apiPost } from '../../../api/client'
 import { useProject } from '../../../state/ProjectContext'
 import { fileUrl } from '../../../utils'
+import GraphicEqIcon from '@mui/icons-material/GraphicEq'
+import { DialogHeader } from '../../shared/ui'
 
 const VD_HINT: Record<string, string> = {
   elevenlabs:
@@ -74,12 +73,7 @@ export function VoiceDesignDialog({ open, onClose }: { open: boolean; onClose: (
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        设计品牌声音
-        <IconButton size="small" onClick={onClose} aria-label="关闭">
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </DialogTitle>
+      <DialogHeader icon={<GraphicEqIcon />} tone="blue" title="设计品牌声音" sub="用一段文字描述，生成这个频道自己的声音" onClose={onClose} />
       <DialogContent dividers>
         <Stack spacing={1.5}>
           <Typography variant="caption" color="text.secondary">

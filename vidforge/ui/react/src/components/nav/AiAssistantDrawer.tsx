@@ -14,6 +14,8 @@ import { apiGet, apiPost } from '../../api/client'
 import type { ChatLoginStatus, ChatSite } from '../../api/types'
 import { useProject } from '../../state/ProjectContext'
 import { pollLoginStatus } from '../../utils'
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
+import { IconTile } from '../shared/ui'
 
 export function AiAssistantDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { raw } = useProject()
@@ -99,8 +101,16 @@ export function AiAssistantDrawer({ open, onClose }: { open: boolean; onClose: (
   return (
     <Drawer anchor="right" open={open} onClose={onClose}>
       <Box sx={{ width: 420, p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center">
-          <Typography variant="h6">✦ AI 助手</Typography>
+        <Stack direction="row" spacing={1.5} alignItems="center">
+          <IconTile icon={<AutoAwesomeIcon />} tone="violet" size={34} />
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="h6" sx={{ fontSize: 16.5, lineHeight: 1.3 }}>
+              AI 助手
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              问本地模型或你登录的网页 AI，可以带上当前段旁白
+            </Typography>
+          </Box>
           <IconButton size="small" onClick={onClose} aria-label="关闭">
             <CloseIcon fontSize="small" />
           </IconButton>

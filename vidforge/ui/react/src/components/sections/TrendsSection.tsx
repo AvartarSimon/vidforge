@@ -80,7 +80,6 @@ export function TrendsSection() {
 
   return (
     <Stack spacing={2}>
-      <Typography variant="h6">热点</Typography>
       <Typography variant="body2" color="text.secondary">
         热榜告诉你大家在看什么，领域新闻告诉你你关心的方向今天发生了什么。
         打分用的全是本地能算的信号：平台权重 × 榜位、是否落在频道的九个方向、标题里有没有数字（能不能配图表）、

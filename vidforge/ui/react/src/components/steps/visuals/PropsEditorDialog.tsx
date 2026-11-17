@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, TextField, Typography } from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
+import { Button, Dialog, DialogActions, DialogContent, TextField, Typography } from '@mui/material'
 import type { Clip } from '../../../api/types'
+import DataObjectIcon from '@mui/icons-material/DataObject'
+import { DialogHeader } from '../../shared/ui'
 
 // Remotion clip props vary entirely by composition (TitleCard: title/subtitle, Timeline:
 // title/events[], BarChart: title/items[]/source) — a JSON editor is the right fit here rather
@@ -20,12 +21,7 @@ export function PropsEditorDialog({ clip, onClose, onSave }: { clip: Clip; onClo
 
   return (
     <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        {clip.remotion?.composition} 的内容
-        <IconButton size="small" onClick={onClose} aria-label="关闭">
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </DialogTitle>
+      <DialogHeader icon={<DataObjectIcon />} tone="violet" title={<>{clip.remotion?.composition} 的内容</>} sub="动画的数据和文字（JSON）" onClose={onClose} />
       <DialogContent dividers>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
           JSON。文字可以写成 {'{'}"en": "...", "zh": "..."{'}'} 供多语言使用。

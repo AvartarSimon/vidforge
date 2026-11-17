@@ -5,7 +5,6 @@ import {
   Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Divider,
   FormControlLabel,
   IconButton,
@@ -19,7 +18,6 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
 import DeleteIcon from '@mui/icons-material/Delete'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
@@ -28,6 +26,8 @@ import { apiGet, apiPost } from '../../../api/client'
 import type { Overlay, Segment } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
 import { fileUrl, takeFiles } from '../../../utils'
+import PictureInPictureIcon from '@mui/icons-material/PictureInPicture'
+import { DialogHeader } from '../../shared/ui'
 
 const NAMED: Record<string, [number, number]> = {
   'top-left': [0, 0],
@@ -259,12 +259,7 @@ export function PipEditor({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xl" fullWidth>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 1.5 }}>
-        画中画 · {seg.label || segId}
-        <IconButton size="small" onClick={onClose} aria-label="关闭">
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </DialogTitle>
+      <DialogHeader icon={<PictureInPictureIcon />} tone="green" title={<>画中画 · {seg.label || segId}</>} sub="拖动摆放，拖角缩放" onClose={onClose} />
       <DialogContent dividers sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0,1fr) 320px' }, gap: 2 }}>
         <Box>
           <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>

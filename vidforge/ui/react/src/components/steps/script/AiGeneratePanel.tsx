@@ -16,6 +16,8 @@ import type { Category, ChatSite, SplitSegment } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
 import { pollLoginStatus } from '../../../utils'
 import { SplitPreviewDialog } from './SplitPreviewDialog'
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
+import { PanelTitle } from '../../shared/ui'
 
 function categoryNote(categories: Category[], categoryId?: string | null) {
   const c = categories.find((x) => x.id === categoryId)
@@ -183,9 +185,7 @@ export function AiGeneratePanel({
   return (
     <Accordion defaultExpanded={!raw.segments.length}>
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-        <Typography variant="subtitle1">
-          ✨ 用我的浏览器里的 AI 生成脚本（ChatGPT / Claude / Gemini / DeepSeek / Grok / 千问 / Kimi / 文心）
-        </Typography>
+        <PanelTitle icon={<AutoAwesomeIcon />} tone="violet" mb={0} title="用我浏览器里的 AI 生成脚本" sub="ChatGPT / Claude / Gemini / DeepSeek / Grok / 千问 / Kimi / 文心，用你自己登录的账号" />
       </AccordionSummary>
       <AccordionDetails>
         <Stack spacing={1.5}>

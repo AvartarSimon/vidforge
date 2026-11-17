@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Alert, Box, Button, Card, CardContent, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
 import { apiGet, apiPost } from '../../api/client'
 import { useProject } from '../../state/ProjectContext'
+import PaletteIcon from '@mui/icons-material/Palette'
+import { PanelTitle } from './ui'
 
 type Palette = { id: string; name: string; box: string; text: string; accent: string; badge_bg: string; badge_text: string; frame: string; page: string }
 type ThemeState = { palettes: Palette[]; current: { palette: string; badge: string; side: string } | null; window: { size: number; height: number } }
@@ -92,9 +94,7 @@ export function ThemePicker() {
   return (
     <Card>
       <CardContent>
-        <Typography variant="subtitle1" gutterBottom>
-          🎨 竖屏主题模板
-        </Typography>
+        <PanelTitle icon={<PaletteIcon />} tone="pink" mb={1} title={<>竖屏主题模板</>} />
         <Typography variant="body2" color="text.secondary">
           主画面铺满竖屏；真人小窗占宽度 24%、3:4 圆角，放在上方；只在讲解段落出现（录制棚里选「当小窗」）；字幕在中下部，避开底部平台信息区。
         </Typography>

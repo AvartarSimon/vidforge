@@ -4,17 +4,16 @@ import {
   Button,
   Dialog,
   DialogContent,
-  DialogTitle,
-  IconButton,
   List,
   ListItem,
   ListItemText,
   Stack,
   Typography,
 } from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
 import { apiGet, apiPost } from '../../api/client'
 import { useProject } from '../../state/ProjectContext'
+import HistoryIcon from '@mui/icons-material/History'
+import { DialogHeader } from '../shared/ui'
 
 type Snapshot = { name: string; time: string; size: number }
 
@@ -55,12 +54,7 @@ export function ProjectHistoryDialog({ open, onClose }: { open: boolean; onClose
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        历史版本（整份项目）
-        <IconButton onClick={onClose} size="small">
-          <CloseIcon />
-        </IconButton>
-      </DialogTitle>
+      <DialogHeader icon={<HistoryIcon />} tone="slate" title="历史版本（整份项目）" sub="每次改动自动留一份，可以整份回到某一刻" onClose={onClose} />
       <DialogContent>
         <Typography variant="caption" color="text.secondary">
           每次改动后自动留档（最多 30 份），保存在项目下的 <code>.history/</code>。

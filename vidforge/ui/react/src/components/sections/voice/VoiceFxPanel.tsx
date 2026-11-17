@@ -17,6 +17,8 @@ import {
 import { apiGet, apiPost } from '../../../api/client'
 import type { VoiceFxState } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
+import TuneIcon from '@mui/icons-material/Tune'
+import { PanelTitle } from '../../shared/ui'
 
 /**
  * 人声处理. A preset is a matter of taste, so the panel's whole job is to let you *hear* the
@@ -99,15 +101,13 @@ export function VoiceFxPanel({ onChanged }: { onChanged?: () => void }) {
   return (
     <Card variant="outlined">
       <CardContent>
-        <Typography variant="subtitle1" gutterBottom>
-          🎛 人声处理
+        <PanelTitle icon={<TuneIcon />} tone="blue" mb={1} title={<>人声处理
           <Chip
             size="small"
             sx={{ ml: 1 }}
             color={current === 'none' ? 'default' : 'primary'}
             label={state.presets.find((p) => p.id === current)?.name || current}
-          />
-        </Typography>
+          /></>} />
         <Typography variant="body2" color="text.secondary" gutterBottom>
           几条 ffmpeg 滤镜，不是机器学习：去低频轰鸣、降底噪、压缩让音量稳住，再按口味加一点低频或咬字。
           自己录的和合成的声音都会过这一层，响度统一（loudnorm）永远排在最后。

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Box, ButtonBase, Dialog, DialogContent, Divider, IconButton, Tooltip, Typography } from '@mui/material'
+import { Box, ButtonBase, Dialog, DialogContent, Divider, Tooltip, Typography } from '@mui/material'
 import type { PaletteMode } from '@mui/material'
 import CategoryIcon from '@mui/icons-material/Category'
 import HistoryIcon from '@mui/icons-material/History'
@@ -14,6 +14,11 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
 import LightModeIcon from '@mui/icons-material/LightMode'
+import EditNoteIcon from '@mui/icons-material/EditNote'
+import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver'
+import ImageIcon from '@mui/icons-material/Image'
+import MovieIcon from '@mui/icons-material/Movie'
+import IosShareIcon from '@mui/icons-material/IosShare'
 import { ApiError, apiPost } from '../../api/client'
 import type { ProjectView, RawProject } from '../../api/types'
 import { useProject } from '../../state/ProjectContext'
@@ -21,27 +26,28 @@ import { ProjectHistoryDialog } from './ProjectHistoryDialog'
 import { CategoryManagerDialog } from './CategoryManagerDialog'
 import { AiAssistantDrawer } from './AiAssistantDrawer'
 import { SystemStatusDialog } from './SystemStatusDialog'
+import { IconTile, type Tone } from '../shared/ui'
 
 export const DRAWER_WIDTH = 76
 
 export const STEPS = [
-  { n: 1, label: '脚本', sub: '写或生成旁白' },
-  { n: 2, label: '配音', sub: '声音与试听' },
-  { n: 3, label: '画面', sub: '每段挑素材' },
-  { n: 4, label: '渲染', sub: '出片与主持人' },
-  { n: 5, label: '发布', sub: '上传与声明' },
+  { n: 1, label: '脚本', sub: '写或生成旁白', icon: EditNoteIcon, tone: 'indigo' as Tone },
+  { n: 2, label: '配音', sub: '声音与试听', icon: RecordVoiceOverIcon, tone: 'blue' as Tone },
+  { n: 3, label: '画面', sub: '每段挑素材', icon: ImageIcon, tone: 'green' as Tone },
+  { n: 4, label: '渲染', sub: '出片与主持人', icon: MovieIcon, tone: 'violet' as Tone },
+  { n: 5, label: '发布', sub: '上传与声明', icon: IosShareIcon, tone: 'orange' as Tone },
 ]
 
 // Work that is about one kind of material rather than about one step of this video: covering
 // faces in a clip, managing voices, reviewing everything that was downloaded. Kept out of the
 // wizard so it can be reached at any time and grown independently.
 export const SECTIONS = [
-  { id: 'editor', label: '剪辑台', sub: '时间线、预览、属性', icon: ViewTimelineIcon },
-  { id: 'studio', label: '录制', sub: '提词器、美颜、换背景', icon: VideocamIcon },
-  { id: 'trends', label: '热点', sub: '现在什么在火', icon: WhatshotIcon },
-  { id: 'video', label: '视频', sub: '剪口播、美化、遮脸', icon: MovieFilterIcon },
-  { id: 'voice', label: '声音', sub: '声音库与试听', icon: GraphicEqIcon },
-  { id: 'images', label: '图片', sub: '素材与授权', icon: PhotoLibraryIcon },
+  { id: 'editor', label: '剪辑台', sub: '时间线、预览、属性', icon: ViewTimelineIcon, tone: 'teal' as Tone },
+  { id: 'studio', label: '录制', sub: '提词器、美颜、换背景', icon: VideocamIcon, tone: 'coral' as Tone },
+  { id: 'trends', label: '热点', sub: '现在什么在火', icon: WhatshotIcon, tone: 'orange' as Tone },
+  { id: 'video', label: '视频', sub: '剪口播、美化、遮脸', icon: MovieFilterIcon, tone: 'violet' as Tone },
+  { id: 'voice', label: '声音', sub: '声音库与试听', icon: GraphicEqIcon, tone: 'blue' as Tone },
+  { id: 'images', label: '图片', sub: '素材与授权', icon: PhotoLibraryIcon, tone: 'green' as Tone },
 ] as const
 
 export type SectionId = (typeof SECTIONS)[number]['id']
@@ -72,25 +78,24 @@ export function stepDone(step: number, raw: RawProject | null, view: ProjectView
 // The slim left rail, as in 剪映 / CapCut: one icon per workspace with its name under it, and the
 // tools that are about the whole app (history, AI, categories, status, theme, quit) at the bottom.
 // The five-step wizard lives in the top bar instead, where it reads as the progress it is.
-function RailButton({ label, icon, active, disabled, onClick }: { label: string; icon: React.ReactNode; active?: boolean; disabled?: boolean; onClick: () => void }) {
+function RailButton({ label, icon, tone, active, disabled, small, onClick }: { label: string; icon: React.ReactNode; tone: Tone; active?: boolean; disabled?: boolean; small?: boolean; onClick: () => void }) {
   return (
     <ButtonBase
       onClick={onClick}
       disabled={disabled}
       sx={{
         width: 64,
-        py: 0.9,
-        borderRadius: 2,
+        py: small ? 0.5 : 0.75,
+        borderRadius: 2.5,
         flexDirection: 'column',
-        gap: 0.25,
-        color: active ? 'primary.main' : 'text.secondary',
-        bgcolor: active ? 'action.selected' : 'transparent',
+        gap: 0.4,
+        color: active ? 'text.primary' : 'text.secondary',
         opacity: disabled ? 0.4 : 1,
-        '&:hover': { bgcolor: active ? 'action.selected' : 'action.hover', color: active ? 'primary.main' : 'text.primary' },
+        '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
       }}
     >
-      {icon}
-      <Typography sx={{ fontSize: 11.5, fontWeight: active ? 700 : 500, lineHeight: 1.2 }}>{label}</Typography>
+      <IconTile icon={icon} tone={tone} size={small ? 26 : 34} solid={active} />
+      <Typography sx={{ fontSize: small ? 10.5 : 11.5, fontWeight: active ? 700 : 500, lineHeight: 1.2 }}>{label}</Typography>
     </ButtonBase>
   )
 }
@@ -129,12 +134,12 @@ export function NavRail({
     }
   }
 
-  const tool = (title: string, icon: React.ReactNode, onClick: () => void, disabled = false) => (
+  // the whole-app tools, each with its colour and a short name under it: six grey glyphs with
+  // only a hover hint was the part of the rail nobody could read
+  const tool = (label: string, title: string, icon: React.ReactNode, tone: Tone, onClick: () => void, disabled = false) => (
     <Tooltip title={title} placement="right">
       <span>
-        <IconButton size="small" onClick={onClick} disabled={disabled} sx={{ color: 'text.secondary' }}>
-          {icon}
-        </IconButton>
+        <RailButton small label={label} icon={icon} tone={tone} disabled={disabled} onClick={onClick} />
       </span>
     </Tooltip>
   )
@@ -165,19 +170,19 @@ export function NavRail({
           return (
             <Tooltip key={sec.id} title={sec.sub} placement="right">
               <span>
-                <RailButton label={sec.label} icon={<Icon fontSize="small" />} active={activeSection === sec.id} disabled={!raw} onClick={() => onSection(sec.id)} />
+                <RailButton label={sec.label} icon={<Icon />} tone={sec.tone} active={activeSection === sec.id} disabled={!raw} onClick={() => onSection(sec.id)} />
               </span>
             </Tooltip>
           )
         })}
         <Box sx={{ flexGrow: 1 }} />
         <Divider flexItem sx={{ mx: 1.5, my: 0.5 }} />
-        {tool('历史版本：整份项目回到某一刻', <HistoryIcon fontSize="small" />, () => setHistoryOpen(true), !raw)}
-        {tool('AI 助手', <AutoAwesomeIcon fontSize="small" />, () => setAiOpen(true))}
-        {tool('分类管理', <CategoryIcon fontSize="small" />, () => setCategoryOpen(true))}
-        {tool('系统状态', <MonitorHeartIcon fontSize="small" />, () => setStatusOpen(true))}
-        {tool(mode === 'dark' ? '切换到浅色' : '切换到深色', mode === 'dark' ? <LightModeIcon fontSize="small" /> : <DarkModeIcon fontSize="small" />, onToggleMode)}
-        {tool('退出 vidforge', <PowerSettingsNewIcon fontSize="small" />, () => quit())}
+        {tool('历史', '历史版本：整份项目回到某一刻', <HistoryIcon />, 'slate', () => setHistoryOpen(true), !raw)}
+        {tool('AI', 'AI 助手', <AutoAwesomeIcon />, 'violet', () => setAiOpen(true))}
+        {tool('分类', '分类管理', <CategoryIcon />, 'amber', () => setCategoryOpen(true))}
+        {tool('状态', '系统状态', <MonitorHeartIcon />, 'green', () => setStatusOpen(true))}
+        {tool(mode === 'dark' ? '浅色' : '深色', mode === 'dark' ? '切换到浅色' : '切换到深色', mode === 'dark' ? <LightModeIcon /> : <DarkModeIcon />, 'indigo', onToggleMode)}
+        {tool('退出', '退出 vidforge', <PowerSettingsNewIcon />, 'coral', () => quit())}
       </Box>
       <Dialog open={quitting}>
         <DialogContent>

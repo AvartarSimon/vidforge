@@ -3,16 +3,15 @@ import {
   Button,
   Dialog,
   DialogContent,
-  DialogTitle,
-  IconButton,
   List,
   ListItem,
   ListItemText,
   Typography,
 } from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
 import { apiGet, apiPost } from '../../api/client'
 import { useProject } from '../../state/ProjectContext'
+import HistoryIcon from '@mui/icons-material/History'
+import { DialogHeader } from './ui'
 
 interface Version {
   name: string
@@ -59,12 +58,7 @@ export function SegmentHistoryDialog({ segId, open, onClose }: { segId: string |
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        「{segId}」的版本（{versions.length}）
-        <IconButton size="small" onClick={onClose} aria-label="关闭">
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </DialogTitle>
+      <DialogHeader icon={<HistoryIcon />} tone="slate" title={<>「{segId}」的版本（{versions.length}）</>} onClose={onClose} />
       <DialogContent dividers>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
           每次保存时这一段有变化就会留一份；回到某一版只改这一段，其他段不动。

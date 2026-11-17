@@ -3,8 +3,6 @@ import {
   Button,
   Dialog,
   DialogContent,
-  DialogTitle,
-  IconButton,
   List,
   ListItem,
   ListItemText,
@@ -13,10 +11,11 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
 import { apiGet, apiPost } from '../../../api/client'
 import type { VoiceOption } from '../../../api/types'
 import { fileUrl } from '../../../utils'
+import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver'
+import { DialogHeader } from '../../shared/ui'
 
 // locale -> the place name shown beside a voice
 const REGION: Record<string, string> = {
@@ -90,12 +89,7 @@ export function VoiceBrowserDialog({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        选择声音
-        <IconButton onClick={onClose} size="small" aria-label="关闭">
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </DialogTitle>
+      <DialogHeader icon={<RecordVoiceOverIcon />} tone="blue" title="选择声音" sub="点 ▶ 试听，点名字选用" onClose={onClose} />
       <DialogContent dividers sx={{ maxHeight: '70vh' }}>
         <Stack direction="row" spacing={1.5} sx={{ mb: 1.5 }}>
           <TextField size="small" select label="地区筛选" value={region} onChange={(e) => setRegion(e.target.value)} sx={{ minWidth: 180 }}>

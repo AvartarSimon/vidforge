@@ -186,7 +186,7 @@ export function FxPanel({ fx, onChange, status, showAspect = true }: { fx: FxSet
           </Button>
         </Tooltip>
       </Stack>
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable" sx={{ minHeight: 36, '& .MuiTab-root': { minHeight: 36, minWidth: 0, px: 1.5 } }}>
+      <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable" sx={{ '& .MuiTab-root': { px: 1.25 } }}>
         <Tab label="美颜" />
         <Tab label="美型" />
         <Tab label="背景" />

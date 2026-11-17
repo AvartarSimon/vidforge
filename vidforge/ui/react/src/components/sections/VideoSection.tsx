@@ -19,6 +19,11 @@ import { useProject } from '../../state/ProjectContext'
 import { fileUrl } from '../../utils'
 import { VideoBeautify } from './video/VideoBeautify'
 import { JumpCut } from './video/JumpCut'
+import FaceRetouchingOffIcon from '@mui/icons-material/FaceRetouchingOff'
+import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver'
+import SmartphoneIcon from '@mui/icons-material/Smartphone'
+import VideocamIcon from '@mui/icons-material/Videocam'
+import { PanelTitle } from '../shared/ui'
 
 type MeItem = { name: string; tags?: string[]; talking?: boolean; duration?: number; uses?: number }
 type ShortCut = { ids: string[]; label: string; start: number; seconds: number }
@@ -149,7 +154,6 @@ export function VideoSection() {
 
   return (
     <Stack spacing={2}>
-      <Typography variant="h6">视频</Typography>
       <Typography variant="body2" color="text.secondary">
         对整段视频做处理的工具都放在这里，不需要先把它放进某一段。
       </Typography>
@@ -160,9 +164,7 @@ export function VideoSection() {
 
       <Card variant="outlined">
         <CardContent>
-          <Typography variant="subtitle1" gutterBottom>
-            🙈 用头像盖住视频里的人脸
-          </Typography>
+          <PanelTitle icon={<FaceRetouchingOffIcon />} tone="violet" mb={1} title={<>用头像盖住视频里的人脸</>} />
           <Typography variant="body2" color="text.secondary" gutterBottom>
             逐帧找出人脸并跟踪，把你给的图片（卡通头像、logo，建议 PNG 透明背景）贴上去，跟着人头移动和缩放；
             不给图片就用一块半透明圆形遮挡。自己出镜能明显降低被平台判定为「批量 AI 内容」的风险，又不必露脸。
@@ -282,9 +284,7 @@ export function VideoSection() {
 
       <Card variant="outlined">
         <CardContent>
-          <Typography variant="subtitle1" gutterBottom>
-            📱 切一条竖版（小红书 / 抖音 / Shorts）
-          </Typography>
+          <PanelTitle icon={<SmartphoneIcon />} tone="orange" mb={1} title={<>切一条竖版（小红书 / 抖音 / Shorts）</>} />
           <Typography variant="body2" color="text.secondary" gutterBottom>
             从已经渲染好的长视频里剪，不重新渲染：字幕按切点重新计时并加大、上移（手机拇指会挡住最下面一条）。
             一个段落就是一个完整的意思，所以候选直接按段落给。
@@ -332,9 +332,7 @@ export function VideoSection() {
 
       <Card variant="outlined">
         <CardContent>
-          <Typography variant="subtitle1" gutterBottom>
-            🗣 照片变成会说话的头
-          </Typography>
+          <PanelTitle icon={<RecordVoiceOverIcon />} tone="pink" mb={1} title={<>照片变成会说话的头</>} />
           <Typography variant="body2" color="text.secondary" gutterBottom>
             一张正面照 + 某一段的旁白 → 一段会开口、会点头眨眼的头部视频。生成后会自动填进上面的「换头」框，
             再对你自己的镜头跑一次遮挡，就得到「身体动作是我的、脸不是我的」的画面。
@@ -380,9 +378,7 @@ export function VideoSection() {
 
       <Card variant="outlined">
         <CardContent>
-          <Typography variant="subtitle1" gutterBottom>
-            🎥 我的镜头（{items.length}）
-          </Typography>
+          <PanelTitle icon={<VideocamIcon />} tone="coral" mb={1} title={<>我的镜头（{items.length}）</>} />
           <Typography variant="body2" color="text.secondary">
             文件名就是标签：<code>backyard_glasses_talking_01.mp4</code> → 标签 backyard、glasses，含 talking 即视为说话镜头。
             目录：<code>{folder}</code>

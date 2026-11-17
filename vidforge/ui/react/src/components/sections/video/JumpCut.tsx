@@ -3,6 +3,8 @@ import { Alert, Box, Button, Card, CardContent, FormControlLabel, LinearProgress
 import { apiPost } from '../../../api/client'
 import { useProject } from '../../../state/ProjectContext'
 import { fileUrl } from '../../../utils'
+import ContentCutIcon from '@mui/icons-material/ContentCut'
+import { PanelTitle } from '../../shared/ui'
 
 type Plan = { total: number; kept: number; removed: number; cuts: number; keep: [number, number][]; fillers?: { word: string; start: number; end: number }[]; fillers_unsure?: number }
 
@@ -61,9 +63,7 @@ export function JumpCut() {
   return (
     <Card variant="outlined">
       <CardContent>
-        <Typography variant="subtitle1" gutterBottom>
-          ✂️ 智能剪口播
-        </Typography>
+        <PanelTitle icon={<ContentCutIcon />} tone="violet" mb={1} title={<>智能剪口播</>} />
         <Typography variant="body2" color="text.secondary" gutterBottom>
           自动剪掉说话中间的停顿和气口。画面和声音按同一组切点一起剪，口型不会错位；原文件不动，生成一个 _cut.mp4。
         </Typography>

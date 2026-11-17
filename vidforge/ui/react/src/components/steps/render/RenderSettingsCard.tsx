@@ -13,6 +13,9 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { apiGet } from '../../../api/client'
 import { useProject } from '../../../state/ProjectContext'
+import SettingsIcon from '@mui/icons-material/Settings'
+import TuneIcon from '@mui/icons-material/Tune'
+import { PanelTitle, IconTile } from '../../shared/ui'
 
 const RESOLUTIONS = [
   { value: '1920x1080', label: '1080p 横屏（YouTube）' },
@@ -38,6 +41,7 @@ export function RenderSettingsCard() {
   return (
     <Card variant="outlined">
       <CardContent>
+        <PanelTitle icon={<TuneIcon />} tone="teal" title="渲染设置" sub="质量、转场、调色、音效、背景音乐" />
         <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
           <TextField
             select
@@ -203,7 +207,10 @@ export function RenderSettingsCard() {
 
         <Accordion sx={{ mt: 2 }} elevation={0} variant="outlined">
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-            <Typography variant="body2">高级参数（编码器 / 并行 / 超采样 / 运镜幅度 / 分辨率）</Typography>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <IconTile icon={<SettingsIcon />} tone="slate" size={24} />
+              <Typography variant="body2">高级参数（编码器 / 并行 / 超采样 / 运镜幅度 / 分辨率）</Typography>
+            </Stack>
           </AccordionSummary>
           <AccordionDetails>
             <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>

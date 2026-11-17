@@ -4,15 +4,14 @@ import {
   Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
-  IconButton,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
 import { useProject } from '../../../state/ProjectContext'
 import type { SplitSegment, Segment } from '../../../api/types'
+import CallSplitIcon from '@mui/icons-material/CallSplit'
+import { DialogHeader } from '../../shared/ui'
 
 // estimate spoken duration: CJK text ~3.8 chars/sec, Latin text ~2.6 words/sec (tts/silent.py uses the same).
 function estSeconds(text: string) {
@@ -86,12 +85,7 @@ export function SplitPreviewDialog({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        拆分预览：{rows.length} 段 · 预计 {fmtSeconds(total)}
-        <IconButton onClick={onClose} size="small" aria-label="关闭">
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </DialogTitle>
+      <DialogHeader icon={<CallSplitIcon />} tone="indigo" title={<>拆分预览：{rows.length} 段 · 预计 {fmtSeconds(total)}</>} sub="看一眼每段的长度，再决定用不用" onClose={onClose} />
       <DialogContent dividers>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           识别到的章节名在第一列；每段字数/预计时长在右侧。可以在这里直接改，或取消后调整原文再拆。

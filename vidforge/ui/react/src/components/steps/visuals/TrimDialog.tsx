@@ -4,14 +4,13 @@ import {
   Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
-  IconButton,
   Slider,
   Stack,
   Typography,
 } from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
 import DeleteIcon from '@mui/icons-material/Delete'
+import ContentCutIcon from '@mui/icons-material/ContentCut'
+import { DialogHeader } from '../../shared/ui'
 
 export interface TrimRange {
   in: number
@@ -92,12 +91,7 @@ export function TrimDialog({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        选择片段范围
-        <IconButton size="small" onClick={onClose} aria-label="关闭">
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </DialogTitle>
+      <DialogHeader icon={<ContentCutIcon />} tone="violet" title="选择片段范围" sub="每个范围会变成一个片段" onClose={onClose} />
       <DialogContent dividers>
         <Stack spacing={1.5}>
           <video ref={videoRef} src={url} controls muted playsInline style={{ width: '100%' }} onLoadedMetadata={onLoadedMetadata} onTimeUpdate={onTimeUpdate} />

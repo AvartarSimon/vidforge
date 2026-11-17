@@ -51,7 +51,6 @@ export function ImagesSection() {
 
   return (
     <Stack spacing={2}>
-      <Typography variant="h6">图片</Typography>
       <Typography variant="body2" color="text.secondary">
         这个项目下载过的全部素材（<code>{root}</code>），包含授权、出处、视觉核对结果和被哪些段落用到。
         删除文件请直接在资源管理器里操作——没有被任何段落引用的可以安全删掉。

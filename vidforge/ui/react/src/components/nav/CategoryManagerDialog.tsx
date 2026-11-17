@@ -4,7 +4,6 @@ import {
   Button,
   Dialog,
   DialogContent,
-  DialogTitle,
   IconButton,
   List,
   ListItem,
@@ -14,12 +13,13 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
 import { apiGet, apiPost } from '../../api/client'
 import type { Category } from '../../api/types'
 import { useProject } from '../../state/ProjectContext'
 import { CategoryEditorForm } from './CategoryEditorForm'
 import { takeFiles } from '../../utils'
+import CategoryIcon from '@mui/icons-material/Category'
+import { DialogHeader } from '../shared/ui'
 
 function avatarLetter(name: string) {
   return [...(name || '?')][0]?.toUpperCase() || '?'
@@ -114,12 +114,7 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        {editing === undefined ? (creatingFrom ? `用「${creatingFrom.name}」新建项目` : '分类管理') : editing === null ? '新建分类' : '编辑分类'}
-        <IconButton onClick={onClose} size="small" aria-label="关闭">
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </DialogTitle>
+      <DialogHeader icon={<CategoryIcon />} tone="amber" title={<>{editing === undefined ? (creatingFrom ? `用「${creatingFrom.name}」新建项目` : '分类管理') : editing === null ? '新建分类' : '编辑分类'}</>} onClose={onClose} />
       <DialogContent dividers>
         {creatingFrom ? (
           <Stack spacing={1.5}>

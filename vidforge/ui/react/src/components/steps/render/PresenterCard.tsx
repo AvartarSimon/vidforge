@@ -2,6 +2,8 @@ import { Accordion, AccordionDetails, AccordionSummary, Checkbox, FormControlLab
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import type { RawProject } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
+import FaceIcon from '@mui/icons-material/Face'
+import { PanelTitle } from '../../shared/ui'
 
 const POSITIONS = ['bottom-right', 'bottom-left', 'top-right', 'top-left', 'right', 'left']
 const HAIR_STYLES = [
@@ -32,7 +34,7 @@ export function PresenterCard() {
   return (
     <Accordion defaultExpanded={open}>
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-        <Typography variant="subtitle1">数字主持人（画中画里"你"的形象）</Typography>
+        <PanelTitle icon={<FaceIcon />} tone="coral" mb={0} title="数字主持人" sub="画中画里「你」的形象" />
       </AccordionSummary>
       <AccordionDetails>
         <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="flex-start">

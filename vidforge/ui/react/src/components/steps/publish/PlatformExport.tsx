@@ -3,6 +3,8 @@ import { Alert, Box, Button, Card, CardContent, Checkbox, Chip, IconButton, Line
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import { apiGet, apiPost } from '../../../api/client'
 import { fileUrl } from '../../../utils'
+import IosShareIcon from '@mui/icons-material/IosShare'
+import { PanelTitle } from '../../shared/ui'
 
 type Platform = { id: string; name: string; ratio: string; width: number; height: number; best: number[]; max_seconds: number | null; tips: string }
 type Exported = { id: string; name: string; path: string; seconds: number; mb: number; warnings: string[]; copy?: string; covers?: string[] }
@@ -70,9 +72,7 @@ export function PlatformExport() {
   return (
     <Card variant="outlined">
       <CardContent>
-        <Typography variant="subtitle1" gutterBottom>
-          📤 多平台导出
-        </Typography>
+        <PanelTitle icon={<IosShareIcon />} tone="orange" mb={1} title={<>多平台导出</>} />
         <Typography variant="body2" color="text.secondary" gutterBottom>
           一条成片，给每个平台导出正确的画幅和码率，并生成可以直接粘贴的标题 / 简介 / 话题 / AI 声明。横版成片转竖版时不用重新渲染。
         </Typography>

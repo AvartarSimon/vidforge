@@ -4,7 +4,6 @@ import {
   Button,
   Dialog,
   DialogContent,
-  DialogTitle,
   Divider,
   IconButton,
   List,
@@ -18,11 +17,12 @@ import {
   Typography,
   Chip,
 } from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import { apiGet, apiPost } from '../../api/client'
 import type { RecentProject } from '../../api/types'
 import { useProject } from '../../state/ProjectContext'
+import FolderOpenIcon from '@mui/icons-material/FolderOpen'
+import { DialogHeader } from '../shared/ui'
 
 export function ProjectSwitcher({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { view, saveState, reload } = useProject()
@@ -91,12 +91,7 @@ export function ProjectSwitcher({ open, onClose }: { open: boolean; onClose: () 
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        项目
-        <IconButton onClick={onClose} size="small" aria-label="关闭">
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </DialogTitle>
+      <DialogHeader icon={<FolderOpenIcon />} tone="teal" title="项目" sub="新建、打开或切换项目" onClose={onClose} />
       <DialogContent dividers>
         <TextField
           size="small"

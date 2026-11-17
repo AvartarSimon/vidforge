@@ -4,9 +4,7 @@ import {
   Chip,
   Dialog,
   DialogContent,
-  DialogTitle,
   Divider,
-  IconButton,
   List,
   ListItem,
   ListItemText,
@@ -14,8 +12,9 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
 import { apiGet, apiPost } from '../../api/client'
+import MonitorHeartIcon from '@mui/icons-material/MonitorHeart'
+import { DialogHeader } from '../shared/ui'
 
 interface Health {
   ffmpeg: { ok: boolean; path: string }
@@ -115,12 +114,7 @@ export function SystemStatusDialog({ open, onClose }: { open: boolean; onClose: 
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        系统状态
-        <IconButton size="small" onClick={onClose} aria-label="关闭">
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </DialogTitle>
+      <DialogHeader icon={<MonitorHeartIcon />} tone="green" title="系统状态" sub="依赖、编码器和密钥" onClose={onClose} />
       <DialogContent dividers>
         {error && <Typography color="error">{error}</Typography>}
         {!h && !error && <Typography color="text.secondary">检查中…</Typography>}

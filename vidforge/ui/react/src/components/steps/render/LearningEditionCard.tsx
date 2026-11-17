@@ -2,6 +2,8 @@ import { Accordion, AccordionDetails, AccordionSummary, Button, MenuItem, Stack,
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import type { RawProject } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
+import SchoolIcon from '@mui/icons-material/School'
+import { PanelTitle } from '../../shared/ui'
 
 // bilingual subtitles + a vocab outro, for a channel's English-learning cut. The per-language text
 // (text_zh etc.) is edited by switching language in the top bar; this card toggles the render-time
@@ -35,7 +37,7 @@ export function LearningEditionCard() {
   return (
     <Accordion defaultExpanded={bilingual || !!raw.outro_vocab}>
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-        <Typography variant="subtitle1">学习版（双语字幕 + 片尾词汇卡，发国内英语学习区）</Typography>
+        <PanelTitle icon={<SchoolIcon />} tone="green" mb={0} title="学习版" sub="双语字幕 + 片尾词汇卡，发国内英语学习区" />
       </AccordionSummary>
       <AccordionDetails>
         <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="flex-start">

@@ -20,6 +20,8 @@ import { useProject } from '../../state/ProjectContext'
 import { RecordStudio } from './voice/RecordStudio'
 import { OwnVoicePanel } from './voice/OwnVoicePanel'
 import { VoiceFxPanel } from './voice/VoiceFxPanel'
+import LibraryMusicIcon from '@mui/icons-material/LibraryMusic'
+import { PanelTitle } from '../shared/ui'
 
 type Voice = { name: string; locale?: string; gender?: string; personality?: string; desc?: string }
 
@@ -71,7 +73,6 @@ export function VoiceSection() {
 
   return (
     <Stack spacing={2}>
-      <Typography variant="h6">声音</Typography>
       <Typography variant="body2" color="text.secondary">
         项目当前的声音：<code>{raw?.voice || '(未设置)'}</code>
         {raw?.rate ? `　语速 ${raw.rate}` : ''}
@@ -113,9 +114,7 @@ export function VoiceSection() {
 
       <Card variant="outlined">
         <CardContent>
-          <Typography variant="subtitle1" gutterBottom>
-            {provider === 'voxcpm' ? '我设计的声音' : '可用声音'}（{voices.length}）
-          </Typography>
+          <PanelTitle icon={<LibraryMusicIcon />} tone="blue" mb={1} title={<>{provider === 'voxcpm' ? '我设计的声音' : '可用声音'}（{voices.length}）</>} />
           {provider === 'voxcpm' && (
             <Typography variant="body2" color="text.secondary" gutterBottom>
               VoxCPM2 的声音 = 一段描述 + 一个随机种子，保存在 <code>~/.vidforge/voices/voxcpm/&lt;名字&gt;.json</code>。

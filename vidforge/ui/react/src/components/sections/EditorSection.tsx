@@ -157,7 +157,7 @@ export function EditorSection({ onOpen }: { onOpen: (where: 'studio' | 'render')
     >
       {/* materials */}
       <Box sx={{ ...panel, display: 'flex', flexDirection: 'column' }}>
-        <Tabs value={leftTab} onChange={(_, v) => setLeftTab(v)} variant="fullWidth" sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
+        <Tabs value={leftTab} onChange={(_, v) => setLeftTab(v)} variant="fullWidth" sx={{ m: 1 }}>
           <Tab label="素材" />
           <Tab label="录制" />
         </Tabs>
@@ -247,7 +247,7 @@ export function EditorSection({ onOpen }: { onOpen: (where: 'studio' | 'render')
 
       {/* inspector */}
       <Box sx={{ ...panel, display: 'flex', flexDirection: 'column', gridRow: { lg: 'span 1' } }}>
-        <Tabs value={rightTab} onChange={(_, v) => setRightTab(v)} variant="fullWidth" sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
+        <Tabs value={rightTab} onChange={(_, v) => setRightTab(v)} variant="fullWidth" sx={{ m: 1 }}>
           <Tab label="段落" />
           <Tab label="画面" />
           <Tab label="全局" />

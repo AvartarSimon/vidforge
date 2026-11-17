@@ -21,6 +21,8 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { ApiError, apiGet, apiPost } from '../../../api/client'
 import type { StructureIssue, StructureRow, StructureTemplate } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
+import AccountTreeIcon from '@mui/icons-material/AccountTree'
+import { PanelTitle } from '../../shared/ui'
 
 /**
  * 结构模板 + 留存体检. Retention is decided here, before a word is written: where the promise lands,
@@ -93,8 +95,13 @@ export function StructurePanel({
   return (
     <Accordion defaultExpanded={!raw.segments.length}>
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-        <Typography variant="subtitle1">
-          🦴 段落骨架与留存体检
+        <PanelTitle
+          icon={<AccountTreeIcon />}
+          tone="indigo"
+          mb={0}
+          title={
+            <>
+          段落骨架与留存体检
           {issues && (
             <Chip
               size="small"
@@ -103,7 +110,10 @@ export function StructurePanel({
               label={problems.length ? `${problems.length} 个要改` : '没发现问题'}
             />
           )}
-        </Typography>
+            </>
+          }
+          sub="钩子 → 背景 → 数据 → 转折 → 回扣；每段多长、开头留不留得住人"
+        />
       </AccordionSummary>
       <AccordionDetails>
         <Stack spacing={1.5}>

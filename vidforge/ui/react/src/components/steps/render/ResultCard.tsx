@@ -1,6 +1,8 @@
 import { Box, Card, CardContent, Link, Stack, Typography } from '@mui/material'
 import { useProject } from '../../../state/ProjectContext'
 import { fileUrl } from '../../../utils'
+import MovieIcon from '@mui/icons-material/Movie'
+import { PanelTitle } from '../../shared/ui'
 
 function chaptersText(tl: { start: number; label?: string; id: string }[] | null | undefined) {
   return (tl || [])
@@ -22,9 +24,7 @@ export function ResultCard() {
     <Card variant="outlined">
       <CardContent>
         <Stack direction="row" justifyContent="space-between">
-          <Typography variant="subtitle1" fontWeight={600}>
-            成片
-          </Typography>
+          <PanelTitle icon={<MovieIcon />} tone="violet" mb={0} title={<>成片</>} />
           <Typography variant="caption" color="text.secondary">
             {Math.round(total)} s{o.final_mtime ? ` · ${new Date(o.final_mtime * 1000).toLocaleString()}` : ''}
           </Typography>

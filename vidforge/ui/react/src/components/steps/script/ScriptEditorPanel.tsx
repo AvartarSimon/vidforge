@@ -16,6 +16,8 @@ import HistoryIcon from '@mui/icons-material/History'
 import { useProject } from '../../../state/ProjectContext'
 import type { Segment } from '../../../api/types'
 import { SegmentHistoryDialog } from '../../shared/SegmentHistoryDialog'
+import FormatListNumberedIcon from '@mui/icons-material/FormatListNumbered'
+import { PanelTitle } from '../../shared/ui'
 
 function newId(segments: Segment[]) {
   let n = segments.length + 1
@@ -73,9 +75,7 @@ export function ScriptEditorPanel() {
     <Card variant="outlined">
       <CardContent>
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-          <Typography variant="subtitle1" fontWeight={600}>
-            段落（{segments.length}）
-          </Typography>
+          <PanelTitle icon={<FormatListNumberedIcon />} tone="indigo" mb={0} title={<>段落（{segments.length}）</>} />
           <Button size="small" onClick={add}>
             ＋ 添加一段
           </Button>
