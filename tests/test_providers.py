@@ -93,6 +93,44 @@ class DownloadLimits(unittest.TestCase):
         self.assertNotIn("noc@", str(cm.exception))
 
 
+class BuildTimePicks(unittest.TestCase):
+    """A "commons:…" picture resolved during the build follows the autofill's accuracy rule."""
+
+    def project(self, td: Path):
+        from vidforge.project import Clip, Segment
+        seg = Segment(id="s1", text="x", clips=[Clip(source="commons:kindergarten children China")])
+        return proj.Project(title="t", segments=[seg], root=td, width=320, height=180, theme={"palette": "mint"})
+
+    def cand(self, title: str, cid: str):
+        return Candidate(provider="commons", id=cid, kind="image", thumb_url="", preview_url="", download_url=f"https://x/{cid}.jpg",
+                         width=1600, height=900, duration=None, author="a", license="CC0", page_url="", title=title, desc="", ext=".jpg")
+
+    def test_an_unrelated_first_result_is_not_used_and_the_slot_stays_honest(self):
+        from vidforge import assets
+        with tempfile.TemporaryDirectory() as td:
+            p = self.project(Path(td))
+            with mock.patch.object(assets, "search", return_value=[self.cand("Republic of China Ministry of Justice", "1")]):
+                assets.resolve_all(p, log=lambda *_: None)
+            clip = p.segments[0].clips[0]
+            self.assertIsNone(clip.source, "the search spec is gone")
+            self.assertEqual(clip.image.parent.name, "blank", "a plain page, not the unrelated photo")
+
+    def test_a_result_that_names_the_subject_is_taken(self):
+        from vidforge import assets
+        with tempfile.TemporaryDirectory() as td:
+            p = self.project(Path(td))
+            good = self.cand("Kindergarten children China playground", "2")
+            def fetch(root, cand, lib=None):
+                f = Path(td) / "assets" / f"{cand.title.replace(' ', '-').lower()}.jpg"
+                f.parent.mkdir(parents=True, exist_ok=True)
+                f.write_bytes(b"x")
+                return f
+            with mock.patch.object(assets, "search", return_value=[self.cand("Ministry of Justice", "1"), good]), \
+                    mock.patch.object(assets, "fetch", side_effect=fetch):
+                assets.resolve_all(p, log=lambda *_: None)
+            self.assertIn("kindergarten", p.segments[0].clips[0].image.name.lower())
+
+
 class SearchCache(unittest.TestCase):
     def test_an_empty_answer_is_not_kept_for_a_day(self):
         from vidforge import assets

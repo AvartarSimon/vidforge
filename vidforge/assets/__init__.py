@@ -591,11 +591,33 @@ def resolve_all(project: Project, needed_seconds: dict[str, float] | None = None
         if clip.slice_length:
             need = clip.slice_length
         try:
-            dest = pick_for_spec(project.root, lib, prov_name, clip.source_kind, query, need)
+            # the same accuracy rule as the storyboard's autofill: a search that turns up nothing that
+            # names the subject leaves the slot empty — the first result for "kindergarten children
+            # China" was a photo of the Ministry of Justice. (The vision check is the autofill's job:
+            # a minute a picture is too slow to run inside every build.)
+            dest = pick_for_spec(project.root, lib, prov_name, clip.source_kind, query, need, strict=True, vision=False)
         except AssetError as e:
-            raise AssetError(f"segment {seg.id}: {e}") from None
+            seg.clips.remove(clip)
+            log(f"warning: {seg.id}: 没找到和 {query!r} 对得上的{'视频' if clip.source_kind == 'video' else '图'}，这个位置空着"
+                f"（{str(e).splitlines()[0][:80]}）")
+            if not seg.clips and not seg.overlays:
+                seg.clips.append(_plain_page(project, seg.id))
+                log(f"warning: {seg.id}: 这一段没有画面了，先用纯色底；去「画面」里给它换一张")
+            continue
         if clip.source_kind == "video":
             clip.video = dest
         else:
             clip.image = dest
         log(f"  asset {seg.id:<12} {clip.source_kind} <- {clip.source!r} -> {dest.name}")
+
+
+def _plain_page(project: Project, seg_id: str):
+    """A solid page in the template's colour (or a quiet dark grey): an honest blank."""
+    from PIL import Image
+    from .. import theme
+    colours = theme.graphics_theme(project.theme)
+    colour = colours["bg"] if colours else "#1f2a30"
+    f = project.build_dir / "blank" / f"{seg_id}.png"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (project.width, project.height), colour).save(f)
+    return Clip(image=f, motion="none")
