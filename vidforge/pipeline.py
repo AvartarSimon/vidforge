@@ -519,7 +519,15 @@ def _stage_assemble(ctx: _Ctx) -> tuple[Path, list[dict], float]:
     final = bd / "final.mp4"
     if cues and p.subtitles.burn and not ffmpeg.has_filter("subtitles"):
         _log("warning: 这个 ffmpeg 没有 libass，字幕没有烧进画面（final.srt 照常生成）。macOS: brew install ffmpeg-full")
-    render.finalize(p, merged, burn_file if cues else None, cursor + trail, final, hook_at=lead)
+    sound = None
+    if p.transition_sfx != "none":
+        from . import sfx
+        # every hand-over between two segments; not the opener's (it has its own sting)
+        cuts = [t["start"] for t in timeline if not t["id"].startswith("__")][1:]
+        sound = sfx.track(p.transition_sfx, cuts, cursor + trail, bd / "sfx.wav")
+        if sound:
+            _log(f"  sfx        {p.transition_sfx} × {len(cuts)}")
+    render.finalize(p, merged, burn_file if cues else None, cursor + trail, final, hook_at=lead, sfx=sound)
     _set_progress("assemble", 2, 3)
 
     thumb_src = next((s.image for s in p.segments if s.image), None)

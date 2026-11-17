@@ -575,10 +575,11 @@ def concat(clips: list[Path], out: Path) -> None:
 
 
 def finalize(project: Project, merged: Path, srt: Path | None, total: float, out: Path,
-             hook_at: float = 0.0) -> None:
+             hook_at: float = 0.0, sfx: Path | None = None) -> None:
     """Mix BGM under the narration (ducked while the voice speaks) and optionally burn
     subtitles. One encode pass; video is stream-copied when nothing is burned.
-    `hook_at`: where the narration starts (after the channel opener) — the hook card's start."""
+    `hook_at`: where the narration starts (after the channel opener) — the hook card's start.
+    `sfx`: a track of transition sounds (sfx.track), laid over the mix."""
     args: list[str] = ["-y", "-i", str(merged)]
     filters: list[str] = []
     maps: list[str] = []
@@ -651,10 +652,17 @@ def finalize(project: Project, merged: Path, srt: Path | None, total: float, out
                            f"[voice][bgd]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[a]")
         else:
             filters.append(f"{chain};[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[a]")
-        maps += ["-map", "[a]"]
+        aout = "[a]"
     else:
-        maps += ["-map", "0:a"]
-    maps += ["-c:a", "aac", "-b:a", "192k"]
+        aout = "0:a"
+    if sfx is not None:
+        # after the music's ducking, so a whoosh never pushes the music down on its own
+        args += ["-i", str(sfx)]
+        src = "[0:a]" if aout == "0:a" else aout
+        filters.append(f"{src}[{audio_in + (1 if project.bgm is not None else 0)}:a]"
+                       f"amix=inputs=2:duration=first:normalize=0[as]")
+        aout = "[as]"
+    maps += ["-map", aout, "-c:a", "aac", "-b:a", "192k"]
 
     if filters:
         args += ["-filter_complex", ";".join(filters)]

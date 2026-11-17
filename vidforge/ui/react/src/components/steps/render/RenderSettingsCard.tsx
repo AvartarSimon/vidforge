@@ -154,6 +154,19 @@ export function RenderSettingsCard() {
           <TextField
             select
             size="small"
+            label="转场音效"
+            value={raw.transition_sfx ?? 'none'}
+            onChange={(e) => patch((r) => (r.transition_sfx = e.target.value))}
+            sx={{ minWidth: 200 }}
+            helperText="段与段之间，压在旁白下面"
+          >
+            <MenuItem value="none">不加</MenuItem>
+            <MenuItem value="whoosh">嗖（轻）</MenuItem>
+            <MenuItem value="tick">嗒（短）</MenuItem>
+          </TextField>
+          <TextField
+            select
+            size="small"
             label="口播镜头推近"
             value={raw.punch_in ? 'true' : 'false'}
             onChange={(e) => patch((r) => (r.punch_in = e.target.value === 'true'))}

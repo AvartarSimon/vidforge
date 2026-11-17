@@ -252,6 +252,7 @@ class Project:
     presenter: PresenterConfig = field(default_factory=PresenterConfig)
     outro_vocab: int = 0             # learner edition: append a vocabulary card with N words (0 = off)
     punch_in: bool = False           # talking-head takes cut between a wide and a tight shot at sentence breaks
+    transition_sfx: str = "none"     # sfx.py: none | whoosh | tick at every segment boundary
     lipsync: str = "none"            # none | synclabs | musetalk — for `me` takes with talking=true
     category: str | None = None      # id of the vidforge/categories.py preset this project was created from (reference only)
     normalize_audio: bool = True     # loudnorm the narration to -16 LUFS so every segment/provider sounds alike
@@ -298,6 +299,14 @@ def _voice_pitch(value: Any) -> float:
     except KeyError as e:
         raise ProjectError(str(e)) from None
     return float(value)
+
+
+def _transition_sfx(value: Any) -> str:
+    from . import sfx
+    v = str(value or "none")
+    if v != "none" and v not in sfx.KINDS:
+        raise ProjectError(f"transition_sfx '{v}' not in (none, {', '.join(sfx.KINDS)})")
+    return v
 
 
 def _hook(value: Any) -> HookCard:
@@ -600,6 +609,7 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         auto_title_cards=bool(data.get("auto_title_cards", False)),
         outro_vocab=int(data.get("outro_vocab", 0) or 0),
         punch_in=bool(data.get("punch_in", False)),
+        transition_sfx=_transition_sfx(data.get("transition_sfx", "none")),
         lipsync=str(data.get("lipsync", "none")),
         category=data.get("category"),
         presenter=pres,

@@ -70,6 +70,7 @@ export interface RawProject {
   transition?: number
   bgm?: { file: string; volume_db?: number; fade_out?: number } | null
   auto_title_cards?: boolean
+  transition_sfx?: string // none | whoosh | tick (sfx.py)
   punch_in?: boolean // talking-head takes alternate wide / tight shots at sentence breaks
   normalize_audio?: boolean
   voice_fx?: string
