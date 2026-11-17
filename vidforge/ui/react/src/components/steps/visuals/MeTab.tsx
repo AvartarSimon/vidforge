@@ -3,7 +3,7 @@ import { Box, Button, Checkbox, FormControlLabel, MenuItem, Stack, TextField, Ty
 import { apiGet, apiPost } from '../../../api/client'
 import type { MeItem } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
-import { fmtDuration } from '../../../utils'
+import { fmtDuration, takeFiles } from '../../../utils'
 
 function readAsBase64(f: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -119,7 +119,7 @@ export function MeTab({ segId, onAdded }: { segId: string; onAdded: () => void }
         <Button size="small" onClick={() => fileRef.current?.click()}>
           上传镜头…
         </Button>
-        <input ref={fileRef} type="file" hidden accept="video/*" multiple onChange={(e) => e.target.files && Array.from(e.target.files).forEach(upload)} />
+        <input ref={fileRef} type="file" hidden accept="video/*" multiple onChange={(e) => takeFiles(e).forEach(upload)} />
         <Typography variant="caption" color="text.secondary">
           {filtered.length} 个
         </Typography>

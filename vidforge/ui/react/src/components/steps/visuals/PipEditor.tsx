@@ -27,7 +27,7 @@ import UploadIcon from '@mui/icons-material/Upload'
 import { apiGet, apiPost } from '../../../api/client'
 import type { Overlay, Segment } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
-import { fileUrl } from '../../../utils'
+import { fileUrl, takeFiles } from '../../../utils'
 
 const NAMED: Record<string, [number, number]> = {
   'top-left': [0, 0],
@@ -383,7 +383,7 @@ export function PipEditor({
                 <UploadIcon />
               </IconButton>
             </Tooltip>
-            <input ref={fileRef} type="file" hidden accept="image/*,video/*" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+            <input ref={fileRef} type="file" hidden accept="image/*,video/*" onChange={(e) => takeFiles(e).slice(0, 1).forEach(upload)} />
           </Stack>
 
           <Divider sx={{ my: 1.5 }} />

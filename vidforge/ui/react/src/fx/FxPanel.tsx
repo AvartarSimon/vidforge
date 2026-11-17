@@ -6,6 +6,7 @@ import { apiGet, apiPost } from '../api/client'
 import { ROOMS, roomUrl } from './backdrops'
 import type { FxStatus } from './engine'
 import { DEFAULT_FX, FX_PRESETS, type Aspect, type BgMode, type FxSettings } from './settings'
+import { takeFiles } from '../utils'
 
 // Generated backdrops, so "换背景" works before anyone has a photo of a nice room. Each is drawn
 // once into a data URL; plain gradients never look like a fake room, which is the point.
@@ -278,7 +279,7 @@ export function FxPanel({ fx, onChange, status, showAspect = true }: { fx: FxSet
                   <Button size="small" variant="outlined" startIcon={<UploadIcon />} onClick={() => fileRef.current?.click()}>
                     {fx.bg === 'video' ? '选视频' : '选图片'}
                   </Button>
-                  <input ref={fileRef} type="file" hidden accept={fx.bg === 'video' ? 'video/*' : 'image/*'} onChange={(e) => e.target.files?.[0] && pickFile(e.target.files[0])} />
+                  <input ref={fileRef} type="file" hidden accept={fx.bg === 'video' ? 'video/*' : 'image/*'} onChange={(e) => takeFiles(e).slice(0, 1).forEach(pickFile)} />
                 </Stack>
                 {fx.bg === 'image' && images.length > 0 && (
                   <>

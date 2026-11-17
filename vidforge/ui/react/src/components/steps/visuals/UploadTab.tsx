@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { Box, Typography } from '@mui/material'
 import { apiPost } from '../../../api/client'
 import { useProject } from '../../../state/ProjectContext'
+import { takeFiles } from '../../../utils'
 
 function readAsBase64(f: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -68,7 +69,7 @@ export function UploadTab({ segId, onAdded }: { segId: string; onAdded: () => vo
           hidden
           multiple
           accept="image/*,video/*"
-          onChange={(e) => e.target.files && uploadFiles(e.target.files)}
+          onChange={(e) => uploadFiles(takeFiles(e))}
         />
       </Box>
       {status && (

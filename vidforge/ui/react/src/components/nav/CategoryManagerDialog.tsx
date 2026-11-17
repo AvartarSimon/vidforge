@@ -19,6 +19,7 @@ import { apiGet, apiPost } from '../../api/client'
 import type { Category } from '../../api/types'
 import { useProject } from '../../state/ProjectContext'
 import { CategoryEditorForm } from './CategoryEditorForm'
+import { takeFiles } from '../../utils'
 
 function avatarLetter(name: string) {
   return [...(name || '?')][0]?.toUpperCase() || '?'
@@ -155,7 +156,7 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
                 type="file"
                 hidden
                 accept="application/json"
-                onChange={(e) => e.target.files?.[0] && importFile(e.target.files[0])}
+                onChange={(e) => takeFiles(e).slice(0, 1).forEach(importFile)}
               />
             </Stack>
             {error && (

@@ -57,3 +57,12 @@ export async function pollLoginStatus(setStatus: (s: string) => void, isCancelle
   }
   setStatus('登录窗口还开着（5 分钟已到，继续登录不影响，关闭窗口后刷新页面看结果）。')
 }
+
+// The files a file input was given — and the input emptied. Left holding its value, the input fires
+// no change event when the same file is picked again, so uploading one picture to a second
+// segment silently did nothing.
+export function takeFiles(e: { target: HTMLInputElement }): File[] {
+  const files = Array.from(e.target.files || [])
+  e.target.value = ''
+  return files
+}

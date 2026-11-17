@@ -6,7 +6,7 @@ import CompareIcon from '@mui/icons-material/Compare'
 import UploadIcon from '@mui/icons-material/Upload'
 import { apiGet, apiPost } from '../../../api/client'
 import { useProject } from '../../../state/ProjectContext'
-import { fileUrl } from '../../../utils'
+import { fileUrl, takeFiles } from '../../../utils'
 import { FxPanel } from '../../../fx/FxPanel'
 import { loadFx, saveFx, type FxSettings } from '../../../fx/settings'
 import { useFxEngine } from '../../../fx/useFxEngine'
@@ -176,7 +176,7 @@ export function VideoBeautify() {
           <Button size="small" variant="outlined" startIcon={<UploadIcon />} onClick={() => fileRef.current?.click()}>
             上传
           </Button>
-          <input ref={fileRef} type="file" hidden accept="video/*" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+          <input ref={fileRef} type="file" hidden accept="video/*" onChange={(e) => takeFiles(e).slice(0, 1).forEach(upload)} />
         </Stack>
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0,1fr) 320px' }, gap: 2 }}>
           <Box>
