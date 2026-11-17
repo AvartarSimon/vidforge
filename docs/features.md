@@ -149,6 +149,7 @@
 | **进度条** | ✅ | [`render.py`](../vidforge/render.py) `finalize` — `progress_bar: true`，高 0.6% 的强调色细条随时间从左长到右；横屏在底边，竖屏在顶边（抖音/快手自己的进度条在底部）。和角标、开场大字一样在最后一遍叠加 |
 | **转场音效** | ✅ | [`sfx.py`](../vidforge/sfx.py) — `transition_sfx: whoosh|tick`，每两段交接处一声，ffmpeg 用噪声/正弦现合成（没有授权问题，也不会被平台的音频指纹匹配到），峰值约 -20 dBFS，压在 -16 LUFS 的旁白下面；在 BGM 闪避之后混入，不会把音乐压下去 |
 | **口播推近** | ✅ | [`render.py`](../vidforge/render.py) `punch_windows()` — `punch_in: true` 时，真人镜头（录制棚 takes/、我的镜头）在旁白的句间停顿处全景/近景（115%，裁切点略偏上，脸在上半部）交替；短于 1.5 秒的不切，没有句读的长镜头每 4 秒换一次。只换画面不动声音 |
+| **片头片尾与音乐（界面）** | ✅ | 渲染页「片头、片尾和音乐」：频道品牌包（`brand.py`，`~/.vidforge/brand/brand.json`，所有视频共用）的频道名/slogan/片头片尾时长/订阅语/下期预告，片头音效（合成或上传）、片尾音乐上传、预览；每条视频可单独关片头/片尾（`project.brand.intro/outro`）；背景音乐上传到 `assets/music/`、音量/闪避/淡出。`/api/brand*`、`/api/audio/upload`。项目有配色时片头片尾跟配色走（`brand.for_project`），竖屏字号放大 |
 | **画幅与风格** | ✅ | [`theme.py`](../vidforge/theme.py) `FRAMES`（16:9 / 9:16 / 3:4 / 1:1）+ 6 套配色，任何画幅都能套；竖的画幅才用手机版式（字幕上移、每行 12 字）。真人小窗按画幅自己的比例算（`window_box`：竖 3:4、横 4:3、圆形正方），四个角可选，下方的角让开字幕（`window_place`）。界面：顶栏画幅标签、渲染页卡片、新建项目时选画幅。多平台导出加了小红书 3:4 和 B站 |
 | **开场大字** | ✅ | [`hook.py`](../vidforge/hook.py) — `project.json` 的 `hook.text` 在旁白开始时压在画面中上部 `hook.seconds`（默认 3，1–6）秒，淡入淡出。PIL 画成图片在 `render.finalize` 里叠加（和系列角标一样），不需要 libass 或 Remotion；叠加而不是插标题卡，第一句旁白不往后推。文字只用用户写的 |
 | **留存体检（每次构建）** | ✅ | `pipeline._stage_retention` — TTS 完、真实时长已知时跑 `structure.check()`，把问题打进构建日志。**从不阻断构建**（41 秒开场值不值得是作者的决定），但也不让这个决定被默默做掉 |

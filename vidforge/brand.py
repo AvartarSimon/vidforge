@@ -77,6 +77,17 @@ def load(project_raw: dict | None = None) -> Brand:
     return Brand(**{k: v for k, v in data.items() if k in fields})
 
 
+def for_project(brand: Brand, project_theme: dict | None) -> Brand:
+    """The kit in the video's own palette when it has one: a dark card flashed between bright
+    template pages reads as a different video."""
+    from dataclasses import replace
+    from . import theme as th
+    colours = th.graphics_theme(project_theme)
+    if not colours:
+        return brand
+    return replace(brand, bg=colours["bg"], fg=colours["fg"], muted=colours["muted"], accent=colours["accent"])
+
+
 def save(brand: Brand) -> Path:
     BRAND_DIR.mkdir(parents=True, exist_ok=True)
     BRAND_FILE.write_text(json.dumps(asdict(brand), ensure_ascii=False, indent=1), encoding="utf-8")

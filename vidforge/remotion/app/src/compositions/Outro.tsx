@@ -20,7 +20,9 @@ export const Outro: React.FC<OutroProps> = ({
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const { width, height, scale, tall } = useLayout();
+  const { width, height, scale: base, tall } = useLayout();
+  // on a phone this is a full-screen moment with no window or subtitles around it: a size up
+  const scale = tall ? base * 1.45 : base;
   const t = mergeTheme(theme);
 
   const draw = spring({ frame, fps, config: { damping: 26, stiffness: 110 }, durationInFrames: Math.round(fps * 0.7) });

@@ -16,7 +16,9 @@ export type IntroProps = Base & {
 export const Intro: React.FC<IntroProps> = ({ name, slogan, enName, mark = "ticks", theme }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
-  const { height, scale } = useLayout();
+  const { height, scale: base, tall } = useLayout();
+  // on a phone this is a full-screen moment with no window or subtitles around it: a size up
+  const scale = tall ? base * 1.45 : base;
   const t = mergeTheme(theme);
 
   const draw = spring({ frame, fps, config: { damping: 26, stiffness: 120 }, durationInFrames: Math.round(fps * 0.5) });

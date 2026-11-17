@@ -493,6 +493,13 @@ def make_handler(state: State):
                     return self._json({"palettes": th.listing(), "current": raw.get("theme") or None,
                                        "frames": {k: list(v) for k, v in th.FRAMES.items()}, "frame": frame,
                                        "window": {"size": th.WINDOW_W, "height": th.WINDOW_H}})
+                if path == "/api/brand":
+                    return self._json(self.brand_view())
+                if path == "/api/brand/file":                 # the opener sound / end music, to listen to
+                    from .. import brand as kitmod
+                    kit = kitmod.load()
+                    f = {"sting": kit.sting, "outro_music": kit.outro_music}.get(q.get("kind", ""), "")
+                    return self._file(Path(f)) if f else self._error("not found", HTTPStatus.NOT_FOUND)
                 if path == "/api/platforms":
                     from .. import platforms
                     folder = state.build_dir(q.get("lang")) / "platforms"
@@ -816,6 +823,8 @@ def make_handler(state: State):
                             return self._error(e.args[0])
                     state.write_raw(raw, snapshot=True)
                     return self._json({"theme": raw.get("theme"), "subtitles": raw.get("subtitles")})
+                if path in ("/api/brand", "/api/brand/project", "/api/brand/sting", "/api/brand/preview", "/api/audio/upload"):
+                    return self.brand_post(path, body)
                 if path == "/api/platforms/export":
                     return self.platform_export(body)
                 if path == "/api/platforms/suggest":            # titles / description / tags by the local model
@@ -2147,6 +2156,100 @@ def make_handler(state: State):
                 state.enqueue_check(state.rel(dest))
             return self._json({"path": state.rel(dest), "credit": c.credit_line(), "duration": c.duration,
                                "kind": c.kind, "checking": checking})
+
+        # -- 片头片尾与音乐 --------------------------------------------------------------
+        # The channel's kit (name, slogan, opener, end card, their sounds) is one file for every
+        # video, ~/.vidforge/brand/brand.json; a project only says whether it uses the opener and
+        # the end card, and which background music it has.
+        _KIT_FIELDS = ("name", "slogan", "en_name", "mark", "accent", "bg", "fg", "intro", "outro",
+                       "intro_seconds", "outro_seconds", "subscribe", "next_hint")
+
+        def brand_view(self) -> dict:
+            from .. import brand as kitmod
+            from ..remotion import APP_DIR
+            kit = kitmod.load()
+            raw = state.read_raw() if state.has_project else {}
+            return {"kit": asdict(kit), "project": raw.get("brand") or {}, "bgm": raw.get("bgm"),
+                    "stings": list(kitmod.STINGS), "slogans": kitmod.suggest_slogans(kit.name),
+                    "has": {"sting": bool(kit.sting) and Path(kit.sting).is_file(),
+                            "outro_music": bool(kit.outro_music) and Path(kit.outro_music).is_file()},
+                    "remotion": (APP_DIR / "node_modules").exists(), "file": str(kitmod.BRAND_FILE)}
+
+        def brand_post(self, path: str, body: dict):
+            from .. import brand as kitmod
+            kit = kitmod.load()
+            if path == "/api/brand":
+                for k, v in (body.get("kit") or {}).items():
+                    if k in self._KIT_FIELDS:
+                        setattr(kit, k, type(getattr(kit, k))(v) if not isinstance(getattr(kit, k), bool) else bool(v))
+                if kit.name:
+                    kitmod.write_logos(kit)
+                kitmod.save(kit)
+                return self._json(self.brand_view())
+            if path == "/api/brand/project":
+                raw = state.read_raw()
+                # the two switches are sent whole each time: one left out means "as the channel does"
+                keep = {k: v for k, v in (raw.get("brand") or {}).items() if k not in ("intro", "outro")}
+                own = {**keep, **{k: bool(body[k]) for k in ("intro", "outro") if body.get(k) is not None}}
+                if own:
+                    raw["brand"] = own
+                else:
+                    raw.pop("brand", None)
+                state.write_raw(raw, snapshot=True)
+                return self._json(self.brand_view())
+            if path == "/api/brand/sting":
+                style = body.get("style") or "rise"
+                if style == "none":
+                    kit.sting = ""
+                else:
+                    try:
+                        kit.sting = str(kitmod.sting(kitmod.BRAND_DIR / f"sting-{style}.m4a", style=style))
+                    except kitmod.BrandError as e:
+                        return self._error(str(e))
+                kitmod.save(kit)
+                return self._json(self.brand_view())
+            if path == "/api/brand/preview":
+                if not kit.name:
+                    return self._error("先填频道名：片头片尾上写的就是它")
+                p = state.load(body.get("lang"))
+                kit = kitmod.for_project(kitmod.load(p.raw), p.theme)
+                out = state.build_dir(body.get("lang")) / "brand_preview"
+                try:
+                    opener = kitmod.with_audio(kitmod.render_opener(kit, out, p.width, p.height, p.fps, log=lambda *_: None),
+                                               Path(kit.sting) if kit.sting else None, out / "intro.mp4", kit.intro_seconds)
+                    endcard = kitmod.with_audio(kitmod.render_endcard(kit, out, p.width, p.height, p.fps, log=lambda *_: None),
+                                                Path(kit.outro_music) if kit.outro_music else None, out / "outro.mp4",
+                                                max(5.0, kit.outro_seconds))
+                except Exception as e:  # noqa: BLE001  no Node / Remotion, a bad logo: say which
+                    return self._error(f"预览没做出来：{e}")
+                return self._json({"intro": state.rel(opener), "outro": state.rel(endcard)})
+            # /api/audio/upload: the opener sound, the end-card music, or this video's background music
+            kind = body.get("kind")
+            if kind not in ("sting", "outro_music", "bgm"):
+                return self._error("kind 要是 sting / outro_music / bgm")
+            name = re.sub(r"[^A-Za-z0-9_.\-一-鿿]+", "_", body.get("name", "music.mp3"))
+            data = base64.b64decode(body.get("data_b64", ""))
+            if not data:
+                return self._error("empty file")
+            folder = (state.root / "assets" / "music") if kind == "bgm" else kitmod.BRAND_DIR
+            folder.mkdir(parents=True, exist_ok=True)
+            dest = folder / (name if kind == "bgm" else f"{kind}-{name}")
+            dest.write_bytes(data)
+            try:
+                seconds = ffmpeg.duration(dest)
+            except ffmpeg.FfmpegError:
+                dest.unlink(missing_ok=True)
+                return self._error(f"读不出这个音频：{name}（MP3 / M4A / WAV 都可以）")
+            if kind == "bgm":
+                raw = state.read_raw()
+                old = raw.get("bgm") or {}
+                raw["bgm"] = {"file": state.rel(dest), "volume_db": old.get("volume_db", -18),
+                              "fade_out": old.get("fade_out", 3), "duck": old.get("duck", True)}
+                state.write_raw(raw, snapshot=True)
+            else:
+                setattr(kit, kind, str(dest))
+                kitmod.save(kit)
+            return self._json({**self.brand_view(), "seconds": round(seconds, 2)})
 
         def upload_asset(self, body: dict):
             name = re.sub(r"[^A-Za-z0-9_.\-一-鿿]+", "_", body.get("name", "upload"))

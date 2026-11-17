@@ -8,6 +8,7 @@ import { PresenterCard } from './render/PresenterCard'
 import { RenderSettingsCard } from './render/RenderSettingsCard'
 import { ResultCard } from './render/ResultCard'
 import { SubtitleCard } from './render/SubtitleCard'
+import { BrandCard } from './render/BrandCard'
 
 export function RenderStep() {
   const { raw, reload } = useProject()
@@ -18,6 +19,7 @@ export function RenderStep() {
       <RetentionBanner />
       <ThemePicker />
       <SubtitleCard />
+      <BrandCard />
       <RenderSettingsCard />
       <LearningEditionCard />
       <PresenterCard />

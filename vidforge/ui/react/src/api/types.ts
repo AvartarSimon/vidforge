@@ -68,7 +68,7 @@ export interface RawProject {
   theme?: { palette?: string; badge?: string; side?: string }
   brand?: { accent?: string; [key: string]: unknown }
   transition?: number
-  bgm?: { file: string; volume_db?: number; fade_out?: number } | null
+  bgm?: { file: string; volume_db?: number; fade_out?: number; duck?: boolean } | null
   auto_title_cards?: boolean
   transition_sfx?: string // none | whoosh | tick (sfx.py)
   progress_bar?: boolean

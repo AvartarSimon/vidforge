@@ -562,7 +562,7 @@ def _with_brand(ctx, bd: Path, clips: list[Path]) -> tuple[list[Path], float, fl
     move with it or the whole video's captions run early."""
     from . import brand as brandkit
     p = ctx.project
-    kit = brandkit.load(p.raw)
+    kit = brandkit.for_project(brandkit.load(p.raw), p.theme)
     if not (kit.name and (kit.intro or kit.outro)):
         return clips, 0.0, 0.0
     folder = bd / "brand"

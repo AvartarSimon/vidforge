@@ -41,7 +41,7 @@ export function RenderSettingsCard() {
   return (
     <Card variant="outlined">
       <CardContent>
-        <PanelTitle icon={<TuneIcon />} tone="teal" title="渲染设置" sub="质量、转场、调色、音效、背景音乐" />
+        <PanelTitle icon={<TuneIcon />} tone="teal" title="渲染设置" sub="质量、转场、调色、音效、进度条" />
         <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
           <TextField
             select
@@ -131,19 +131,6 @@ export function RenderSettingsCard() {
               统一调色让它们看起来像同一条片子。
             </Typography>
           </Stack>
-          <TextField
-            size="small"
-            label="背景音乐"
-            value={raw.bgm?.file || ''}
-            onChange={(e) => {
-              const f = e.target.value.trim()
-              patch((r) => {
-                r.bgm = f ? { ...(r.bgm || {}), file: f, volume_db: r.bgm?.volume_db ?? -18, fade_out: r.bgm?.fade_out ?? 3 } : null
-              })
-            }}
-            placeholder="assets/bgm.mp3（留空则无）"
-            sx={{ minWidth: 220 }}
-          />
           <TextField
             select
             size="small"
