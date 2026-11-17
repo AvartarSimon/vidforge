@@ -284,6 +284,7 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
           return (
             <Box
               key={s.id}
+              data-seg={s.id}
               onClick={() => onSelect(s.id)}
               sx={{
                 display: 'flex',

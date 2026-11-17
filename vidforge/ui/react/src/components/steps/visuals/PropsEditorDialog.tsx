@@ -4,8 +4,8 @@ import CloseIcon from '@mui/icons-material/Close'
 import type { Clip } from '../../../api/types'
 
 // Remotion clip props vary entirely by composition (TitleCard: title/subtitle, Timeline:
-// title/events[], BarChart: title/items[]/source) — a JSON editor is the right fit here, same
-// as the old frontend's openProps(), rather than three bespoke structured forms.
+// title/events[], BarChart: title/items[]/source) — a JSON editor is the right fit here rather
+// than three bespoke structured forms.
 export function PropsEditorDialog({ clip, onClose, onSave }: { clip: Clip; onClose: () => void; onSave: (props: Record<string, unknown>) => void }) {
   const [text, setText] = useState(JSON.stringify(clip.remotion?.props || {}, null, 2))
   const [error, setError] = useState<string | null>(null)

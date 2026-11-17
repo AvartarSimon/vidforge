@@ -29,7 +29,7 @@ function categoryNote(categories: Category[], categoryId?: string | null) {
   return bits.length ? `\n\n分类「${c.name}」的设定（请遵守）：\n- ` + bits.join('\n- ') : ''
 }
 
-// same prompt template as the old vanilla-JS frontend's buildPrompt() (vidforge/ui/static/app.js)
+// the prompt the chosen AI site receives
 function buildPrompt(opts: {
   zh: boolean
   topic: string

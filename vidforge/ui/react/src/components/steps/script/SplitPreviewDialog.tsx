@@ -14,8 +14,7 @@ import CloseIcon from '@mui/icons-material/Close'
 import { useProject } from '../../../state/ProjectContext'
 import type { SplitSegment, Segment } from '../../../api/types'
 
-// estimate spoken duration: CJK text ~3.8 chars/sec, Latin text ~2.6 words/sec — same formula as
-// the old vanilla-JS frontend's split-preview (vidforge/ui/static/app.js).
+// estimate spoken duration: CJK text ~3.8 chars/sec, Latin text ~2.6 words/sec (tts/silent.py uses the same).
 function estSeconds(text: string) {
   const cjk = (text.match(/[一-鿿]/g) || []).length
   return cjk > text.length * 0.3 ? cjk / 3.8 : text.split(/\s+/).length / 2.6

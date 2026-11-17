@@ -1,6 +1,6 @@
 # 讲解类视频的规范（爆款研究 → 可核对清单）
 
-日期：2026-09-17 · 状态：**第一版基于既有公开研究与头部频道的公认做法**（Kurzgesagt、Veritasium、Kings and Generals、OverSimplified、Fall of Civilizations、History Matters、Vox、TED-Ed；中文：李永乐老师、回形针、小Lin说、观视频）。每条都写成可检查的规则，`vidforge/ui/static/best_practices.json` 是它的机读版，页面据此给出提示。
+日期：2026-09-17 · 状态：**第一版基于既有公开研究与头部频道的公认做法**（Kurzgesagt、Veritasium、Kings and Generals、OverSimplified、Fall of Civilizations、History Matters、Vox、TED-Ed；中文：李永乐老师、回形针、小Lin说、观视频）。每条都写成可检查的规则；能自动检查的部分已经落在 `structure.check()`（每次构建和界面里自动运行）。
 **待验证**：`tools/channel_study.py` 用 YouTube 数据把 20 个频道 × 前 5 条视频拉成 CSV 后，逐条核对这些阈值并修订。
 
 ## A. 平台与合规（先于一切）

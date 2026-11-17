@@ -1,4 +1,4 @@
-"""The default UI boots: index.html, its hashed bundle, and the legacy fallback at /old."""
+"""The UI boots: index.html and its hashed bundle; with no build, / says how to make one."""
 
 from __future__ import annotations
 
@@ -38,12 +38,11 @@ class ReactIsDefault(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}", timeout=10) as r:
             return r.status, r.headers.get("Content-Type", ""), r.read()
 
-    def test_root_serves_the_react_page_not_the_old_one(self):
+    def test_root_serves_the_built_page(self):
         status, ctype, body = self.get("/")
         self.assertEqual(status, 200)
         self.assertIn("text/html", ctype)
-        self.assertIn(b"/assets/", body)                 # the built bundle, not the inline old UI
-        self.assertNotIn(b"/static/app.js", body)
+        self.assertIn(b"/assets/", body)                 # the hashed bundle
 
     def test_the_hashed_bundle_is_reachable_and_is_javascript(self):
         _, _, body = self.get("/")
@@ -60,23 +59,35 @@ class ReactIsDefault(unittest.TestCase):
             self.get("/assets/../../../pyproject.toml")
         self.assertIn(cm.exception.code, (400, 403, 404))
 
-    def test_the_old_ui_is_still_reachable_as_a_fallback(self):
-        status, ctype, body = self.get("/old")
-        self.assertEqual(status, 200)
-        self.assertIn(b"/static/app.js", body)
-
     def test_health_reports_which_ui_is_live(self):
         _, _, body = self.get("/api/health")
         self.assertEqual(json.loads(body)["ui"], "react")
 
 
-class BuildFallback(unittest.TestCase):
-    def test_without_node_it_says_so_and_keeps_the_old_ui(self):
+class NotBuilt(unittest.TestCase):
+    def test_without_node_it_says_how_to_get_the_ui(self):
         lines = []
         with mock.patch.object(ui, "react_ready", return_value=False), \
                 mock.patch("shutil.which", return_value=None):
             self.assertFalse(ui.build_react(log=lines.append))
-        self.assertTrue(any("Node" in x for x in lines), lines)
+        self.assertTrue(any("install-mac.sh" in x for x in lines), lines)
+
+    def test_the_root_page_explains_instead_of_showing_an_older_ui(self):
+        td = Path(tempfile.mkdtemp())
+        try:
+            (td / "project.json").write_text(json.dumps({"title": "T", "segments": []}), encoding="utf-8")
+            httpd = ThreadingHTTPServer(("127.0.0.1", 0), ui.make_handler(ui.State(td / "project.json")))
+            threading.Thread(target=httpd.serve_forever, daemon=True).start()
+            try:
+                with mock.patch.object(ui, "react_ready", return_value=False):
+                    with urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_address[1]}/", timeout=10) as r:
+                        body = r.read().decode("utf-8")
+                self.assertIn("界面还没构建", body)
+                self.assertIn("npm run build", body)
+            finally:
+                httpd.shutdown(); httpd.server_close()
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
 
 
 if __name__ == "__main__":

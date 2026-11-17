@@ -18,7 +18,7 @@ import { apiGet, apiPost } from '../../../api/client'
 import type { VoiceOption } from '../../../api/types'
 import { fileUrl } from '../../../utils'
 
-// same region-name lookup as the old frontend's voice browser (vidforge/ui/static/app.js)
+// locale -> the place name shown beside a voice
 const REGION: Record<string, string> = {
   'en-US': '美国', 'en-GB': '英国（伦敦）', 'en-AU': '澳大利亚', 'en-NZ': '新西兰', 'en-IE': '爱尔兰',
   'en-CA': '加拿大', 'en-IN': '印度', 'en-ZA': '南非', 'en-SG': '新加坡', 'en-HK': '香港英语',

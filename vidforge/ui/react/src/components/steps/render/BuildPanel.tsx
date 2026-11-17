@@ -14,7 +14,7 @@ const STATE_COLOR: Record<string, 'default' | 'warning' | 'success' | 'error'> =
 }
 const PHASE_LABEL: Record<string, string> = { tts: '配音', assets: '取素材', remotion: '动画', render: '渲染', assemble: '合成' }
 
-// colour/label per log line, same classification as the old frontend's logLine() (app.js)
+// colour/label per log line
 function logLineClass(l: string): { emoji: string; text: string; color: string } {
   const t = l.replace(/^\[vidforge\] /, '')
   if (/^ERROR/.test(l) || /ERROR:/.test(l)) return { emoji: '✖', text: t, color: '#d14343' }

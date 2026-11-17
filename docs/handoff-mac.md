@@ -19,7 +19,7 @@ vidforge 是一个 **Python 包 + ffmpeg**，所有状态都是文件：
 | 密钥 | `.env`（仓库根或项目目录）：`PEXELS_API_KEY`、`PIXABAY_API_KEY`、`ELEVENLABS_API_KEY`、`SYNC_API_KEY` | ❌ 手动拷 |
 | 本地模型 | Ollama 自己管理 | ❌ 在 Mac 上重新 pull |
 
-所以"数据库/后端/前端"对应的是：**后端** = `vidforge ui` 这个 Python 进程（8765 端口，stdlib HTTP server）；**前端** = 它直接托管的 `vidforge/ui/static/`（双击启动器打开的就是这个）以及一个并行的 React 版（`vidforge/ui/react/`，开发时单独 `npm run dev`）。
+所以"数据库/后端/前端"对应的是：**后端** = `vidforge ui` 这个 Python 进程（8765 端口，stdlib HTTP server）；**前端** = `vidforge/ui/react/`（React + MUI），后端托管它构建出来的 `dist/`。（2026-11-17 起只有这一套；旧的 `ui/static/` 已删除。）
 
 ---
 
@@ -89,7 +89,7 @@ Mac 特有的行为：
 
 ### 第 1 步 脚本
 - 三种来路：手写/粘贴；「用我浏览器里的 AI 生成」（Playwright 在你登录过的 ChatGPT/Claude/DeepSeek/千问/Kimi… 网页里输入提示词、读回答，无 API key）；「复制提示词」到任意 AI 再贴回来。
-- 提示词模板在 `ui/static/app.js` 的 `buildPrompt()` 和 `ui/react/.../AiGeneratePanel.tsx`（两份必须同步）。**主题含中文即用中文提示**；要求单一语言（唯一允许英文的是"画面："行）、不要前言/备注/舞台提示/字数统计。
+- 提示词模板在 `ui/react/.../AiGeneratePanel.tsx` 的 `buildPrompt()`。**主题含中文即用中文提示**；要求单一语言（唯一允许英文的是"画面："行）、不要前言/备注/舞台提示/字数统计。
 - 分类（`categories.py`，`~/.vidforge/categories/`）：每个选题方向一套设定（定位、资料源、心得、禁词、平台限制），会拼进提示词。
 - `script_parser.parse()`：识别 `第N段`/`Chapter N:`/`##`/加粗标题/`画面：`/`旁白：`，丢掉 AI 寒暄、`注：`、整行括号舞台提示，去掉行内 `（注：…）` 和 `**`。`language_issues()` 标出中文项目里混入的英文句子，`/api/script/split` 返回 `issues`，前端提示。
 - 每段独立版本历史；整份项目 `.history/` 保 30 份。
@@ -121,7 +121,7 @@ Mac 特有的行为：
 
 ## 5. 已知问题 / 未做的事
 
-- **两套前端并存**：`ui/static/app.js`（启动器打开的）和 `ui/react/`。每个 UI 改动要改两处；长期应让 React 版取代旧版并由后端托管 `dist/`（目前后端不托管 dist）。
+- ~~两套前端并存~~：2026-10-01 React 版成为默认，2026-11-17 旧界面删除，只剩 `ui/react/`。
 - 视觉核对在无独显机器上每张约 1 分钟（Windows 那台是 Intel Ultra 5 125U，CPU 推理）；Mac 上应快很多，可以考虑把"手选图"的核对改回同步。
 - 小模型（qwen2.5:3b）偶尔给出句子式或夹中文的搜索词，已做过滤/回退，但历史类冷门条目的命中率仍靠 Commons 标题质量；`relevant()` 的 60% 阈值可调。
 - `examples/demo/project.json` 常有本地改动未提交（demo 被当试验田）；`examples/demo/.history/` 未加入 `.gitignore`（可以加）。

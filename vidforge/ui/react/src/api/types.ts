@@ -1,5 +1,5 @@
-// Shapes mirror vidforge/ui/__init__.py's JSON responses (see project_view()) and
-// vidforge/ui/static/app.js's usage of them — kept intentionally loose (most fields optional)
+// Shapes mirror vidforge/ui/__init__.py's JSON responses (see project_view()) — kept
+// intentionally loose (most fields optional)
 // since the Python side is a dynamically-typed dict, not a schema.
 
 export interface Clip {

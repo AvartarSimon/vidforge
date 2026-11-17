@@ -47,7 +47,6 @@ from .. import env, ffmpeg, keywords, pipeline, project as proj, script_parser
 from ..assets import is_cjk as llm_is_cjk
 from ..tts.silent import estimate_seconds
 
-STATIC = Path(__file__).resolve().parent / "static"          # the original UI, kept as a fallback
 REACT_DIST = Path(__file__).resolve().parent / "react" / "dist"
 REACT_SRC = Path(__file__).resolve().parent / "react"
 # streaming WASM compilation insists on this exact type; Python before 3.12 does not know it
@@ -60,15 +59,12 @@ def react_ready() -> bool:
 
 
 def build_react(log=print) -> bool:
-    """Build the React UI once, if Node is available.
-
-    The React UI is the one that is maintained; the old static page only survives as a fallback
-    for a machine with no Node. Building here means a fresh clone opens the real UI on the first
-    double-click instead of a page missing half the features."""
+    """Build the React UI once, if Node is available — a fresh clone then opens the UI on the first
+    double-click. Without Node there is no UI to serve, and the page at / says how to get one."""
     if react_ready():
         return True
     if not shutil.which("npm"):
-        log("[vidforge] 没装 Node.js，暂时使用旧界面。装了 Node 之后重启即可切到新界面。")
+        log("[vidforge] 没装 Node.js，界面还没法构建。Mac 上运行一次 ./install-mac.sh（会装好 Node 并构建界面），然后重启。")
         return False
     log("[vidforge] 第一次启动：正在构建界面（约 1 分钟，只此一次）…")
     try:
@@ -76,10 +72,21 @@ def build_react(log=print) -> bool:
             subprocess.run(["npm", "install"], cwd=REACT_SRC, check=True, shell=(os.name == "nt"))
         subprocess.run(["npm", "run", "build"], cwd=REACT_SRC, check=True, shell=(os.name == "nt"))
     except (OSError, subprocess.SubprocessError) as e:
-        log(f"[vidforge] 界面构建失败（{e}），暂时使用旧界面。")
+        log(f"[vidforge] 界面构建失败（{e}）。可以在 vidforge/ui/react 里手动运行 npm install && npm run build 看具体原因。")
         return False
     return react_ready()
 
+
+# What / shows when the UI has not been built: one page that says how to get it, in the user's
+# language. The /api/* routes work regardless.
+NOT_BUILT = """<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>vidforge</title>
+<style>body{font:16px/1.7 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;max-width:640px;margin:12vh auto;padding:0 20px;color:#1f2a30}
+code{background:#f1f3f4;padding:2px 6px;border-radius:4px}</style></head><body>
+<h2>界面还没构建</h2>
+<p>vidforge 的界面需要 Node.js 构建一次（约 1 分钟，以后不用再构建）。</p>
+<p><b>Mac：</b>在 vidforge 文件夹里运行 <code>./install-mac.sh</code>，它会装好 Node 并构建界面，然后重新打开 vidforge。</p>
+<p><b>手动：</b>装好 Node.js 后，在 <code>vidforge/ui/react</code> 里运行 <code>npm install</code> 和 <code>npm run build</code>。</p>
+</body></html>"""
 
 CONFIG_DIR = Path.home() / ".vidforge"
 RECENT = CONFIG_DIR / "recent.json"
@@ -304,6 +311,15 @@ def make_handler(state: State):
             self.end_headers()
             self.wfile.write(body)
 
+        def _html(self, text: str):
+            body = text.encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
         def _error(self, msg, status=HTTPStatus.BAD_REQUEST, **extra):
             self._json({"error": msg, **extra}, status)
 
@@ -360,18 +376,15 @@ def make_handler(state: State):
             path = url.path
             try:
                 if path in ("/", "/index.html"):
-                    return self._file(REACT_DIST / "index.html" if react_ready() else STATIC / "index.html")
+                    if not react_ready():
+                        return self._html(NOT_BUILT)
+                    return self._file(REACT_DIST / "index.html")
                 if path.startswith("/assets/") and react_ready():
                     p = (REACT_DIST / path.lstrip("/")).resolve()      # dist/assets/<hashed>.js
                     return (self._file(p) if str(p).startswith(str(REACT_DIST.resolve()))
                             else self._error("forbidden", HTTPStatus.FORBIDDEN))
                 if path == "/favicon.svg" and react_ready():
                     return self._file(REACT_DIST / "favicon.svg")
-                if path == "/old":                       # the previous UI, still reachable on purpose
-                    return self._file(STATIC / "index.html")
-                if path.startswith("/static/"):
-                    p = (STATIC / path[len("/static/"):]).resolve()
-                    return self._file(p) if str(p).startswith(str(STATIC)) else self._error("forbidden", HTTPStatus.FORBIDDEN)
                 if path.startswith("/files/"):
                     p = self._safe_path(path[len("/files/"):])
                     return self._file(p) if p else self._error("forbidden", HTTPStatus.FORBIDDEN)
@@ -961,7 +974,7 @@ def make_handler(state: State):
                 "ffmpeg": {"ok": ff_ok, "path": ff}, "encoder": enc, "encoders": ["libx264", *hw],
                 "node": bool(shutil.which("node")), "remotion": (APP_DIR / "node_modules").exists(),
                 "stamp": STAMP, "busy": state.busy, "idle_exit_min": State.IDLE_EXIT_MIN,
-                "ui": "react" if react_ready() else "legacy",
+                "ui": "react" if react_ready() else "not-built",
                 "keys": {k: bool(os.environ.get(k)) for k in env.KEYS},
                 "youtube_secret": (Path.home() / ".vidforge" / "client_secret.json").exists()
                                   or bool(os.environ.get("YOUTUBE_CLIENT_SECRET")),
@@ -2269,7 +2282,7 @@ def _wait_gone(port: int, seconds: float = 10.0) -> bool:
 def _replace_stale(port: int) -> bool:
     """Make room for this (newer) copy when an older vidforge holds the port; True once it is free.
 
-    Why bother: a server keeps the Python it imported at startup but serves ui/static/* from disk
+    Why bother: a server keeps the Python it imported at startup but serves ui/react/dist from disk
     on every request — so an instance started before an update hands the browser the *new* page
     while still answering the *old* routes, and the user sees "not found" on a feature that is
     right there in the UI. First ask it to quit (POST /api/shutdown); builds older than that
@@ -2382,7 +2395,7 @@ def serve(project: str | Path | None, port: int = 8765, open_browser: bool = Tru
 
     threading.Thread(target=awake_watch, daemon=True).start()
     url = f"http://127.0.0.1:{port}/"
-    which = "新界面" if react_ready() else "旧界面（装 Node.js 后重启可切到新界面）"
+    which = "" if react_ready() else "界面还没构建（见浏览器里的说明）"
     print(f"vidforge ui · {project_path or 'project picker'}\n  {url}   {which}   (Ctrl+C to stop)")
     if open_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()

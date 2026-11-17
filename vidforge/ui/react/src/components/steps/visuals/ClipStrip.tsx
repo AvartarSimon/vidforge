@@ -233,6 +233,7 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
                       size="small"
                       type="number"
                       placeholder="自适应"
+                      slotProps={{ htmlInput: { 'aria-label': '停留秒数' } }}
                       value={c.duration ?? ''}
                       onChange={(e) => setDuration(i, e.target.value)}
                     />

@@ -3,10 +3,9 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import type { RawProject } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
 
-// bilingual subtitles + a vocab outro, for a channel's English-learning cut. Building the actual
-// per-language text (text_zh etc.) still happens in the old frontend's language switcher — this
-// card only toggles the render-time settings and can create the en-zh variant scaffold, same as
-// vidforge/ui/static/app.js's viewRender() "学习版" section.
+// bilingual subtitles + a vocab outro, for a channel's English-learning cut. The per-language text
+// (text_zh etc.) is edited by switching language in the top bar; this card toggles the render-time
+// settings and can create the en-zh variant scaffold.
 export function LearningEditionCard() {
   const { raw, patch } = useProject()
   if (!raw) return null

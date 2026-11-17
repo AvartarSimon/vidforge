@@ -50,7 +50,7 @@ export function SearchTab({ seg, segId, kind, onAdded }: { seg: Segment; segId: 
   }, 0)
 
   // reset the search box (but not source, that's a sticky preference) whenever the selected
-  // segment changes — mirrors the old frontend's picker.cands = [] on storyboard click
+  // segment changes
   useEffect(() => {
     setCands([])
     setError(null)

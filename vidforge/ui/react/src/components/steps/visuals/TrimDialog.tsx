@@ -19,7 +19,6 @@ export interface TrimRange {
 }
 
 // one or more [in,out] ranges over a preview player; each range becomes its own clip on "加入".
-// Mirrors vidforge/ui/static/app.js's openTrim() — same range-list + two-thumb-slider approach.
 export function TrimDialog({
   open,
   url,

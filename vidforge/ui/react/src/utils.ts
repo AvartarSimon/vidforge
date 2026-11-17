@@ -1,13 +1,11 @@
-// small helpers shared across step components — mirrors the equivalent one-liners in
-// vidforge/ui/static/app.js so behaviour matches the old frontend exactly.
+// small helpers shared across step components.
 
 import { apiGet } from './api/client'
 import type { ChatLoginStatus, Clip, RawProject, Segment } from './api/types'
 
 // Older/hand-written project.json files (and vidforge's own `demo`/`init` templates) may still
 // use the pre-`clips[]` single-visual shape: {image|video|remotion, motion} directly on the
-// segment. Every component here assumes `segment.clips` is always an array — migrate in place,
-// same as the old frontend's normalizeSeg()/segClips() in vidforge/ui/static/app.js.
+// segment. Every component here assumes `segment.clips` is always an array — migrate in place.
 export function normalizeSegments(raw: RawProject): void {
   for (const s of raw.segments) {
     if (Array.isArray(s.clips)) continue

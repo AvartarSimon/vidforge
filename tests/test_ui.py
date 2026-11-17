@@ -69,10 +69,13 @@ class UiApi(unittest.TestCase):
         self.assertEqual(st, 400)
         self.assertIn("本地模型", j.get("error", ""))
 
-    def test_static_files(self):
-        for path in ("/", "/static/app.js", "/static/style.css"):
-            with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}") as r:
-                self.assertEqual(r.status, 200, path)
+    def test_root_answers_and_the_old_page_is_gone(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r:
+            self.assertEqual(r.status, 200)
+            self.assertIn("text/html", r.headers.get("Content-Type", ""))
+        for path in ("/old", "/static/app.js"):
+            with self.assertRaises(urllib.error.HTTPError, msg=path):
+                urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}")
 
     def test_project_view_has_clips_need_and_keywords(self):
         st, j = self.call("/api/project")

@@ -176,7 +176,7 @@
 
 | 功能 | 状态 | 怎么实现的 |
 |---|---|---|
-| **Web 界面** | ✅ | 后端 [`ui/__init__.py`](../vidforge/ui/__init__.py) 是 **stdlib `ThreadingHTTPServer`**（不是 Flask/FastAPI——少一个依赖），端口 8765。前端 `ui/react/`（Vite + MUI），后端在 `/` 直接服务 `dist/`，首次启动自动构建一次。旧的 vanilla 界面冻结在 `/old`，只作没装 Node 时的兜底 |
+| **Web 界面** | ✅ | 后端 [`ui/__init__.py`](../vidforge/ui/__init__.py) 是 **stdlib `ThreadingHTTPServer`**（不是 Flask/FastAPI——少一个依赖），端口 8765。前端 `ui/react/`（Vite + MUI），后端在 `/` 直接服务 `dist/`，首次启动自动构建一次；没装 Node 时 `/` 是一页说明。旧的 vanilla 界面（`ui/static/`、`/old`）2026-11-17 已删除，它独有的语言版本切换搬到了 React 顶栏 |
 | **五步向导 + 三个素材页** | ✅ | 步骤 = 流程（脚本→配音→画面→渲染→发布）；左侧「视频 / 声音 / 图片」= 素材中心页 |
 | **陈旧进程自动替换** | ✅ | `STAMP` = 代码 mtime，`/api/health` 带上它；启动时发现在跑的是旧版就 `POST /api/shutdown`（不行就按 PID 杀）。**这个 bug 真实咬过两次**：旧后端配新前端 JS，一键配图直接报 not found |
 | **历史版本** | ✅ | 每次写 `project.json` 存一份到 `.history/`，界面里能翻回去 |
