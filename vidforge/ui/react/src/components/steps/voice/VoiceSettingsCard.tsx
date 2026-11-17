@@ -27,15 +27,17 @@ export function VoiceSettingsCard({
   onAllProgress: (text: string) => void
   onAllDone: () => void
 }) {
-  const { raw, patch, reload, saveNow } = useProject()
+  const { raw, patch, reload, saveNow, lang } = useProject()
   const [browserOpen, setBrowserOpen] = useState(false)
   const [designOpen, setDesignOpen] = useState(false)
   const [busyAll, setBusyAll] = useState(false)
 
   if (!raw) return null
   const provider = raw.tts?.provider || 'edge'
-  const voice = raw.voice || ''
-  const rate = parseInt(raw.rate || '+0%', 10) || 0
+  // a language variant has its own voice and pace (variants[lang]), falling back to the original's
+  const own = (lang ? raw.variants?.[lang] : undefined) as { voice?: string; rate?: string } | undefined
+  const voice = own?.voice || raw.voice || ''
+  const rate = parseInt(own?.rate || raw.rate || '+0%', 10) || 0
   const segments = raw.segments || []
   const lipsync = raw.lipsync || 'none'
 
@@ -46,13 +48,20 @@ export function VoiceSettingsCard({
       r.tts = r.tts || {}
       r.tts.provider = v
     })
+  // where a voice setting goes: the variant's own block when one is being edited
+  const target = (r: typeof raw) => {
+    if (!lang) return r as { voice?: string; rate?: string }
+    r.variants = r.variants || {}
+    r.variants[lang] = r.variants[lang] || {}
+    return r.variants[lang] as { voice?: string; rate?: string }
+  }
   const setVoice = (v: string) =>
     patch((r) => {
-      r.voice = v
+      target(r).voice = v
     })
   const setRate = (v: number) =>
     patch((r) => {
-      r.rate = `${v >= 0 ? '+' : ''}${v}%`
+      target(r).rate = `${v >= 0 ? '+' : ''}${v}%`
     })
 
   const ttsFirst = async () => {

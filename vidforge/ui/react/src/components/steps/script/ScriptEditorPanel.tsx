@@ -25,12 +25,16 @@ function newId(segments: Segment[]) {
 }
 
 export function ScriptEditorPanel() {
-  const { raw, patch } = useProject()
+  const { raw, patch, lang } = useProject()
   const [historyFor, setHistoryFor] = useState<string | null>(null)
   if (!raw) return null
   const segments = raw.segments || []
+  // on a language variant the same fields are text_<lang> / label_<lang>; the original text stays
+  // visible as the placeholder, which is what a translator works from
+  const textKey = lang ? `text_${lang}` : 'text'
+  const labelKey = lang ? `label_${lang}` : 'label'
 
-  const updateSegment = (i: number, key: 'id' | 'label' | 'text', value: string) => {
+  const updateSegment = (i: number, key: string, value: string) => {
     patch((r) => {
       const s = r.segments[i] as Segment
       if (key === 'id') {
@@ -40,7 +44,7 @@ export function ScriptEditorPanel() {
         return
       }
       if (value === '') delete s[key]
-      else s[key] = value
+      else (s as Record<string, unknown>)[key] = value
     })
   }
 
@@ -94,20 +98,22 @@ export function ScriptEditorPanel() {
               />
               <TextField
                 size="small"
-                label="章节名（可选）"
-                value={s.label || ''}
-                onChange={(e) => updateSegment(i, 'label', e.target.value)}
+                label={lang ? `章节名（${lang}）` : '章节名（可选）'}
+                value={String(s[labelKey] || '')}
+                placeholder={lang ? s.label || '' : undefined}
+                onChange={(e) => updateSegment(i, labelKey, e.target.value)}
                 sx={{ width: 160, flexShrink: 0 }}
               />
               <TextField
                 size="small"
-                label="旁白"
-                value={s.text || ''}
-                onChange={(e) => updateSegment(i, 'text', e.target.value)}
+                label={lang ? `旁白（${lang}）` : '旁白'}
+                value={String(s[textKey] || '')}
+                placeholder={lang ? s.text || '' : undefined}
+                onChange={(e) => updateSegment(i, textKey, e.target.value)}
                 multiline
                 minRows={2}
                 fullWidth
-                error={!(s.text || '').trim()}
+                error={!String(s[textKey] || '').trim()}
               />
               <Stack spacing={0.5}>
                 <IconButton size="small" disabled={i === 0} onClick={() => move(i, -1)}>

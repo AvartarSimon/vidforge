@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import { apiGet, apiPost } from '../api/client'
+import { apiGet, apiPost, setApiLang } from '../api/client'
 import type { ProjectView, RawProject } from '../api/types'
 import { normalizeSegments } from '../utils'
 
@@ -16,11 +16,24 @@ interface ProjectContextValue {
   markDirty: () => void
   patch: (fn: (raw: RawProject) => void) => void
   saveNow: (snapshot?: boolean) => Promise<boolean>
+  /** the language variant being edited; null = the project's own language */
+  lang: string | null
+  setLang: (lang: string | null) => void
 }
 
 const ProjectContext = createContext<ProjectContextValue | null>(null)
 
 const SAVE_DEBOUNCE_MS = 700
+
+// the variant lives in the URL (?lang=en-zh) so a reload or a bookmark opens the same one
+function langFromUrl(): string | null {
+  try {
+    return new URLSearchParams(window.location.search).get('lang')
+  } catch {
+    return null
+  }
+}
+setApiLang(langFromUrl())
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<ProjectView | null>(null)
@@ -29,6 +42,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<SaveState>('saved')
   const [savedAt, setSavedAt] = useState<Date | null>(null)
+  const [lang, setLangState] = useState<string | null>(langFromUrl())
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const rawRef = useRef<RawProject | null>(null)
   rawRef.current = raw
@@ -88,13 +102,29 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     reload()
   }, [reload])
 
+  const setLang = useCallback(
+    async (next: string | null) => {
+      if (saveTimer.current) await save()          // an edit made in the old language lands first
+      const base = view?.base_lang
+      const value = next && next !== base ? next : null
+      setApiLang(value)
+      setLangState(value)
+      const url = new URL(window.location.href)
+      if (value) url.searchParams.set('lang', value)
+      else url.searchParams.delete('lang')
+      window.history.replaceState(null, '', url)
+      await reload()
+    },
+    [reload, save, view?.base_lang],
+  )
+
   const markDirty = useCallback(() => {
     setSaveState('dirty')
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(save, SAVE_DEBOUNCE_MS)
   }, [save])
 
-  // mutate raw in place (mirrors the old app's direct-mutation style) then trigger a re-render + autosave.
+  // mutate raw in place, then trigger a re-render + autosave.
   // The mutation happens directly on rawRef.current, so if fn() throws partway through, whatever
   // it already changed is real — surfacing the error AND still committing that partial state (via
   // setRaw + markDirty) beats silently discarding it or leaving the UI showing stale data.
@@ -116,7 +146,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
 
   return (
     <ProjectContext.Provider
-      value={{ view, raw, loading, error, saveState, savedAt, reload, markDirty, patch, saveNow: save }}
+      value={{ view, raw, loading, error, saveState, savedAt, reload, markDirty, patch, saveNow: save, lang, setLang }}
     >
       {children}
     </ProjectContext.Provider>

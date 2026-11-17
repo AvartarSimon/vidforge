@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Avatar, Box, Button, ButtonBase, Stack, Typography } from '@mui/material'
+import { Avatar, Box, Button, ButtonBase, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import IosShareIcon from '@mui/icons-material/IosShare'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useProject } from '../../state/ProjectContext'
@@ -20,7 +20,7 @@ const SAVE_LABEL: Record<string, string> = {
  * finished video and to 渲染 when there is not.
  */
 export function TopBar({ step, inWizard, onStep }: { step: number; inWizard: boolean; onStep: (n: number) => void }) {
-  const { raw, view, saveState, savedAt } = useProject()
+  const { raw, view, saveState, savedAt, lang, setLang } = useProject()
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const title = raw?.title || (view?.root ? view.root.split(/[\\/]/).pop() : null) || '未打开项目'
   const hasFinal = Boolean(view?.outputs?.final)
@@ -93,6 +93,23 @@ export function TopBar({ step, inWizard, onStep }: { step: number; inWizard: boo
         })}
       </Stack>
 
+      {raw && view && view.langs?.length > 1 && (
+        // a project with language variants: which one the steps edit, voice and render
+        <TextField
+          select
+          size="small"
+          value={lang || view.base_lang}
+          onChange={(e) => setLang(e.target.value)}
+          title="编辑哪个语言版本（project.json 的 variants）"
+          sx={{ '& .MuiInputBase-input': { py: 0.5, fontSize: 13 } }}
+        >
+          {view.langs.map((l) => (
+            <MenuItem key={l} value={l}>
+              {l === view.base_lang ? `${l}（原版）` : l}
+            </MenuItem>
+          ))}
+        </TextField>
+      )}
       {raw && (
         <Typography variant="caption" sx={{ color: saveState === 'error' ? 'error.main' : saveState === 'dirty' ? 'warning.main' : 'text.secondary', whiteSpace: 'nowrap' }}>
           {SAVE_LABEL[saveState]}
