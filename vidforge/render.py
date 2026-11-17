@@ -612,6 +612,19 @@ def finalize(project: Project, merged: Path, srt: Path | None, total: float, out
                        f"fade=t=out:st={end - 0.3:.3f}:d=0.3:alpha=1[hk];"
                        f"{vin}[hk]overlay={x}:{y}:eof_action=pass[hv]")
         vin, n_in = "[hv]", n_in + 1
+    if project.progress_bar:
+        from . import brand as brandkit, theme as th
+        # the template's darker strong colour, as the charts use: its yellow accent is for words
+        # inside the subtitle box and vanishes against the pale pages
+        colour = (th.graphics_theme(project.theme)["accent"] if project.theme
+                  else brandkit.load(project.raw).accent).lstrip("#")
+        # thin enough to read as chrome, not content; the platforms' own scrubber sits along the
+        # bottom of an upright video, so there it goes to the top
+        bh = max(4, round(project.height * 0.006))
+        y = round(project.height * 0.002) if project.height > project.width else project.height - bh
+        args += ["-f", "lavfi", "-i", f"color=c=0x{colour}:s={project.width}x{bh}:r={project.fps}:d={total:.3f}"]
+        filters.append(f"{vin}[{n_in}:v]overlay=x='-w+w*t/{total:.3f}':y={y}:eof_action=pass[pb]")
+        vin, n_in = "[pb]", n_in + 1
     audio_in = n_in
     if srt is not None and project.subtitles.burn and not ffmpeg.has_filter("subtitles"):
         # an ffmpeg without libass cannot burn anything; a finished video with the .srt beside it

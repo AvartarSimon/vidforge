@@ -252,6 +252,7 @@ class Project:
     presenter: PresenterConfig = field(default_factory=PresenterConfig)
     outro_vocab: int = 0             # learner edition: append a vocabulary card with N words (0 = off)
     punch_in: bool = False           # talking-head takes cut between a wide and a tight shot at sentence breaks
+    progress_bar: bool = False       # a thin bar filling across the video (top when upright, bottom when wide)
     transition_sfx: str = "none"     # sfx.py: none | whoosh | tick at every segment boundary
     lipsync: str = "none"            # none | synclabs | musetalk — for `me` takes with talking=true
     category: str | None = None      # id of the vidforge/categories.py preset this project was created from (reference only)
@@ -609,6 +610,7 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         auto_title_cards=bool(data.get("auto_title_cards", False)),
         outro_vocab=int(data.get("outro_vocab", 0) or 0),
         punch_in=bool(data.get("punch_in", False)),
+        progress_bar=bool(data.get("progress_bar", False)),
         transition_sfx=_transition_sfx(data.get("transition_sfx", "none")),
         lipsync=str(data.get("lipsync", "none")),
         category=data.get("category"),

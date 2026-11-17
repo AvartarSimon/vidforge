@@ -145,6 +145,7 @@
 | **并行段渲染** | ✅ | `_stage_render` 多 worker |
 | **字幕** | ✅ | [`subtitles.py`](../vidforge/subtitles.py) — SRT + ASS。`write_ass()` 支持 `none`/`keywords`/`karaoke`/`word`（逐词：正在说的词变色放大 112%，竖屏模板默认）四种高亮；**数字和关键词自动高亮**；双语字幕；可选烧入。⚠ 实测烧字幕从 45s 涨到 89s，**瓶颈是字幕滤镜本身，不是编码器** |
 | **AI 标题 / 简介 / 话题** | ✅ | [`platforms.py`](../vidforge/platforms.py) `suggest_text()` — 本地模型（Ollama）从旁白写 5 个标题、一段简介、5 个话题，按项目语言写。标题里出现旁白没有的数字（阿拉伯或中文数字都查，`cn_number()`）就整条去掉；话题太长不截断而是不要。发布页点一下才用，不会自动写进项目。`/api/platforms/suggest` |
+| **进度条** | ✅ | [`render.py`](../vidforge/render.py) `finalize` — `progress_bar: true`，高 0.6% 的强调色细条随时间从左长到右；横屏在底边，竖屏在顶边（抖音/快手自己的进度条在底部）。和角标、开场大字一样在最后一遍叠加 |
 | **转场音效** | ✅ | [`sfx.py`](../vidforge/sfx.py) — `transition_sfx: whoosh|tick`，每两段交接处一声，ffmpeg 用噪声/正弦现合成（没有授权问题，也不会被平台的音频指纹匹配到），峰值约 -20 dBFS，压在 -16 LUFS 的旁白下面；在 BGM 闪避之后混入，不会把音乐压下去 |
 | **口播推近** | ✅ | [`render.py`](../vidforge/render.py) `punch_windows()` — `punch_in: true` 时，真人镜头（录制棚 takes/、我的镜头）在旁白的句间停顿处全景/近景（115%，裁切点略偏上，脸在上半部）交替；短于 1.5 秒的不切，没有句读的长镜头每 4 秒换一次。只换画面不动声音 |
 | **开场大字** | ✅ | [`hook.py`](../vidforge/hook.py) — `project.json` 的 `hook.text` 在旁白开始时压在画面中上部 `hook.seconds`（默认 3，1–6）秒，淡入淡出。PIL 画成图片在 `render.finalize` 里叠加（和系列角标一样），不需要 libass 或 Remotion；叠加而不是插标题卡，第一句旁白不往后推。文字只用用户写的 |

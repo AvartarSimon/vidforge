@@ -154,6 +154,18 @@ export function RenderSettingsCard() {
           <TextField
             select
             size="small"
+            label="进度条"
+            value={raw.progress_bar ? 'true' : 'false'}
+            onChange={(e) => patch((r) => (r.progress_bar = e.target.value === 'true'))}
+            sx={{ minWidth: 200 }}
+            helperText="横屏在底边，竖屏在顶边"
+          >
+            <MenuItem value="false">不加</MenuItem>
+            <MenuItem value="true">加一条细进度条</MenuItem>
+          </TextField>
+          <TextField
+            select
+            size="small"
             label="转场音效"
             value={raw.transition_sfx ?? 'none'}
             onChange={(e) => patch((r) => (r.transition_sfx = e.target.value))}
