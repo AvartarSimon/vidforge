@@ -154,6 +154,18 @@ export function RenderSettingsCard() {
           <TextField
             select
             size="small"
+            label="口播镜头推近"
+            value={raw.punch_in ? 'true' : 'false'}
+            onChange={(e) => patch((r) => (r.punch_in = e.target.value === 'true'))}
+            sx={{ minWidth: 260 }}
+            helperText="只对录制棚和「我的镜头」里的真人镜头"
+          >
+            <MenuItem value="false">不推近</MenuItem>
+            <MenuItem value="true">每句话在全景和近景之间切换</MenuItem>
+          </TextField>
+          <TextField
+            select
+            size="small"
             label="旁白响度归一"
             value={raw.normalize_audio === false ? 'false' : 'true'}
             onChange={(e) => patch((r) => (r.normalize_audio = e.target.value === 'true'))}

@@ -417,10 +417,19 @@ def _segment_key(project: Project, seg: Segment, audio: Path, encoder: str) -> s
     # segment fade did exactly that)
     settings = [project.width, project.height, project.fps, project.quality, encoder, project.motion_amount,
                 project.effective_supersample, project.transition, project.transition_style, project.segment_fade,
-                project.look, project.look_strength, project.normalize_audio,
+                project.look, project.look_strength, project.punch_in, project.normalize_audio,
                 project.voice_fx, project.voice_pitch, project.presenter.provider]
     blob = json.dumps([enc(seg), enc(audio), settings], sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:10]
+
+
+def _sentence_breaks(words) -> list[float]:
+    """Mid-pause after every clause mark in the narration: where a cut between shots lands unseen."""
+    out = []
+    for w, nxt in zip(words, words[1:]):
+        if w.break_after:
+            out.append(round((w.end + nxt.start) / 2, 3))
+    return out
 
 
 def _stage_render(ctx: _Ctx) -> None:
@@ -438,7 +447,8 @@ def _stage_render(ctx: _Ctx) -> None:
                 return seg.id, clip, ffmpeg.duration(clip), True
             except ffmpeg.FfmpegError:
                 clip.unlink(missing_ok=True)
-        dur = render.render_segment(p, seg, ctx.audio[seg.id], clip, encoder=ctx.encoder)
+        dur = render.render_segment(p, seg, ctx.audio[seg.id], clip, encoder=ctx.encoder,
+                                    beats=_sentence_breaks(ctx.words.get(seg.id) or []))
         siblings = sorted((ctx.bd / "clips").glob(f"{_safe(seg.id)}.*.mp4"), key=lambda f: f.stat().st_mtime)
         for old in siblings[:-5]:
             old.unlink(missing_ok=True)

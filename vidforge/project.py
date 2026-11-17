@@ -251,6 +251,7 @@ class Project:
     auto_title_cards: bool = False   # prepend a 3 s TitleCard to every segment that has a label (needs Remotion)
     presenter: PresenterConfig = field(default_factory=PresenterConfig)
     outro_vocab: int = 0             # learner edition: append a vocabulary card with N words (0 = off)
+    punch_in: bool = False           # talking-head takes cut between a wide and a tight shot at sentence breaks
     lipsync: str = "none"            # none | synclabs | musetalk — for `me` takes with talking=true
     category: str | None = None      # id of the vidforge/categories.py preset this project was created from (reference only)
     normalize_audio: bool = True     # loudnorm the narration to -16 LUFS so every segment/provider sounds alike
@@ -598,6 +599,7 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         look_strength=float(data.get("look_strength", 1.0)),
         auto_title_cards=bool(data.get("auto_title_cards", False)),
         outro_vocab=int(data.get("outro_vocab", 0) or 0),
+        punch_in=bool(data.get("punch_in", False)),
         lipsync=str(data.get("lipsync", "none")),
         category=data.get("category"),
         presenter=pres,

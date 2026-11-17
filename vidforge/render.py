@@ -12,7 +12,7 @@ cut render time 3–6x on long videos; libx264 stays the default when none is pr
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
@@ -86,9 +86,43 @@ class PlannedClip:
     seconds: float
     loop: bool = False       # video shorter than `seconds`: loop it
     hold: float = 0.0        # ...or, when only a little short, freeze the last frame this long
+    punch: list[tuple[float, float]] = field(default_factory=list)   # tight-shot windows, clip seconds
 
 
 HOLD_MAX = 1.5               # seconds a video may fall short and still be held rather than looped
+
+# 口播推近: a single locked-off camera on one face for a minute is what makes a talking-head video
+# feel long. Editors cut between a wide and a tighter framing of the same take at sentence breaks
+# (剪映 "智能推近", Descript/Opus "auto zoom"); 115 % reads as a second camera without the jump in
+# resolution showing on a 1080p take.
+PUNCH = 1.15
+PUNCH_MIN = 1.5              # seconds: a shot shorter than this flickers rather than cuts
+
+
+def is_talking_head(c: Clip) -> bool:
+    """A take of the presenter, not stock footage: the footage library or a studio take."""
+    if c.me is not None:
+        return True
+    if c.video is None:
+        return False
+    parts = Path(c.video).parts
+    return "takes" in parts or (".vidforge" in parts and "me" in parts)
+
+
+def punch_windows(beats: list[float], seconds: float) -> list[tuple[float, float]]:
+    """Every other sentence in the tight shot. `beats` are sentence breaks in clip seconds; breaks
+    too close to the last cut (or to the end) are skipped. Without breaks, a long take still
+    changes shot every few seconds."""
+    cuts: list[float] = []
+    last = 0.0
+    for b in sorted(beats):
+        if b - last >= PUNCH_MIN and seconds - b >= PUNCH_MIN:
+            cuts.append(b)
+            last = b
+    if not cuts and seconds >= 2 * 4.0:
+        cuts = [4.0 * k for k in range(1, int(seconds / 4.0)) if seconds - 4.0 * k >= PUNCH_MIN]
+    edges = [0.0, *cuts, seconds]
+    return [(round(edges[i], 3), round(edges[i + 1], 3)) for i in range(1, len(edges) - 1, 2)]
 
 
 def plan_clips(seg: Segment, target: float) -> list[PlannedClip]:
@@ -213,7 +247,16 @@ def render_clip(project: Project, pc: PlannedClip, out: Path, encoder: str) -> N
             # stop at the clip's own end (`out`, if sliced) before padding, or tpad would pad after
             # frames that were never meant to be shown
             vf = f"trim=duration={dur - pc.hold:.3f},setpts=PTS-STARTPTS,{vf},tpad=stop_mode=clone:stop_duration={pc.hold:.3f}"
-        args += ["-i", str(c.video), "-an", "-vf", vf, "-t", f"{dur:.3f}", *codec, str(out)]
+        if pc.punch:
+            # the tight shot is cropped a little above centre: a face sits in the upper half of
+            # a talking-head frame, and a centred crop cuts the top of the head first
+            on = "+".join(f"between(t,{a:.3f},{b:.3f})" for a, b in pc.punch)
+            vf = (f"{vf},split=2[wide][tight];[tight]crop=iw/{PUNCH}:ih/{PUNCH}:(iw-ow)/2:(ih-oh)*0.35,"
+                  f"scale={w}:{h}:flags=lanczos,setsar=1[tz];[wide][tz]overlay=0:0:enable='{on}'")
+            args += ["-i", str(c.video), "-an", "-filter_complex", f"[0:v]{vf}[v]", "-map", "[v]",
+                     "-t", f"{dur:.3f}", *codec, str(out)]
+        else:
+            args += ["-i", str(c.video), "-an", "-vf", vf, "-t", f"{dur:.3f}", *codec, str(out)]
         ffmpeg.run(args)
         return
     ss = project.effective_supersample
@@ -329,8 +372,9 @@ def _boundary_fade(project: Project, visual: Path, total: float, out: Path, enco
 
 
 def render_segment(project: Project, seg: Segment, audio: Path, out: Path, *, encoder: str | None = None,
-                   cache_dir: Path | None = None) -> float:
-    """All clips of a segment, fitted to the narration, muxed with the voice. Returns seconds."""
+                   cache_dir: Path | None = None, beats: list[float] | None = None) -> float:
+    """All clips of a segment, fitted to the narration, muxed with the voice. Returns seconds.
+    `beats`: sentence breaks in the narration (seconds) — where `punch_in` changes the shot."""
     encoder = encoder or pick_encoder(project)
     narration = ffmpeg.duration(audio)
     target = narration + seg.pause_after
@@ -345,6 +389,13 @@ def render_segment(project: Project, seg: Segment, audio: Path, out: Path, *, en
         for i, pc in enumerate(planned):
             if i < len(planned) - 1:
                 pc.seconds += t
+    if project.punch_in:
+        offset = 0.0
+        for pc in planned:
+            if pc.clip.video is not None and pc.clip.remotion is None and not pc.loop and is_talking_head(pc.clip):
+                local = [b - offset for b in (beats or []) if offset < b < offset + pc.seconds]
+                pc.punch = punch_windows(local, pc.seconds)
+            offset += pc.seconds - t
     parts: list[Path] = []
     for i, pc in enumerate(planned):
         part = work / f"{i:02d}.mp4"
