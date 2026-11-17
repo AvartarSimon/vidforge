@@ -32,6 +32,8 @@ export function ProjectSwitcher({ open, onClose }: { open: boolean; onClose: () 
   const [newName, setNewName] = useState('')
   const [newTitle, setNewTitle] = useState('')
   const [newLang, setNewLang] = useState<'zh' | 'en'>('zh')
+  // the frame decides how every picture and chart is laid out: chosen up front, not discovered at render
+  const [newFrame, setNewFrame] = useState('16:9')
   const [filter, setFilter] = useState('')
   const [job, setJob] = useState<{ state: string; project: string; title: string; done: number; total: number } | null>(null)
 
@@ -79,7 +81,7 @@ export function ProjectSwitcher({ open, onClose }: { open: boolean; onClose: () 
 
   const createNew = async () => {
     try {
-      await apiPost('/api/new', { name: newName, title: newTitle, language: newLang })
+      await apiPost('/api/new', { name: newName, title: newTitle, language: newLang, frame: newFrame })
       setNewName('')
       setNewTitle('')
       onClose()
@@ -138,6 +140,18 @@ export function ProjectSwitcher({ open, onClose }: { open: boolean; onClose: () 
               中文
             </ToggleButton>
             <ToggleButton value="en">EN</ToggleButton>
+          </ToggleButtonGroup>
+          <ToggleButtonGroup size="small" exclusive value={newFrame} onChange={(_, v) => v && setNewFrame(v)}>
+            {[
+              ['16:9', '横屏'],
+              ['9:16', '竖屏'],
+              ['3:4', '3:4'],
+              ['1:1', '方形'],
+            ].map(([v, label]) => (
+              <ToggleButton key={v} value={v} title={v} sx={{ whiteSpace: 'nowrap' }}>
+                {label}
+              </ToggleButton>
+            ))}
           </ToggleButtonGroup>
           <Button variant="contained" onClick={createNew} sx={{ whiteSpace: 'nowrap' }}>
             创建

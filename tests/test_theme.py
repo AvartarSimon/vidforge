@@ -21,7 +21,7 @@ class Apply(unittest.TestCase):
     def test_vertical_frame_subtitles_and_presenter_window(self):
         raw = {"title": "t", "segments": [
             {"id": "a", "text": "x", "clips": [], "overlays": [{"video": "assets/takes/a_1.mp4"}, {"image": "assets/pic.jpg"}]}]}
-        theme.apply(raw, "mint", badge="RESTART · 001")
+        theme.apply(raw, "mint", badge="RESTART · 001", frame="9:16")
         self.assertEqual((raw["width"], raw["height"]), (1080, 1920))
         self.assertEqual(raw["subtitles"]["box_colour"], theme.get("mint").box)
         self.assertEqual(raw["subtitles"]["highlight"], "word")
@@ -40,7 +40,7 @@ class Apply(unittest.TestCase):
         from vidforge.subtitles import build_cues
         from vidforge.tts import Word
         raw = {"title": "t", "segments": []}
-        theme.apply(raw, "mint")
+        theme.apply(raw, "mint", frame="9:16")
         words = [Word(ch, i * 0.2, 0.2) for i, ch in enumerate("睡眠超过九小时的人白天反而更容易感到疲劳")]
         longest = max(len(c.text) for c in build_cues(words, offset=0, max_chars=raw["subtitles"]["max_chars"]))
         self.assertTrue(9 <= longest <= 12, longest)
@@ -56,10 +56,50 @@ class Apply(unittest.TestCase):
             import json
             (td / "project.json").write_text(json.dumps(raw), encoding="utf-8")
             sub = proj.load(td / "project.json").subtitles
-            fresh = theme.apply({"title": "t", "segments": []}, "mint")["subtitles"]
+            fresh = theme.apply({"title": "t", "segments": []}, "mint", frame="9:16")["subtitles"]
             self.assertEqual((sub.font_size, sub.margin_v), (fresh["font_size"], fresh["margin_v"]))
         finally:
             shutil.rmtree(td, ignore_errors=True)
+
+    def test_a_wide_project_keeps_its_frame_and_takes_the_colours(self):
+        raw = {"title": "t", "segments": []}
+        theme.apply(raw, "sky")
+        self.assertNotIn("width", raw, "no frame asked for: the project's own (1920x1080) stays")
+        sub = raw["subtitles"]
+        self.assertEqual((sub["box_colour"], sub["font_size"], sub["margin_v"]), (theme.get("sky").box, 22, 48))
+        theme.apply(raw, "sky", frame="3:4")
+        self.assertEqual((raw["width"], raw["height"]), (1080, 1440))
+        self.assertGreater(raw["subtitles"]["margin_v"], 48, "upright: lifted over the caption area")
+        with self.assertRaises(KeyError):
+            theme.apply(raw, "sky", frame="21:9")
+
+    def test_the_window_keeps_its_shape_in_every_frame(self):
+        # a 3:4 box sized for 9:16 came out as a 461x194 strip in a 1920x1080 project
+        for (w, h) in theme.FRAMES.values():
+            for shape, want in (("circle", 1.0), ("rounded", 4 / 3 if h > w else 3 / 4)):
+                size, box_h = theme.window_box(w, h, shape)
+                self.assertAlmostEqual(box_h * h / (size * w), want, delta=0.01, msg=f"{w}x{h} {shape}")
+
+    def test_every_corner_is_inside_the_frame_and_clear_of_the_subtitles(self):
+        for (w, h) in theme.FRAMES.values():
+            raw = {"width": w, "height": h, "subtitles": {"burn": True, "font_size": 22, "margin_v": 48}}
+            for corner in theme.CORNERS:
+                o = theme.presenter_overlay("assets/takes/a.mp4", raw, corner=corner)
+                fx, fy = (float(v) for v in o["position"].split(","))
+                self.assertTrue(0 <= fx <= 1 and 0 <= fy <= 1, (w, h, corner))
+                top = fy * (h - o["height"] * h)
+                bottom = top + o["height"] * h
+                if corner.startswith("bottom"):
+                    from vidforge.subtitles import band
+                    self.assertLess(bottom, h * (1 - band(22, 48)), (w, h, corner))
+                self.assertEqual(o["corner"], corner)
+
+    def test_the_window_goes_opposite_the_badge(self):
+        raw = {"width": 1920, "height": 1080, "theme": {"palette": "mint", "badge": "S01", "side": "left"}}
+        self.assertEqual(theme.presenter_overlay("v.mp4", raw)["corner"], "top-left")
+        raw["theme"]["side"] = "right"
+        self.assertEqual(theme.presenter_overlay("v.mp4", raw)["corner"], "top-right")
+        self.assertEqual(theme.presenter_overlay("v.mp4", {"width": 1920, "height": 1080})["corner"], "top-right")
 
     def test_window_sits_upper_left_inside_the_margin(self):
         fx, fy = (float(v) for v in theme.window_position("left").split(","))
@@ -101,6 +141,76 @@ class Apply(unittest.TestCase):
         self.assertNotIn("clearBottom", pipeline._graphics_props(wide, spec))
         tall = proj.Project(title="t", segments=[], root=Path("."), width=1080, height=1920, subtitles=SubtitleStyle(burn=True))
         self.assertNotIn("clearBottom", pipeline._graphics_props(tall, spec))
+
+
+class Api(unittest.TestCase):
+    """画幅与风格 from the UI: the frame, the palette, and a new project made in a given frame."""
+
+    def setUp(self):
+        import json
+        import threading
+        from http.server import ThreadingHTTPServer
+        from unittest import mock
+        from vidforge import ui
+        self.td = Path(tempfile.mkdtemp())
+        # opening a project adds it to the recent list in ~/.vidforge: the test's own, not the user's
+        self.recent = mock.patch.object(ui, "RECENT", self.td / "recent.json")
+        self.recent.start()
+        self.addCleanup(self.recent.stop)
+        (self.td / "p").mkdir()
+        (self.td / "p" / "project.json").write_text(json.dumps({"title": "T", "segments": []}), encoding="utf-8")
+        self.state = ui.State(self.td / "p" / "project.json")
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), ui.make_handler(self.state))
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.httpd.shutdown(); self.httpd.server_close()
+        shutil.rmtree(self.td, ignore_errors=True)
+
+    def call(self, path, body=None):
+        import json
+        import urllib.error
+        import urllib.request
+        req = urllib.request.Request(f"http://127.0.0.1:{self.httpd.server_address[1]}{path}",
+                                     data=json.dumps(body).encode() if body is not None else None,
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def raw(self):
+        import json
+        return json.loads(self.state.project_path.read_text(encoding="utf-8"))
+
+    def test_frame_and_palette_together_or_the_frame_alone(self):
+        self.assertEqual(self.call("/api/theme")[1]["frame"], "16:9")
+        self.assertEqual(self.call("/api/theme/apply", {"frame": "9:16", "palette": "mint"})[0], 200)
+        self.assertEqual((self.raw()["width"], self.raw()["height"]), (1080, 1920))
+        self.assertEqual(self.call("/api/theme")[1]["frame"], "9:16")
+        self.assertEqual(self.call("/api/theme/apply", {"off": True, "frame": "1:1"})[0], 200)
+        raw = self.raw()
+        self.assertNotIn("theme", raw)
+        self.assertEqual((raw["width"], raw["height"]), (1080, 1080))
+        code, j = self.call("/api/theme/apply", {"frame": "21:9", "palette": "mint"})
+        self.assertEqual(code, 400)
+        self.assertIn("21:9", j["error"])
+
+    def test_a_project_in_the_temp_folder_stays_off_the_recent_list(self):
+        from vidforge import ui
+        ui.remember_project(self.td / "p")
+        self.assertFalse((self.td / "recent.json").exists())
+
+    def test_a_new_project_starts_in_the_frame_it_was_made_for(self):
+        code, j = self.call("/api/new", {"name": "xhs", "title": "t", "language": "zh", "frame": "3:4", "dir": str(self.td)})
+        self.assertEqual(code, 200, j)
+        import json
+        made = json.loads((self.td / "xhs" / "project.json").read_text(encoding="utf-8"))
+        self.assertEqual((made["width"], made["height"]), (1080, 1440))
+        code, _ = self.call("/api/new", {"name": "bad", "frame": "5:4", "dir": str(self.td)})
+        self.assertEqual(code, 400)
+        self.assertFalse((self.td / "bad").exists(), "nothing left behind for a refused frame")
 
 
 @unittest.skipUnless(_ff(), "ffmpeg not installed")

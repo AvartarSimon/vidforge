@@ -69,7 +69,8 @@ class Export(unittest.TestCase):
                         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(src)])
             (td / "credits.txt").write_text("Media credits\n  Jane Doe — CC BY 4.0 — http://x", encoding="utf-8")
             p = proj.Project(title="t", segments=[], root=td)
-            for pid, size in (("douyin", (1080, 1920)), ("youtube", (1920, 1080))):
+            for pid, size in (("douyin", (1080, 1920)), ("youtube", (1920, 1080)), ("xiaohongshu", (1080, 1440)),
+                              ("bilibili", (1920, 1080))):
                 r = platforms.export(p, src, td / "out", pid, log=lambda *_: None)
                 self.assertEqual(ffmpeg.video_size(r["path"]), size, pid)
                 self.assertAlmostEqual(r["seconds"], 2.0, delta=0.15)
@@ -81,9 +82,10 @@ class Export(unittest.TestCase):
                 with Image.open(c) as im:
                     return im.size
             shapes = {pid: [size(c) for c in platforms.export(p, src, td / "out", pid, log=lambda *_: None)["covers"]]
-                      for pid in ("douyin", "tiktok", "youtube")}
+                      for pid in ("douyin", "tiktok", "youtube", "xiaohongshu")}
             self.assertEqual(shapes, {"douyin": [(1080, 1920), (1080, 1440)], "tiktok": [(1080, 1920)],
-                                      "youtube": [(1280, 720)]}, "each app's own cover shapes, the 3:4 grid tile where it has one")
+                                      "youtube": [(1280, 720)], "xiaohongshu": [(1080, 1440)]},
+                             "each app's own cover shapes, the 3:4 grid tile where it has one")
         finally:
             shutil.rmtree(td, ignore_errors=True)
 

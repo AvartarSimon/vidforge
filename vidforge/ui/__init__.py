@@ -488,7 +488,10 @@ def make_handler(state: State):
                 if path == "/api/theme":
                     from .. import theme as th
                     raw = state.read_raw()
+                    w, h = th.frame_of(raw)
+                    frame = next((k for k, v in th.FRAMES.items() if v == (w, h)), f"{w}x{h}")
                     return self._json({"palettes": th.listing(), "current": raw.get("theme") or None,
+                                       "frames": {k: list(v) for k, v in th.FRAMES.items()}, "frame": frame,
                                        "window": {"size": th.WINDOW_W, "height": th.WINDOW_H}})
                 if path == "/api/platforms":
                     from .. import platforms
@@ -614,6 +617,9 @@ def make_handler(state: State):
                     root = Path(body.get("dir") or workspace_dir()) / name
                     if (root / "project.json").exists():
                         return self._error("同名项目已存在")
+                    from .. import theme as th
+                    if body.get("frame") and body["frame"] not in th.FRAMES:
+                        return self._error(f"未知画幅 '{body['frame']}'（可选：{', '.join(th.FRAMES)}）")
                     (root / "assets").mkdir(parents=True, exist_ok=True)
                     cat = None
                     if body.get("category"):
@@ -630,6 +636,8 @@ def make_handler(state: State):
                                 tpl.setdefault("tts", {})["provider"] = v
                             elif k == "subtitles_bilingual":
                                 tpl.setdefault("subtitles", {})["bilingual"] = v
+                    if body.get("frame"):
+                        tpl["width"], tpl["height"] = th.FRAMES[body["frame"]]
                     (root / "project.json").write_text(json.dumps(tpl, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
                     state.open(root)
                     return self._json({"opened": str(state.project_path)})
@@ -795,9 +803,17 @@ def make_handler(state: State):
                     raw = state.read_raw()
                     if body.get("off"):
                         raw.pop("theme", None)
+                        if body.get("frame"):
+                            try:
+                                raw["width"], raw["height"] = th.FRAMES[body["frame"]]
+                            except KeyError:
+                                return self._error(f"未知画幅 '{body['frame']}'（可选：{', '.join(th.FRAMES)}）")
                     else:
-                        th.apply(raw, body.get("palette") or "sunny", badge=body.get("badge") or "",
-                                 side="right" if body.get("side") == "right" else "left")
+                        try:
+                            th.apply(raw, body.get("palette") or "sunny", badge=body.get("badge") or "",
+                                     side="right" if body.get("side") == "right" else "left", frame=body.get("frame"))
+                        except KeyError as e:
+                            return self._error(e.args[0])
                     state.write_raw(raw, snapshot=True)
                     return self._json({"theme": raw.get("theme"), "subtitles": raw.get("subtitles")})
                 if path == "/api/platforms/export":
@@ -1770,7 +1786,8 @@ def make_handler(state: State):
                     # the 竖屏模板 way: the pictures stay the main frame, you are the small window
                     from .. import theme as th
                     seg["overlays"] = [o for o in (seg.get("overlays") or []) if not th.is_presenter_overlay(o)]
-                    seg["overlays"].append(th.presenter_overlay(rel, raw))
+                    seg["overlays"].append(th.presenter_overlay(rel, raw, shape=body.get("window_shape"),
+                                                                corner=body.get("window_corner")))
                 else:
                     # an old-style segment carries its one visual directly; `clips` replaces that shape
                     for legacy in ("image", "video", "remotion", "motion"):

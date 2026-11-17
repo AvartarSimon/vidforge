@@ -103,8 +103,26 @@ export function RecordStudio() {
   const [countdown, setCountdown] = useState(0)
   const [elapsed, setElapsed] = useState(0)
   const [take, setTake] = useState<{ blob: Blob; url: string; ext: string; seconds: number } | null>(null)
-  // where the picture of a take goes: the segment's main frame, the 竖屏模板 small window, or nowhere
+  // where the picture of a take goes: the segment's whole frame, a small window over its pictures, or nowhere
   const [target, setTarget] = useState<'visual' | 'window' | 'none'>(() => (raw?.theme ? 'window' : 'visual'))
+  // the window's shape and corner, remembered between takes: a series keeps its window in one place
+  const remembered = (k: string) => {
+    try {
+      return localStorage.getItem(k) || ''
+    } catch {
+      return ''
+    }
+  }
+  const [winShape, setWinShape] = useState(() => remembered('vf.window.shape') || 'rounded')
+  const [winCorner, setWinCorner] = useState(() => remembered('vf.window.corner'))
+  useEffect(() => {
+    try {
+      localStorage.setItem('vf.window.shape', winShape)
+      if (winCorner) localStorage.setItem('vf.window.corner', winCorner)
+    } catch {
+      // private window: the choice just is not remembered
+    }
+  }, [winShape, winCorner])
   const asVisual = target !== 'none'
   const [asNarration, setAsNarration] = useState(true)
   const [asFootage, setAsFootage] = useState(false)
@@ -308,6 +326,8 @@ export function RecordStudio() {
           as_narration: asNarration,
           as_visual: withVideo && asVisual,
           as_window: withVideo && target === 'window',
+          window_shape: winShape,
+          window_corner: winCorner || undefined,
           as_footage: withVideo && asFootage,
           jumpcut: withVideo && asVisual && jumpcut,
           fillers: withVideo && asVisual && jumpcut && fillers,
@@ -509,10 +529,24 @@ export function RecordStudio() {
             <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
               {withVideo && (
                 <ToggleButtonGroup size="small" exclusive value={target} onChange={(_, v) => v && setTarget(v)}>
-                  <ToggleButton value="visual">当这一段的主画面</ToggleButton>
-                  <ToggleButton value="window">当小窗（竖屏模板）</ToggleButton>
+                  <ToggleButton value="visual">当主画面（全屏）</ToggleButton>
+                  <ToggleButton value="window">当小窗（画中画）</ToggleButton>
                   <ToggleButton value="none">画面不用</ToggleButton>
                 </ToggleButtonGroup>
+              )}
+              {withVideo && target === 'window' && (
+                <>
+                  <ToggleButtonGroup size="small" exclusive value={winShape} onChange={(_, v) => v && setWinShape(v)}>
+                    <ToggleButton value="rounded">圆角</ToggleButton>
+                    <ToggleButton value="circle">圆形</ToggleButton>
+                  </ToggleButtonGroup>
+                  <ToggleButtonGroup size="small" exclusive value={winCorner} onChange={(_, v) => setWinCorner(v || '')}>
+                    <ToggleButton value="top-left">左上</ToggleButton>
+                    <ToggleButton value="top-right">右上</ToggleButton>
+                    <ToggleButton value="bottom-left">左下</ToggleButton>
+                    <ToggleButton value="bottom-right">右下</ToggleButton>
+                  </ToggleButtonGroup>
+                </>
               )}
               {withVideo && asVisual && (
                 <FormControlLabel control={<Switch size="small" checked={jumpcut} onChange={(e) => setJumpcut(e.target.checked)} />} label={<Typography variant="body2">剪掉中间的停顿（剪口播）</Typography>} />

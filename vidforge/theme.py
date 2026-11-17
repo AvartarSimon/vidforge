@@ -97,38 +97,111 @@ def is_presenter_overlay(o: dict) -> bool:
     return bool(o.get("me")) or "/takes/" in f"/{v}" or v.startswith("takes/") or bool(o.get("presenter"))
 
 
-def apply(raw: dict, palette: str, *, badge: str = "", side: str = "left") -> dict:
-    """Set the project up for the vertical template, in place. Returns `raw`."""
+# 画幅: the shapes a project can be made in. Upright ones get the phone layout (window up top,
+# subtitles lifted over the platform's caption area); the rest keep the subtitles low.
+FRAMES: dict[str, tuple[int, int]] = {
+    "16:9": (1920, 1080),     # YouTube / B站 / 头条·西瓜
+    "9:16": (1080, 1920),     # 抖音 / 快手 / TikTok / Shorts / 视频号
+    "3:4": (1080, 1440),      # 小红书 (its feed tile and the full-screen player both take it)
+    "1:1": (1080, 1080),      # square: feeds that show either orientation
+}
+CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
+SHAPES = ("rounded", "circle")
+
+
+def frame_of(raw: dict) -> tuple[int, int]:
+    return int(raw.get("width") or 1920), int(raw.get("height") or 1080)
+
+
+def window_box(width: int, height: int, shape: str = "rounded") -> tuple[float, float]:
+    """The presenter window as overlay (size, height): fractions of the frame's width and height.
+
+    Worked out from the frame's own proportions — a 3:4 box sized for 9:16 came out as a strip
+    461x194 in a 1920x1080 project. Upright frames get a 3:4 portrait box, wide ones a 4:3 one,
+    a circle is square in pixels whatever the frame."""
+    tall = height > width
+    size = WINDOW_W if tall else 0.22
+    px_w = size * width
+    ratio = 1.0 if shape == "circle" else (4 / 3 if tall else 3 / 4)
+    return size, round(px_w * ratio / height, 4)
+
+
+def window_place(width: int, height: int, size: float, box_h: float, corner: str = "top-left",
+                 sub_band: float = 0.0) -> str:
+    """`position` (fractions of the free space, as render.py reads it) for a corner. A bottom
+    corner sits above the subtitle line: wide subtitles run nearly edge to edge, and on a phone the
+    lifted line and the platform's caption take the lower part of the frame."""
+    tall = height > width
+    win_w, win_h = size * width, box_h * height
+    mx = width * (MARGIN_X if tall else 0.03)
+    top = height * (MARGIN_TOP if tall else 0.05)
+    bottom_clear = height * max(SUB_LIFT + 0.12 if tall else sub_band + 0.02, 0.05)
+    left = mx if "left" in corner else width - mx - win_w
+    y = top if corner.startswith("top") else height - bottom_clear - win_h
+    fx = left / max(1.0, width - win_w)
+    fy = max(0.0, y) / max(1.0, height - win_h)
+    return f"{min(1.0, max(0.0, fx)):.4f},{min(1.0, max(0.0, fy)):.4f}"
+
+
+def _sub_band(raw: dict) -> float:
+    from .subtitles import band
+    sub = raw.get("subtitles") or {}
+    if not sub.get("burn"):
+        return 0.0
+    return band(int(sub.get("font_size", 22)), int(sub.get("margin_v", 48)), 2 if sub.get("bilingual") else 1)
+
+
+def apply(raw: dict, palette: str, *, badge: str = "", side: str = "left", frame: str | None = None) -> dict:
+    """Set the project's frame and colours, in place. Returns `raw`.
+
+    `frame` ("16:9", "9:16", "3:4", "1:1") changes the size; None keeps the project's own. The
+    palette colours the subtitles, the badge, the charts and the presenter window's frame in any
+    shape; the phone layout (lifted subtitles, 12 glyphs a line) only applies to upright frames."""
     p = get(palette)
-    raw["width"], raw["height"] = 1080, 1920
+    if frame:
+        if frame not in FRAMES:
+            raise KeyError(f"未知画幅 '{frame}'（可选：{', '.join(FRAMES)}）")
+        raw["width"], raw["height"] = FRAMES[frame]
+    w, h = frame_of(raw)
+    tall = h > w
     raw["theme"] = {"palette": p.id, "badge": badge.strip(), "side": side}
     sub = raw.setdefault("subtitles", {})
-    sub.update({
-        # word by word: on a phone the eye follows the lit word, which is what keeps it on the line
-        "burn": True, "style": "box", "highlight": "word",
-        # in subtitle script units (288 lines to the frame), like every other project's
-        "font_size": round(SCRIPT_LINES * 0.034), "margin_v": round(SCRIPT_LINES * SUB_LIFT),
-        # counted in Latin characters, and build_cues() halves it for Chinese: 24 is 12 glyphs,
-        # which at this font size is the width of the frame less its margins
-        "max_chars": 24,
-        "highlight_colour": p.accent, "box_colour": p.box, "text_colour": p.text,
-    })
+    sub.update({"burn": True, "style": "box", "highlight_colour": p.accent, "box_colour": p.box, "text_colour": p.text})
+    if tall:
+        sub.update({
+            # word by word: on a phone the eye follows the lit word, which is what keeps it on the line
+            "highlight": "word",
+            # in subtitle script units (288 lines to the frame), like every other project's
+            "font_size": round(SCRIPT_LINES * 0.034), "margin_v": round(SCRIPT_LINES * SUB_LIFT),
+            # counted in Latin characters, and build_cues() halves it for Chinese: 24 is 12 glyphs,
+            # which at this font size is the width of the frame less its margins
+            "max_chars": 24,
+        })
+    else:
+        # back to the wide defaults if the project was upright before
+        sub.update({"highlight": sub.get("highlight") or "keywords", "font_size": 22, "margin_v": 48, "max_chars": 42})
     for seg in raw.get("segments") or []:
         for o in seg.get("overlays") or []:
             if is_presenter_overlay(o):
-                o.update({"shape": "rounded", "size": WINDOW_W, "height": round(WINDOW_H, 4),
-                          "position": window_position(side), "border": True, "border_color": p.frame,
-                          "animate": o.get("animate") or "fade"})
+                o.update(presenter_overlay(o.get("video") or "", raw, shape=o.get("shape"), corner=o.get("corner")))
     return raw
 
 
-def presenter_overlay(video_rel: str, raw: dict) -> dict:
+def presenter_overlay(video_rel: str, raw: dict, *, shape: str | None = None, corner: str | None = None) -> dict:
     """The overlay a studio take becomes when it is the small window rather than the picture."""
     t = raw.get("theme") or {}
-    p = get(t.get("palette"))
-    return {"video": video_rel, "presenter": True, "shape": "rounded", "size": WINDOW_W, "height": round(WINDOW_H, 4),
-            "position": window_position(t.get("side", "left")), "border": True, "border_color": p.frame,
-            "animate": "fade"}
+    w, h = frame_of(raw)
+    shape = shape if shape in SHAPES else "rounded"
+    if corner not in CORNERS:
+        # up top on the template's side — the series badge takes the other top corner; with no
+        # template, a wide frame puts it top right, where a face-cam usually is
+        side = t.get("side") or ("left" if h > w else "right")
+        corner = f"top-{'right' if side == 'right' else 'left'}"
+    size, box_h = window_box(w, h, shape)
+    frame_colour = get(t.get("palette")).frame if t else "#ffffff"
+    return {"video": video_rel, "presenter": True, "shape": shape, "corner": corner, "size": size, "height": box_h,
+            "position": window_place(w, h, size, box_h, corner, _sub_band(raw)), "border": True,
+            "border_color": frame_colour, "animate": "fade"}
 
 
 # -- the badge ------------------------------------------------------------------------------------

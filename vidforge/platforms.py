@@ -1,4 +1,4 @@
-"""一次成片，多平台导出：抖音 / 快手 / TikTok / 视频号 / 今日头条·西瓜 / YouTube / Shorts.
+"""一次成片，多平台导出：抖音 / 快手 / TikTok / 视频号 / 小红书 / 今日头条·西瓜 / B站 / YouTube / Shorts.
 
 The long video is rendered once; each platform then gets a re-framed, re-encoded copy cut to its
 shape plus a text file with the title, description, tags and the AI-content line it needs — the
@@ -26,7 +26,7 @@ from . import ffmpeg
 class Platform:
     id: str
     name: str
-    ratio: str                    # 9:16 | 16:9
+    ratio: str                    # 9:16 | 3:4 | 16:9
     width: int
     height: int
     best: tuple[int, int]         # the length that tends to do well, seconds
@@ -45,8 +45,12 @@ PLATFORMS: tuple[Platform, ...] = (
              "标题短（16 字以内最好），可以挂公众号文章；AI 生成内容在发布页声明。"),
     Platform("tiktok", "TikTok", "9:16", 1080, 1920, (21, 180), 60 * 60, 10000, 150,
              "Caption + 3–5 hashtags. Turn on “AI-generated content” in More options if narration or visuals are AI."),
+    Platform("xiaohongshu", "小红书", "3:4", 1080, 1440, (30, 300), 15 * 60, 10000, 20,
+             "标题 20 字以内，正文写清楚要点、带 #话题；3:4 竖图最占屏。AI 生成内容在发布页声明。"),
     Platform("toutiao", "今日头条 / 西瓜", "16:9", 1920, 1080, (60, 900), None, 12000, 30,
              "中视频伙伴计划要求横屏、时长 ≥ 1 分钟、原创；标题 30 字以内；封面要清楚。AI 生成内容需在发布时声明。"),
+    Platform("bilibili", "B站", "16:9", 1920, 1080, (120, 1200), None, 12000, 80,
+             "标题 80 字以内，简介写清楚出处；分区选对（知识区）；横屏为主。用了 AI 生成内容在投稿页声明。"),
     Platform("youtube", "YouTube", "16:9", 1920, 1080, (60, 1500), None, 16000, 100,
              "标题 ≤ 100 字符，简介前两行最重要；章节在简介里（vidforge 自动生成）。合成的写实人物/场景要勾选「改动或合成内容」。"),
     Platform("shorts", "YouTube Shorts", "9:16", 1080, 1920, (20, 60), 180, 10000, 100,
@@ -116,6 +120,7 @@ def post_text(project, p: Platform, credits: str = "") -> str:
 # 抖音 / 快手 / 视频号 show a creator's videos as a grid of 3:4 tiles; the 9:16 cover is the one the
 # feed shows. Landscape apps take a 16:9 picture (YouTube's custom thumbnail is 1280x720).
 GRID = ("douyin", "kuaishou", "shipinhao")
+# 小红书's tile and player are 3:4 already; its cover is the one picture
 
 
 def make_covers(project, p: Platform, source: Path, video: Path, out_dir: Path) -> list[Path]:
@@ -127,7 +132,12 @@ def make_covers(project, p: Platform, source: Path, video: Path, out_dir: Path) 
         src = out_dir / f"{p.id}_frame.jpg"
         ffmpeg.run(["-y", "-ss", "1", "-i", str(video), "-frames:v", "1", str(src)])
     text = (project.thumbnail_text or project.youtube.title or project.title or "").strip()
-    sizes = [(1080, 1920)] + ([(1080, 1440)] if p.id in GRID else []) if p.ratio == "9:16" else [(1280, 720)]
+    if p.ratio == "9:16":
+        sizes = [(1080, 1920)] + ([(1080, 1440)] if p.id in GRID else [])
+    elif p.height > p.width:
+        sizes = [(p.width, p.height)]
+    else:
+        sizes = [(1280, 720)]
     out = []
     for w, h in sizes:
         f = out_dir / f"{p.id}_cover_{w}x{h}.jpg"
@@ -154,9 +164,9 @@ def export(project, source: Path, out_dir: Path, pid: str, *, mode: str = "blur"
         ffmpeg.run(["-y", "-i", str(source), "-vf", f"scale={p.width}:{p.height}:flags=lanczos,setsar=1",
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", *rate, "-pix_fmt", "yuv420p",
                     "-r", str(project.fps or 30), "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out)])
-    elif p.ratio == "9:16" and sw > sh:
+    elif p.height > p.width and sw > sh:
         # landscape -> upright: the vertical cutter already knows how (and re-burns big captions)
-        vertical.make(source, out, vertical.Cut(0.0, total), mode=mode, ratio="9:16", srt=srt,
+        vertical.make(source, out, vertical.Cut(0.0, total), mode=mode, ratio=p.ratio, srt=srt,
                       font=project.subtitles.font, subtitles=srt is not None, log=log)
     else:
         chain = vertical.reframe_filter(mode, p.width, p.height)

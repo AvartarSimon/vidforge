@@ -1,10 +1,15 @@
 import { useState } from 'react'
-import { Avatar, Box, Button, ButtonBase, MenuItem, Stack, TextField, Typography } from '@mui/material'
+import { Avatar, Box, Button, ButtonBase, Dialog, DialogContent, MenuItem, Stack, TextField, Typography } from '@mui/material'
+import AspectRatioIcon from '@mui/icons-material/AspectRatio'
 import IosShareIcon from '@mui/icons-material/IosShare'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useProject } from '../../state/ProjectContext'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { STEPS, stepDone } from './NavRail'
+import { FRAME_INFO, ThemePicker } from '../shared/ThemePicker'
+import { DialogHeader } from '../shared/ui'
+
+const PALETTE_NAMES: Record<string, string> = { sunny: '暖阳橙', mint: '薄荷绿', sky: '天空蓝', coral: '珊瑚粉', lemon: '柠檬黄', violet: '活力紫' }
 
 const SAVE_LABEL: Record<string, string> = {
   saved: '已保存',
@@ -22,6 +27,16 @@ const SAVE_LABEL: Record<string, string> = {
 export function TopBar({ step, inWizard, onStep }: { step: number; inWizard: boolean; onStep: (n: number) => void }) {
   const { raw, view, saveState, savedAt, lang, setLang } = useProject()
   const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [frameOpen, setFrameOpen] = useState(false)
+  // the frame decides everything downstream (pictures, charts, platforms): always in sight, one click to change
+  const ratio = (() => {
+    const w = raw?.width || 1920
+    const h = raw?.height || 1080
+    const g = (a: number, b: number): number => (b ? g(b, a % b) : a)
+    const k = g(w, h)
+    return `${w / k}:${h / k}`
+  })()
+  const frameLabel = `${FRAME_INFO[ratio]?.label || ratio}${raw?.theme?.palette ? ` · ${PALETTE_NAMES[raw.theme.palette] || raw.theme.palette}` : ''}`
   const title = raw?.title || (view?.root ? view.root.split(/[\\/]/).pop() : null) || '未打开项目'
   const hasFinal = Boolean(view?.outputs?.final)
 
@@ -93,6 +108,11 @@ export function TopBar({ step, inWizard, onStep }: { step: number; inWizard: boo
         })}
       </Stack>
 
+      {raw && (
+        <Button size="small" color="inherit" startIcon={<AspectRatioIcon fontSize="small" />} onClick={() => setFrameOpen(true)} sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }} title="画幅与风格">
+          {frameLabel}
+        </Button>
+      )}
       {raw && view && view.langs?.length > 1 && (
         // a project with language variants: which one the steps edit, voice and render
         <TextField
@@ -120,6 +140,10 @@ export function TopBar({ step, inWizard, onStep }: { step: number; inWizard: boo
         导出
       </Button>
       <ProjectSwitcher open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
+      <Dialog open={frameOpen} onClose={() => setFrameOpen(false)} maxWidth="md" fullWidth>
+        <DialogHeader icon={<AspectRatioIcon />} tone="pink" title="画幅与风格" sub="发哪个平台就选哪个画幅；配色管字幕、角标、图表和小窗边框" onClose={() => setFrameOpen(false)} />
+        <DialogContent>{frameOpen && <ThemePicker bare onApplied={() => setFrameOpen(false)} />}</DialogContent>
+      </Dialog>
     </Box>
   )
 }

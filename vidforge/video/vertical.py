@@ -29,7 +29,7 @@ from pathlib import Path
 from .. import ffmpeg
 from . import VideoToolError
 
-SIZE = {"9:16": (1080, 1920), "1:1": (1080, 1080), "4:5": (1080, 1350)}
+SIZE = {"9:16": (1080, 1920), "3:4": (1080, 1440), "1:1": (1080, 1080), "4:5": (1080, 1350)}
 
 
 @dataclass
