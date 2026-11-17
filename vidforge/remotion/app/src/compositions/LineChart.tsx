@@ -1,6 +1,6 @@
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
 import { Base, mergeTheme } from "../theme";
-import { Stage, isChinese, useLayout } from "../layout";
+import { Stage, isChinese, useLayout, SourceCaption } from "../layout";
 
 export type LinePoint = { x: number; y: number };
 export type LineSeries = { label: string; points: LinePoint[]; color?: string };
@@ -123,11 +123,7 @@ export const LineChart: React.FC<LineChartProps> = ({
         ))}
       </div>
 
-      {source && (
-        <div style={{ position: "absolute", bottom: height * 0.05, right: width * 0.06, color: t.muted, fontSize: 22 * scale }}>
-          {source}
-        </div>
-      )}
+      {source && <SourceCaption text={source} color={t.muted} />}
     </Stage>
   );
 };

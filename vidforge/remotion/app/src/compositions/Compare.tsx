@@ -1,6 +1,6 @@
 import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { Base, mergeTheme } from "../theme";
-import { Stage, isChinese, useLayout } from "../layout";
+import { Stage, isChinese, useLayout, SourceCaption } from "../layout";
 
 export type CompareSide = { label: string; value: string; raw?: number; caption?: string; color?: string };
 export type CompareProps = Base & {
@@ -64,11 +64,7 @@ export const Compare: React.FC<CompareProps> = ({ title, unit = "", left, right,
         )}
         {side(right, 1)}
       </div>
-      {source && (
-        <div style={{ position: "absolute", bottom: height * 0.05, right: width * 0.06, color: t.muted, fontSize: 22 * scale }}>
-          {source}
-        </div>
-      )}
+      {source && <SourceCaption text={source} color={t.muted} />}
     </Stage>
   );
 };

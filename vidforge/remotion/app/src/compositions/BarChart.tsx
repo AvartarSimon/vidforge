@@ -1,6 +1,6 @@
 import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { Base, mergeTheme } from "../theme";
-import { Stage, useLayout } from "../layout";
+import { Stage, useLayout, SourceCaption } from "../layout";
 
 export type BarItem = { label: string; value: number; color?: string; display?: string };
 export type BarChartProps = Base & {
@@ -50,7 +50,7 @@ export const BarChart: React.FC<BarChartProps> = ({ title, unit = "", items, max
         );
       })}
       {source && (
-        <div style={{ position: "absolute", bottom: height * 0.05, right: width * 0.08, color: t.muted, fontSize: 22 * scale }}>{source}</div>
+        <SourceCaption text={source} color={t.muted} />
       )}
     </Stage>
   );

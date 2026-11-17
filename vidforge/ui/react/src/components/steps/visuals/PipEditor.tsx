@@ -190,22 +190,49 @@ export function PipEditor({
     }
   }
 
+  // the segment's own picture, for a split slot nothing else fills: left empty, the slot showed the
+  // full-frame picture behind it — a blurred band and the edge of the photo instead of its subject
+  const isFile = (v: unknown) => typeof v === 'string' && !/^[a-z]+:/i.test(v) // not a "commons:…" search still to run
+  const own = (seg.clips || []).find((c) => isFile(c.image) || isFile(c.video))
+  const ownLayer = (): Overlay | null =>
+    own ? (isFile(own.video) ? { video: own.video as string } : { image: own.image as string }) : null
+
   const applyLayout = (l: Layout) => {
+    const count = layers.filter((x) => !x.avatar && !x.me).length
+    const fill = l.slots.length > 1 && count < l.slots.length && ownLayer() ? l.slots.length - count : 0
     setLayers((ls) => {
-      const media = ls.map((x, i) => ({ x, i })).filter(({ x }) => !x.avatar && !x.me)
       const next = [...ls]
+      for (let k = 0; k < fill; k++) next.push(ownLayer() as Overlay)
+      const media = next.map((x, i) => ({ x, i })).filter(({ x }) => !x.avatar && !x.me)
       l.slots.forEach((slot, k) => {
-        const target = media[k] ?? (k === 0 ? undefined : undefined)
+        const target = media[k]
         if (!target) return
         const n: Overlay = { ...target.x, ...slot }
-        if (slot.height === undefined) delete n.height
+        if (slot.height === undefined) {
+          delete n.height
+          n.position = clearOfSubtitles(n)
+        }
         next[target.i] = n
       })
       return next
     })
-    if (layers.filter((x) => !x.avatar && !x.me).length < l.slots.length)
-      setError(`「${l.name}」有 ${l.slots.length} 个位置，现在只有 ${layers.filter((x) => !x.avatar && !x.me).length} 个画面——多加几个，空着的位置会露出这一段本来的画面。`)
-    else setError(null)
+    if (count + fill < l.slots.length)
+      setError(`「${l.name}」有 ${l.slots.length} 个位置，现在只有 ${count + fill} 个画面——多加几个，空着的位置会露出这一段本来的画面。`)
+    else setError(fill ? `空着的位置放了这一段自己的画面，可以拖动或换掉。` : null)
+  }
+
+  // A small window in a bottom corner sat on the subtitle line — and on a phone frame, in the bottom
+  // fifth the platform covers with its caption and buttons. Same rule as theme.window_place: a bottom
+  // window's lower edge stays above that.
+  const clearOfSubtitles = (o: Overlay): string | undefined => {
+    const [fx, fy] = String(o.position || '').split(',').map(parseFloat)
+    if (!(fy > 0.5)) return o.position
+    const sub = raw?.subtitles as { burn?: boolean; font_size?: number; margin_v?: number } | undefined
+    const band = sub?.burn ? ((sub.margin_v ?? 48) + (sub.font_size ?? 22) * 1.3) / 288 : 0
+    const bottom = H > W ? 0.31 : Math.max(0.05, band + 0.02)
+    const winH = box(o).h
+    const y = Math.max(0, Math.min(1, (1 - bottom - winH) / Math.max(0.001, 1 - winH)))
+    return `${fx},${Math.round(y * 1000) / 1000}`
   }
 
   // layer box in stage fractions

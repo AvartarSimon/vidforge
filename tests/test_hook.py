@@ -43,6 +43,12 @@ class Card(unittest.TestCase):
         self.assertGreater(y / 1920, theme.MARGIN_TOP + theme.WINDOW_H)
         self.assertLess((y + 250) / 1920, 1 - theme.SUB_LIFT - 12 / SCRIPT_LINES)
 
+    def test_over_a_full_screen_face_it_goes_up_out_of_the_way(self):
+        # in the middle of the frame it sat on the presenter's eyes and nose
+        x, y = hook.position(1080, 1920, 700, 250, over_face=True)
+        self.assertLess((y + 250) / 1920, 0.30)
+        self.assertGreater(y / 1920, 0.10, "below the series badge")
+
     def test_the_project_reads_it_and_keeps_seconds_sensible(self):
         raw = {"title": "t", "hook": {"text": "  人口第一次减少 ", "seconds": 30},
                "segments": [{"id": "a", "text": "x", "image": "a.jpg"}]}

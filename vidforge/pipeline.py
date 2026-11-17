@@ -89,7 +89,7 @@ def preview_segment(project: Project, seg_id: str) -> tuple[Path, float]:
         from . import remotion
         for pc in render.plan_clips(seg, narration + seg.pause_after):
             if pc.clip.remotion is not None:
-                pc.clip.video = remotion.render(pc.clip.remotion.composition, _graphics_props(project, pc.clip.remotion), duration=pc.seconds,
+                pc.clip.video = remotion.render(pc.clip.remotion.composition, _graphics_props(project, pc.clip.remotion, seg), duration=pc.seconds,
                                                 fps=project.fps, width=project.width, height=project.height,
                                                 out_dir=bd / "remotion", log=lambda *_: None)
     if any(getattr(o, "me", None) for o in (*seg.clips, *seg.overlays)):
@@ -288,11 +288,30 @@ def _stage_assets(ctx: _Ctx) -> None:
     _set_progress("assets", 1, 1)
 
 
-def _graphics_props(project: Project, spec: RemotionSpec) -> dict:
+def _bottom_corner(o) -> str | None:
+    """"left" / "right" when an overlay sits in a bottom corner of the frame, else None."""
+    pos = str(getattr(o, "position", "") or "")
+    if "," in pos:
+        try:
+            fx, fy = (float(v) for v in pos.split(","))
+        except ValueError:
+            return None
+        return ("right" if fx > 0.5 else "left") if fy > 0.5 else None
+    if "bottom" in pos:
+        return "left" if "left" in pos else "right" if "right" in pos else None
+    return None
+
+
+def _graphics_props(project: Project, spec: RemotionSpec, seg: Segment | None = None) -> dict:
     """A chart's props, in the template's colours unless the segment chose its own, and told how
-    much of the bottom a burned subtitle line takes (landscape; the vertical band is already clear)."""
+    much of the bottom a burned subtitle line takes (landscape; the vertical band is already clear).
+    A small window in a bottom corner of the segment sends the source caption to the other side:
+    the caption is the chart's evidence, and a round window sat right on top of it."""
     from . import theme
     props = spec.props
+    taken = {_bottom_corner(o) for o in (seg.overlays if seg else []) if (o.size or 1) < 0.6} - {None}
+    if len(taken) == 1 and "captionSide" not in props:
+        props = {**props, "captionSide": "left" if taken == {"right"} else "right"}
     colours = theme.graphics_theme(project.theme)
     if colours and "theme" not in props:
         props = {**props, "theme": colours}
@@ -312,7 +331,7 @@ def _stage_remotion(ctx: _Ctx) -> None:
             if pc.clip.remotion is not None:
                 _check_cancel()
                 pc.clip.video = remotion.render(
-                    pc.clip.remotion.composition, _graphics_props(ctx.project, pc.clip.remotion), duration=pc.seconds,
+                    pc.clip.remotion.composition, _graphics_props(ctx.project, pc.clip.remotion, seg), duration=pc.seconds,
                     fps=ctx.project.fps, width=ctx.project.width, height=ctx.project.height,
                     out_dir=ctx.bd / "remotion", log=_log)
         _set_progress("remotion", i + 1, len(todo))
@@ -527,7 +546,9 @@ def _stage_assemble(ctx: _Ctx) -> tuple[Path, list[dict], float]:
         sound = sfx.track(p.transition_sfx, cuts, cursor + trail, bd / "sfx.wav")
         if sound:
             _log(f"  sfx        {p.transition_sfx} × {len(cuts)}")
-    render.finalize(p, merged, burn_file if cues else None, cursor + trail, final, hook_at=lead, sfx=sound)
+    first = p.segments[0].clips[0] if p.segments and p.segments[0].clips else None
+    render.finalize(p, merged, burn_file if cues else None, cursor + trail, final, hook_at=lead, sfx=sound,
+                    content_end=cursor, hook_over_face=bool(first and render.is_talking_head(first)))
     _set_progress("assemble", 2, 3)
 
     thumb_src = next((s.image for s in p.segments if s.image), None)

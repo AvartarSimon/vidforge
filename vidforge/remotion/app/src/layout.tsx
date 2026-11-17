@@ -41,3 +41,15 @@ export const Stage: React.FC<{
 // The few words a chart writes itself ("since 1960", "higher") follow the words it was given: an
 // English project's chart said 倍 and 更高 next to English labels.
 export const isChinese = (...given: (string | undefined)[]) => /[\u3400-\u9fff]/.test(given.join(""));
+
+// The chart's evidence: where the numbers come from. Bottom right of the band unless a small window
+// sits in that corner of the frame (`captionSide`, set by the pipeline from the segment's overlays).
+export const SourceCaption: React.FC<{ text: string; color: string }> = ({ text, color }) => {
+  const { width, height, scale } = useLayout();
+  const side = (getInputProps() as { captionSide?: string }).captionSide === "left" ? "left" : "right";
+  return (
+    <div style={{ position: "absolute", bottom: height * 0.05, [side]: width * 0.06, color, fontSize: 22 * scale }}>
+      {text}
+    </div>
+  );
+};

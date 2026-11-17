@@ -135,7 +135,9 @@ def window_place(width: int, height: int, size: float, box_h: float, corner: str
     win_w, win_h = size * width, box_h * height
     mx = width * (MARGIN_X if tall else 0.03)
     top = height * (MARGIN_TOP if tall else 0.05)
-    bottom_clear = height * max(SUB_LIFT + 0.12 if tall else sub_band + 0.02, 0.05)
+    # upright: just above the lifted subtitle line — any higher and the window sits over the lower
+    # part of a chart, where its source caption is
+    bottom_clear = height * max(SUB_LIFT + 0.07 if tall else sub_band + 0.02, 0.05)
     left = mx if "left" in corner else width - mx - win_w
     y = top if corner.startswith("top") else height - bottom_clear - win_h
     fx = left / max(1.0, width - win_w)

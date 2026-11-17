@@ -604,11 +604,13 @@ def concat(clips: list[Path], out: Path) -> None:
 
 
 def finalize(project: Project, merged: Path, srt: Path | None, total: float, out: Path,
-             hook_at: float = 0.0, sfx: Path | None = None) -> None:
+             hook_at: float = 0.0, sfx: Path | None = None, content_end: float | None = None,
+             hook_over_face: bool = False) -> None:
     """Mix BGM under the narration (ducked while the voice speaks) and optionally burn
     subtitles. One encode pass; video is stream-copied when nothing is burned.
     `hook_at`: where the narration starts (after the channel opener) — the hook card's start.
-    `sfx`: a track of transition sounds (sfx.track), laid over the mix."""
+    `sfx`: a track of transition sounds (sfx.track), laid over the mix.
+    `content_end`: where the end card starts; the badge shows only between the opener and it."""
     args: list[str] = ["-y", "-i", str(merged)]
     filters: list[str] = []
     maps: list[str] = []
@@ -624,7 +626,10 @@ def finalize(project: Project, merged: Path, srt: Path | None, total: float, out
             bw = im.width
         x, y = th.badge_position(project.theme.get("side", "left"), project.width, project.height, bw)
         args += ["-loop", "1", "-i", str(png)]
-        filters.append(f"[0:v][{n_in}:v]overlay={x}:{y}:shortest=1[bv]")
+        # the opener and the end card already carry the channel's name: the series badge is for the video
+        span = (f":enable='between(t,{hook_at:.3f},{content_end:.3f})'"
+                if hook_at > 0 or (content_end is not None and content_end < total - 0.05) else "")
+        filters.append(f"[0:v][{n_in}:v]overlay={x}:{y}:shortest=1{span}[bv]")
         vin, n_in = "[bv]", n_in + 1
     if project.hook.text:
         from . import brand as brandkit, hook
@@ -633,7 +638,7 @@ def finalize(project: Project, merged: Path, srt: Path | None, total: float, out
         from PIL import Image
         with Image.open(png) as im:
             cw, ch = im.size
-        x, y = hook.position(project.width, project.height, cw, ch)
+        x, y = hook.position(project.width, project.height, cw, ch, over_face=hook_over_face)
         start, end = hook_at, hook_at + project.hook.seconds
         args += ["-loop", "1", "-framerate", str(project.fps), "-t", f"{end:.3f}", "-i", str(png)]
         # alpha fades rather than a cut: a card that snaps on and off reads as a glitch

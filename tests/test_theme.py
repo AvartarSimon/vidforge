@@ -130,6 +130,21 @@ class Apply(unittest.TestCase):
         own = RemotionSpec("BigNumber", {"value": "1", "theme": {"bg": "#000"}})
         self.assertEqual(pipeline._graphics_props(project, own)["theme"], {"bg": "#000"}, "a segment's own choice wins")
 
+    def test_a_window_in_a_bottom_corner_sends_the_source_caption_to_the_other_side(self):
+        # a round window sat right on 「数据来源：世界银行」, which must stay on screen
+        from vidforge import pipeline
+        from vidforge.project import Overlay, RemotionSpec, Segment
+        spec = RemotionSpec("BigNumber", {"value": "1"})
+        p = proj.Project(title="t", segments=[], root=Path("."), width=1080, height=1920)
+        seg = Segment(id="s", text="x", overlays=[Overlay(video=Path("t.mp4"), size=0.24, position="0.94,0.62")])
+        self.assertEqual(pipeline._graphics_props(p, spec, seg)["captionSide"], "left")
+        seg.overlays[0].position = "0.06,0.62"
+        self.assertEqual(pipeline._graphics_props(p, spec, seg)["captionSide"], "right")
+        seg.overlays[0].position = "0.06,0.05"
+        self.assertNotIn("captionSide", pipeline._graphics_props(p, spec, seg), "a top window is out of the caption's way")
+        seg.overlays = [Overlay(video=Path("t.mp4"), size=1, height=0.5, position="0,1")]
+        self.assertNotIn("captionSide", pipeline._graphics_props(p, spec, seg), "a split screen is not a corner window")
+
     def test_a_landscape_chart_is_told_where_the_burned_subtitle_line_is(self):
         # readable subtitles sat across the chart's axis; a chart with no subtitles keeps the frame
         from vidforge import pipeline
@@ -211,6 +226,24 @@ class Api(unittest.TestCase):
         code, _ = self.call("/api/new", {"name": "bad", "frame": "5:4", "dir": str(self.td)})
         self.assertEqual(code, 400)
         self.assertFalse((self.td / "bad").exists(), "nothing left behind for a refused frame")
+
+
+class BadgeSpan(unittest.TestCase):
+    def test_the_badge_stays_off_the_opener_and_the_end_card(self):
+        from unittest import mock
+        calls = []
+        td = Path(tempfile.mkdtemp())
+        try:
+            p = proj.Project(title="t", segments=[], root=td, width=540, height=960, quality="draft", encoder="libx264",
+                             theme={"palette": "mint", "badge": "S01"})
+            with mock.patch.object(render.ffmpeg, "run", side_effect=calls.append), mock.patch.object(render, "replace_with_retry"):
+                render.finalize(p, td / "merged.mp4", None, 20.0, td / "final.mp4", hook_at=1.2, content_end=14.0)
+                render.finalize(p, td / "merged.mp4", None, 20.0, td / "final.mp4")
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
+        graph = lambda a: a[a.index("-filter_complex") + 1]   # noqa: E731
+        self.assertIn("enable='between(t,1.200,14.000)'", graph(calls[0]))
+        self.assertNotIn("enable=", graph(calls[1]), "no brand clips: the badge runs the whole video")
 
 
 @unittest.skipUnless(_ff(), "ffmpeg not installed")

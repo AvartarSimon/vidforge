@@ -129,8 +129,13 @@ def _rgba(colour: str, alpha: int) -> tuple[int, int, int, int]:
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), alpha
 
 
-def position(width: int, height: int, card_w: int, card_h: int) -> tuple[int, int]:
+def position(width: int, height: int, card_w: int, card_h: int, over_face: bool = False) -> tuple[int, int]:
     """Centred, in the upper middle: below the vertical template's presenter window and badge
-    (they end about a quarter of the way down), well above the subtitle line."""
+    (they end about a quarter of the way down), well above the subtitle line.
+
+    `over_face`: the opening shot is a talking head filling the frame, whose eyes sit right where
+    that middle is — the card goes up to the top instead, just under the badge."""
+    if over_face:
+        return (width - card_w) // 2, round(height * (0.12 if height > width else 0.07))
     cy = 0.40 if height > width else 0.36
     return (width - card_w) // 2, max(0, round(height * cy - card_h / 2))
