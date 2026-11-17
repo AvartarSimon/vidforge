@@ -32,6 +32,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const rawRef = useRef<RawProject | null>(null)
   rawRef.current = raw
+  // bumped by every patch(): a reload that started before an edit must not overwrite it
+  const editSeq = useRef(0)
 
   const save = useCallback(async (snapshot = false): Promise<boolean> => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
@@ -62,9 +64,16 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     // edit still sitting in the 700ms autosave debounce, flush it first or it gets silently
     // discarded (e.g. build/segment-history/project-switch flows all call reload()).
     if (saveTimer.current) await save()
+    const seq = editSeq.current
     try {
       const v = await apiGet<ProjectView>('/api/project')
       if (!v.home) normalizeSegments(v.raw)
+      if (editSeq.current !== seq && !v.home && rawRef.current) {
+        // edited while the request was out (typing straight after an upload): the server's copy
+        // is older than the screen — keep the edit, its autosave is already scheduled
+        setView({ ...v, raw: rawRef.current })
+        return
+      }
       setView(v)
       setRaw(v.home ? null : v.raw)
       setSaveState('saved')
@@ -92,6 +101,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const patch = useCallback(
     (fn: (raw: RawProject) => void) => {
       if (!rawRef.current) return
+      editSeq.current += 1
       try {
         fn(rawRef.current)
       } catch (e) {
