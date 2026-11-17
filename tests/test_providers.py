@@ -93,6 +93,18 @@ class DownloadLimits(unittest.TestCase):
         self.assertNotIn("noc@", str(cm.exception))
 
 
+class SearchCache(unittest.TestCase):
+    def test_an_empty_answer_is_not_kept_for_a_day(self):
+        from vidforge import assets
+        with tempfile.TemporaryDirectory() as td:
+            calls = []
+            fn = lambda: calls.append(1) or ([] if len(calls) == 1 else [{"id": 1}])   # noqa: E731
+            self.assertEqual(assets.cached_search(Path(td), "q", fn), [])
+            self.assertEqual(assets.cached_search(Path(td), "q", fn), [{"id": 1}], "asked again, not served the empty one")
+            self.assertEqual(assets.cached_search(Path(td), "q", fn), [{"id": 1}])
+            self.assertEqual(len(calls), 2, "a real answer is cached")
+
+
 class Providers(unittest.TestCase):
     def test_pexels_mapping(self):
         prov = pexels.PexelsProvider()

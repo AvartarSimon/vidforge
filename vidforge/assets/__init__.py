@@ -200,7 +200,10 @@ def cached_search(root: Path, key: str, fn) -> list[dict]:
         except json.JSONDecodeError:
             pass
     result = fn()
-    f.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+    # an empty answer is as often a hiccup (a consent page, a rate limit, a 502) as a real "nothing":
+    # cached, it kept the search empty for a day
+    if result:
+        f.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
     return result
 
 
