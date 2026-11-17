@@ -19,9 +19,11 @@ each, chosen so the promise lands before 0:30 and the payoff is spread rather th
 
 from __future__ import annotations
 
+import json
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
 
 
 @dataclass
@@ -86,16 +88,47 @@ TEMPLATES: dict[str, Template] = {
         ]),
 }
 
+# Templates the user made — today, frameworks extracted from reference videos (frameworks.py).
+# One JSON file each, beside the built-in ones in every list and every prompt.
+USER_DIR = Path.home() / ".vidforge" / "structures"
+
+
+def user_templates() -> dict[str, Template]:
+    out: dict[str, Template] = {}
+    for f in sorted(USER_DIR.glob("*.json")) if USER_DIR.is_dir() else []:
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+            out[d["id"]] = Template(id=d["id"], name=d["name"], about=d.get("about", ""),
+                                    beats=[Beat(**{k: v for k, v in b.items() if k in Beat.__dataclass_fields__})
+                                           for b in d["beats"]])
+        except (ValueError, KeyError, TypeError):
+            continue                  # a hand-edited file that no longer parses is skipped, not fatal
+    return out
+
+
+def save_user_template(t: Template, extra: dict | None = None) -> Path:
+    USER_DIR.mkdir(parents=True, exist_ok=True)
+    f = USER_DIR / f"{t.id}.json"
+    f.write_text(json.dumps({**asdict(t), **(extra or {})}, ensure_ascii=False, indent=1), encoding="utf-8")
+    return f
+
+
+def all_templates() -> dict[str, Template]:
+    return {**TEMPLATES, **user_templates()}
+
+
 def list_templates() -> list[dict]:
-    return [{"id": t.id, "name": t.name, "about": t.about,
+    user = user_templates()
+    return [{"id": t.id, "name": t.name, "about": t.about, "user": t.id in user,
              "beats": [{"id": b.id, "name": b.name, "role": b.role} for b in t.beats]}
-            for t in TEMPLATES.values()]
+            for t in {**TEMPLATES, **user}.values()]
 
 
 def get(template_id: str) -> Template:
-    t = TEMPLATES.get(template_id)
+    templates = all_templates()
+    t = templates.get(template_id)
     if not t:
-        raise KeyError(f"未知的结构模板 '{template_id}'（可选：{', '.join(TEMPLATES)}）")
+        raise KeyError(f"未知的结构模板 '{template_id}'（可选：{', '.join(templates)}）")
     return t
 
 

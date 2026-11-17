@@ -37,6 +37,7 @@ import threading
 import time
 import traceback
 import urllib.parse
+import urllib.request
 import webbrowser
 from dataclasses import asdict
 from http import HTTPStatus
@@ -140,6 +141,7 @@ class State:
         self.autofill = {"state": "idle", "done": 0, "total": 0, "lines": [], "result": None, "cancel": False}
         self.heads = {"state": "idle", "lines": [], "result": None, "error": None}
         self.export = {"state": "idle", "lines": [], "results": [], "error": None}
+        self.refjob = {"state": "idle", "lines": [], "result": None, "error": None}     # 参考视频: download / extract
         self.last_request = time.time()
         self.checks: list[str] = []          # hand-picked files waiting for the (slow) vision check
         self.check_current: str | None = None
@@ -165,7 +167,8 @@ class State:
     @property
     def busy(self) -> bool:
         """Is something running that must not be interrupted?"""
-        return "running" in (self.build["state"], self.autofill["state"], self.heads["state"], self.export["state"])
+        return "running" in (self.build["state"], self.autofill["state"], self.heads["state"], self.export["state"],
+                             self.refjob["state"])
 
     def enqueue_check(self, rel: str) -> None:
         """Vision-check a downloaded picture in the background; the verdict lands in assets/index.json
@@ -493,6 +496,54 @@ def make_handler(state: State):
                     return self._json({"palettes": th.listing(), "current": raw.get("theme") or None,
                                        "frames": {k: list(v) for k, v in th.FRAMES.items()}, "frame": frame,
                                        "window": {"size": th.WINDOW_W, "height": th.WINDOW_H}})
+                if path == "/api/refs":
+                    from .. import references
+                    return self._json({"items": references.listing(), "job": state.refjob})
+                if path == "/api/refs/job":
+                    return self._json(state.refjob)
+                if path == "/api/refs/thumb":
+                    # B站's image hosts refuse a page from another site (hotlink protection): the
+                    # search results' covers are fetched here, from those two image hosts only
+                    u = q.get("u", "")
+                    host = urllib.parse.urlparse(u).netloc.lower()
+                    if not u.startswith("https://") or not host.endswith(("hdslb.com", "ytimg.com")):
+                        return self._error("forbidden", HTTPStatus.FORBIDDEN)
+                    try:
+                        req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.bilibili.com/"})
+                        with urllib.request.urlopen(req, timeout=15) as r:
+                            body, ctype = r.read(), r.headers.get("Content-Type", "image/jpeg")
+                    except Exception:  # noqa: BLE001  a missing cover is not an error worth a message
+                        return self._error("not found", HTTPStatus.NOT_FOUND)
+                    self.send_response(HTTPStatus.OK)
+                    self.send_header("Content-Type", ctype)
+                    self.send_header("Content-Length", str(len(body)))
+                    self.send_header("Cache-Control", "max-age=86400")
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if path == "/api/refs/search":
+                    from .. import references
+                    try:
+                        return self._json({"candidates": references.search(q.get("site", "youtube"), q.get("q", ""))})
+                    except references.RefError as e:
+                        return self._error(str(e))
+                    except Exception as e:  # noqa: BLE001  the site was unreachable or changed shape
+                        return self._error(f"搜索失败：{e}")
+                if path == "/api/refs/framework":
+                    from .. import frameworks, references
+                    try:
+                        return self._json({"framework": frameworks.load(q.get("id", ""))})
+                    except references.RefError as e:
+                        return self._error(str(e), HTTPStatus.NOT_FOUND)
+                if path.startswith("/api/refs/file/"):           # a reference's video or thumbnail
+                    from .. import references
+                    rid, _, name = path[len("/api/refs/file/"):].partition("/")
+                    if name not in ("video.mp4", "thumb.jpg"):
+                        return self._error("forbidden", HTTPStatus.FORBIDDEN)
+                    try:
+                        return self._file(references.folder_of(urllib.parse.unquote(rid)) / name)
+                    except references.RefError as e:
+                        return self._error(str(e), HTTPStatus.NOT_FOUND)
                 if path == "/api/brand":
                     return self._json(self.brand_view())
                 if path == "/api/brand/file":                 # the opener sound / end music, to listen to
@@ -823,6 +874,9 @@ def make_handler(state: State):
                             return self._error(e.args[0])
                     state.write_raw(raw, snapshot=True)
                     return self._json({"theme": raw.get("theme"), "subtitles": raw.get("subtitles")})
+                if path in ("/api/refs/download", "/api/refs/extract", "/api/refs/import", "/api/refs/delete",
+                            "/api/structure/templates/delete"):
+                    return self.refs_post(path, body)
                 if path in ("/api/brand", "/api/brand/project", "/api/brand/sting", "/api/brand/preview", "/api/audio/upload"):
                     return self.brand_post(path, body)
                 if path == "/api/platforms/export":
@@ -2156,6 +2210,51 @@ def make_handler(state: State):
                 state.enqueue_check(state.rel(dest))
             return self._json({"path": state.rel(dest), "credit": c.credit_line(), "duration": c.duration,
                                "kind": c.kind, "checking": checking})
+
+        # -- 参考视频 / 框架 ----------------------------------------------------------------
+        def refs_post(self, path: str, body: dict):
+            from .. import frameworks, references, structure
+            if path == "/api/refs/import":
+                try:
+                    info = references.import_file(body.get("name", "video.mp4"), base64.b64decode(body.get("data_b64", "")),
+                                                  body.get("title", ""))
+                except references.RefError as e:
+                    return self._error(str(e))
+                return self._json({"item": info})
+            if path == "/api/refs/delete":
+                try:
+                    references.remove(str(body.get("id", "")))
+                except references.RefError as e:
+                    return self._error(str(e))
+                return self._json({"items": references.listing()})
+            if path == "/api/structure/templates/delete":
+                tid = str(body.get("id", ""))
+                f = (structure.USER_DIR / f"{tid}.json").resolve()
+                if f.parent != structure.USER_DIR.resolve() or not f.is_file():
+                    return self._error("只能删自己的框架（内置模板删不了）")
+                f.unlink()
+                return self._json({"templates": structure.list_templates()})
+            # download / extract run in the background: a 10-minute video takes a minute or two
+            if state.refjob["state"] == "running":
+                return self._error("上一个下载或拆解还没完成")
+            state.refjob = {"state": "running", "lines": [], "result": None, "error": None}
+            log = state.refjob["lines"].append
+
+            def run():
+                try:
+                    if path == "/api/refs/download":
+                        state.refjob["result"] = references.download(str(body.get("url", "")), log=log)
+                    else:
+                        state.refjob["result"] = frameworks.extract(str(body.get("id", "")), log=log)
+                except (references.RefError, frameworks.FrameworkError) as e:
+                    state.refjob["error"] = str(e)
+                except Exception as e:  # noqa: BLE001  a site that changed, a file that broke: say it
+                    state.refjob["error"] = f"出错了：{e}"
+                finally:
+                    state.refjob["state"] = "done"
+
+            threading.Thread(target=run, daemon=True).start()
+            return self._json({"started": True})
 
         # -- 片头片尾与音乐 --------------------------------------------------------------
         # The channel's kit (name, slogan, opener, end card, their sounds) is one file for every

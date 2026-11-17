@@ -7,6 +7,7 @@ import { PageHeader } from './components/shared/ui'
 import { TopBar } from './components/nav/TopBar'
 import type { SectionId } from './components/nav/NavRail'
 import { TrendsSection } from './components/sections/TrendsSection'
+import { ReferencesSection } from './components/sections/ReferencesSection'
 import { EditorSection } from './components/sections/EditorSection'
 import { RecordStudio } from './components/sections/voice/RecordStudio'
 import { VideoSection } from './components/sections/VideoSection'
@@ -132,6 +133,20 @@ function Shell({ mode, onToggleMode }: { mode: PaletteMode; onToggleMode: () => 
           {!loading && !error && raw && section === 'editor' && <EditorSection key={`${stepKey}-editor`} onOpen={(w) => (w === 'studio' ? setSection('studio') : goStep(4))} />}
           {!loading && !error && raw && section === 'studio' && <RecordStudio key={`${stepKey}-studio`} />}
           {!loading && !error && raw && section === 'trends' && <TrendsSection key={`${stepKey}-trends`} />}
+          {!loading && !error && raw && section === 'refs' && (
+            <ReferencesSection
+              key={`${stepKey}-refs`}
+              onUse={(tid) => {
+                // the script step reads its skeleton from here when it opens
+                try {
+                  localStorage.setItem('vf.structure', tid)
+                } catch {
+                  // private window: the choice is made again in the step
+                }
+                goStep(1)
+              }}
+            />
+          )}
           {!loading && !error && raw && section === 'video' && <VideoSection key={`${stepKey}-video`} />}
           {!loading && !error && raw && section === 'voice' && <VoiceSection key={`${stepKey}-voice`} />}
           {!loading && !error && raw && section === 'images' && <ImagesSection key={`${stepKey}-images`} />}

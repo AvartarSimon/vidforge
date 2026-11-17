@@ -10,6 +10,7 @@ import ViewTimelineIcon from '@mui/icons-material/ViewTimeline'
 import VideocamIcon from '@mui/icons-material/Videocam'
 import GraphicEqIcon from '@mui/icons-material/GraphicEq'
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary'
+import VideoLibraryIcon from '@mui/icons-material/VideoLibrary'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
@@ -45,6 +46,7 @@ export const SECTIONS = [
   { id: 'editor', label: '剪辑台', sub: '时间线、预览、属性', icon: ViewTimelineIcon, tone: 'teal' as Tone },
   { id: 'studio', label: '录制', sub: '提词器、美颜、换背景', icon: VideocamIcon, tone: 'coral' as Tone },
   { id: 'trends', label: '热点', sub: '现在什么在火', icon: WhatshotIcon, tone: 'orange' as Tone },
+  { id: 'refs', label: '参考', sub: '下载好视频、拆出框架', icon: VideoLibraryIcon, tone: 'pink' as Tone },
   { id: 'video', label: '视频', sub: '剪口播、美化、遮脸', icon: MovieFilterIcon, tone: 'violet' as Tone },
   { id: 'voice', label: '声音', sub: '声音库与试听', icon: GraphicEqIcon, tone: 'blue' as Tone },
   { id: 'images', label: '图片', sub: '素材与授权', icon: PhotoLibraryIcon, tone: 'green' as Tone },

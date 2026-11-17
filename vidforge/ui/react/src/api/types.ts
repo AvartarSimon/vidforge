@@ -317,6 +317,7 @@ export interface StructureTemplate {
   id: string
   name: string
   about: string
+  user?: boolean // extracted from a reference video (~/.vidforge/structures)
   beats: { id: string; name: string; role: string }[]
 }
 

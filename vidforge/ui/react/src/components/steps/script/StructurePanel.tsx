@@ -7,6 +7,7 @@ import {
   Box,
   Button,
   Chip,
+  ListSubheader,
   MenuItem,
   Stack,
   Table,
@@ -131,7 +132,13 @@ export function StructurePanel({
               sx={{ minWidth: 300 }}
             >
               <MenuItem value="">不用骨架（AI 自己分段）</MenuItem>
-              {templates.map((t) => (
+              {templates.filter((t) => !t.user).map((t) => (
+                <MenuItem key={t.id} value={t.id}>
+                  {t.name}
+                </MenuItem>
+              ))}
+              {templates.some((t) => t.user) && <ListSubheader>从参考视频拆出来的框架</ListSubheader>}
+              {templates.filter((t) => t.user).map((t) => (
                 <MenuItem key={t.id} value={t.id}>
                   {t.name}
                 </MenuItem>

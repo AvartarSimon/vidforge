@@ -9,7 +9,7 @@
 #   ffmpeg-full, node   Homebrew   rendering (with libass for burned subtitles) / the web UI and Remotion
 #   .venv               python     vidforge itself + playwright (browser bridge), opencv (face
 #                                  tools), faster-whisper (subtitle alignment for your own voice),
-#                                  google api client (YouTube upload)
+#                                  google api client (YouTube upload), yt-dlp (参考视频 downloads)
 #   ui/react/dist       npm        the web UI, built once here so the first start is instant
 #   remotion            npm        animated charts / title cards (skipped with --minimal)
 #   ollama              Homebrew   optional local LLM for keywords and image checks (--with-ai)
@@ -54,7 +54,7 @@ if [ ! -x .venv/bin/python ]; then
 fi
 .venv/bin/python -m pip install -q --upgrade pip
 EXTRAS="dev,video,youtube"
-[ "$MINIMAL" = 1 ] || EXTRAS="$EXTRAS,align"
+[ "$MINIMAL" = 1 ] || EXTRAS="$EXTRAS,align,refs"
 say "installing vidforge [$EXTRAS] into .venv ..."
 .venv/bin/python -m pip install -q -e ".[$EXTRAS]"
 
