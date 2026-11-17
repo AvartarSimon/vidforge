@@ -623,7 +623,9 @@ def finalize(project: Project, merged: Path, srt: Path | None, total: float, out
         bh = max(4, round(project.height * 0.006))
         y = round(project.height * 0.002) if project.height > project.width else project.height - bh
         args += ["-f", "lavfi", "-i", f"color=c=0x{colour}:s={project.width}x{bh}:r={project.fps}:d={total:.3f}"]
-        filters.append(f"{vin}[{n_in}:v]overlay=x='-w+w*t/{total:.3f}':y={y}:eof_action=pass[pb]")
+        # a dim track under it: an orange bar over an orange picture was invisible
+        filters.append(f"{vin}drawbox=x=0:y={y}:w=iw:h={bh}:color=black@0.35:t=fill[pt];"
+                       f"[pt][{n_in}:v]overlay=x='-w+w*t/{total:.3f}':y={y}:eof_action=pass[pb]")
         vin, n_in = "[pb]", n_in + 1
     audio_in = n_in
     if srt is not None and project.subtitles.burn and not ffmpeg.has_filter("subtitles"):
