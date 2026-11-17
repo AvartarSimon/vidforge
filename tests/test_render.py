@@ -221,3 +221,22 @@ class ColourRange(unittest.TestCase):
         y = subprocess.run([ff, "-v", "error", "-i", str(out), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"],
                            capture_output=True).stdout[160 * 90 * 0 + 5]
         self.assertLessEqual(y, 236, "converted to the standard range, not just relabelled")
+
+
+
+class MissingPictures(unittest.TestCase):
+    def test_a_build_with_bare_segments_stops_before_any_work_and_says_which(self):
+        # it used to make all the narration, start rendering and stop at "segment seg3 has no clips"
+        from vidforge import pipeline
+        td = Path(tempfile.mkdtemp())
+        segs = [Segment(id=f"seg{i}", text="x", clips=[]) for i in range(1, 4)]
+        segs[1].clips = [Clip(image=td / "a.jpg")]
+        p = proj.Project(title="t", segments=segs, root=td)
+        with mock.patch.object(pipeline, "_stage_tts") as tts:
+            with self.assertRaises(pipeline.MissingVisuals) as cm:
+                pipeline.build(p)
+        tts.assert_not_called()
+        self.assertIn("seg1、seg3", str(cm.exception))
+        self.assertIn("一键配图", str(cm.exception))
+        with mock.patch.object(pipeline, "_stage_tts"), mock.patch.object(pipeline, "_stage_retention"):
+            self.assertEqual(pipeline.build(p, only_tts=True), p.build_dir, "listening to the narration needs no pictures")
