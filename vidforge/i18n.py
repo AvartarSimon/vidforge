@@ -3,7 +3,7 @@
     vidforge i18n export my-video --lang zh   ->  my-video/i18n_zh.json
     (translate the empty strings — paste the file into a chat with Claude, or by hand)
     vidforge i18n import my-video --lang zh   ->  writes text_zh / label_zh into project.json,
-                                                  and title/thumbnail_text/description into variants.zh
+                                                  and title/thumbnail_text/hook/description into variants.zh
 
 The sheet lists only what is still empty, so re-exporting after new segments were added
 gives a short file. project.json is rewritten with indent=2 and keys preserved in order.
@@ -31,6 +31,9 @@ def export(project: str | Path, lang: str) -> Path:
     for f in TOP_FIELDS:
         if data.get(f) and not variant.get(f):
             sheet["project"][f] = {"source": data[f], lang: ""}
+    hook = (data.get("hook") or {}).get("text")
+    if hook and not (variant.get("hook") or {}).get("text"):
+        sheet["project"]["hook"] = {"source": hook, lang: ""}
     yt_v = variant.get("youtube") or {}
     for f in YT_FIELDS:
         src = (data.get("youtube") or {}).get(f)
@@ -65,7 +68,10 @@ def import_(project: str | Path, lang: str) -> tuple[int, list[str]]:
         return (cell.get(lang) or "").strip()
 
     for f, cell in sheet.get("project", {}).items():
-        if val(cell):
+        if val(cell) and f == "hook":
+            # the variant keeps the original's seconds and gets its own words
+            variant["hook"] = {**(data.get("hook") or {}), "text": val(cell)}; written += 1
+        elif val(cell):
             variant[f] = val(cell); written += 1
     for f, cell in sheet.get("youtube", {}).items():
         if val(cell):

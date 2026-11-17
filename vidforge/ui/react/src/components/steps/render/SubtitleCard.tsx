@@ -52,8 +52,9 @@ function layoutHook(text: string, size: number, maxW: number): { lines: string[]
 }
 
 /** The first sentence of the script, as a starting point the user then shortens. */
-function firstSentence(raw: RawProject): string {
-  const text = String(raw.segments?.[0]?.text || '').trim()
+function firstSentence(raw: RawProject, lang: string | null): string {
+  const first = raw.segments?.[0]
+  const text = String((lang ? first?.[`text_${lang}`] : first?.text) || '').trim()
   const m = text.match(/^.+?[。！？!?.]/)
   return (m ? m[0] : text).replace(/[。.]$/, '').slice(0, 40)
 }
@@ -64,7 +65,7 @@ function firstSentence(raw: RawProject): string {
  * is set here is where it lands.
  */
 export function SubtitleCard() {
-  const { raw, patch } = useProject()
+  const { raw, patch, lang } = useProject()
   const [palettes, setPalettes] = useState<Palette[]>([])
 
   useEffect(() => {
@@ -80,7 +81,10 @@ export function SubtitleCard() {
   const highlight = (sub.highlight as string) || 'keywords'
   const fontSize = Number(sub.font_size ?? 22)
   const marginV = Number(sub.margin_v ?? 48)
-  const hook = raw.hook || {}
+  // a language version has its own hook (variants[lang].hook): the original's words over a
+  // translated narration would be a headline nobody watching can read
+  type Hook = NonNullable<RawProject['hook']>
+  const hook: Hook = (lang ? (raw.variants?.[lang] as { hook?: Hook } | undefined)?.hook : raw.hook) || {}
   const [W, H] = [raw.width || 1920, raw.height || 1080]
   const tall = H > W
   const zh = (raw.language || 'en').startsWith('zh')
@@ -92,11 +96,12 @@ export function SubtitleCard() {
       r.subtitles = r.subtitles || {}
       fn(r.subtitles)
     })
-  const setHook = (fn: (h: NonNullable<RawProject['hook']>) => void) =>
+  const setHook = (fn: (h: Hook) => void) =>
     patch((r) => {
-      r.hook = r.hook || {}
-      fn(r.hook)
-      if (!r.hook.text) delete r.hook
+      const owner = (lang ? ((r.variants = r.variants || {}), (r.variants[lang] = r.variants[lang] || {})) : r) as { hook?: Hook }
+      owner.hook = owner.hook || {}
+      fn(owner.hook)
+      if (!owner.hook.text) delete owner.hook
     })
 
   // preview: the frame at a fixed width, everything placed by the same fractions the renderer uses
@@ -272,7 +277,7 @@ export function SubtitleCard() {
                 slotProps={{ htmlInput: { step: 0.5, min: 1, max: 6 } }}
                 sx={{ width: 80 }}
               />
-              <Button size="small" onClick={() => setHook((h) => (h.text = firstSentence(raw)))} disabled={!raw.segments?.length}>
+              <Button size="small" onClick={() => setHook((h) => (h.text = firstSentence(raw, lang)))} disabled={!raw.segments?.length}>
                 用第一句
               </Button>
             </Stack>

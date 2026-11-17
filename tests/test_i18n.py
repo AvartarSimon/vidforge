@@ -56,6 +56,34 @@ class Variants(unittest.TestCase):
             self.assertEqual(p.segments[1].remotion.props["events"][0]["text"], "喷发")
             self.assertEqual(p.build_dir.name, "build_zh")
 
+    def test_a_variant_without_its_own_hook_gets_none_rather_than_the_originals(self):
+        # the Chinese hook was burned over the first seconds of the English version
+        with tempfile.TemporaryDirectory() as td:
+            data = {**BASE, "hook": {"text": "Why 1816 had no summer", "seconds": 4}}
+            _write(Path(td), data)
+            self.assertEqual(proj.load(td).hook.text, "Why 1816 had no summer")
+            zh = proj.load(td, lang="zh")
+            self.assertEqual(zh.hook.text, "")
+            self.assertTrue(any("开场大字" in w for w in zh.warnings))
+            data["variants"] = {**data["variants"], "zh": {**data["variants"]["zh"], "hook": {"text": "1816年为什么没有夏天", "seconds": 4}}}
+            _write(Path(td), data)
+            self.assertEqual(proj.load(td, lang="zh").hook.text, "1816年为什么没有夏天")
+            data["variants"]["en-zh"] = {"text_from": "en", "subtitles": {"bilingual": True}}
+            _write(Path(td), data)
+            self.assertEqual(proj.load(td, lang="en-zh").hook.text, "Why 1816 had no summer", "same narration language: kept")
+
+    def test_the_hook_is_on_the_translation_sheet(self):
+        with tempfile.TemporaryDirectory() as td:
+            _write(Path(td), {**BASE, "hook": {"text": "Why 1816 had no summer", "seconds": 4}})
+            sheet_path = i18n.export(td, "zh")
+            sheet = json.loads(sheet_path.read_text(encoding="utf-8"))
+            self.assertEqual(sheet["project"]["hook"]["source"], "Why 1816 had no summer")
+            sheet["project"]["hook"]["zh"] = "1816年为什么没有夏天"
+            sheet_path.write_text(json.dumps(sheet, ensure_ascii=False), encoding="utf-8")
+            i18n.import_(td, "zh")
+            self.assertEqual(proj.load(td, lang="zh").hook.seconds, 4)
+            self.assertEqual(proj.load(td, lang="zh").hook.text, "1816年为什么没有夏天")
+
     def test_missing_translation_lists_segments(self):
         with tempfile.TemporaryDirectory() as td:
             data = json.loads(json.dumps(BASE))

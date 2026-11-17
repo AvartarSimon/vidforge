@@ -439,6 +439,14 @@ def load(path: str | Path, lang: str | None = None) -> Project:
     label_key = "label" if narr_lang == base_lang else f"label_{narr_lang}"
     if narr_lang != lang:
         data["language"] = narr_lang
+    notes: list[str] = []
+    variant_raw = (data.get("variants") or {}).get(lang) or {}
+    if narr_lang[:2] != base_lang[:2] and data.get("hook") and "hook" not in variant_raw:
+        # the hook is written in the original's language; over a translated narration it would be
+        # a headline nobody watching can read — off until the variant has its own
+        data = {**data, "hook": None}
+        notes.append(f"开场大字是原版语言写的，{lang} 版没有自己的，这一版先不加（在 variants.{lang}.hook.text 里写一句，"
+                     f"或用 vidforge i18n export 一起翻译）")
     sub_cfg = data.get("subtitles") or {}
     alt_lang = sub_cfg.get("bilingual_lang", "zh") if sub_cfg.get("bilingual") else None
     alt_key = None if not alt_lang else ("text" if alt_lang == base_lang else f"text_{alt_lang}")
@@ -585,7 +593,7 @@ def load(path: str | Path, lang: str | None = None) -> Project:
     if yt.privacy not in ("private", "unlisted", "public"):
         raise ProjectError(f"youtube.privacy '{yt.privacy}' not in (private, unlisted, public)")
 
-    warnings = [f"segment '{s.id}' is {len(s.text)} characters — ElevenLabs caps a request at 5000 and "
+    warnings = notes + [f"segment '{s.id}' is {len(s.text)} characters — ElevenLabs caps a request at 5000 and "
                 f"subtitles/pictures pace better under ~600; consider splitting" for s in segments if len(s.text) > 2500]
 
     return Project(
