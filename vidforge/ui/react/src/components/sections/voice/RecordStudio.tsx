@@ -31,7 +31,7 @@ import NavigateNextIcon from '@mui/icons-material/NavigateNext'
 import { apiPost } from '../../../api/client'
 import { useProject } from '../../../state/ProjectContext'
 import { FxPanel } from '../../../fx/FxPanel'
-import { Teleprompter, type PrompterPlace } from '../../../fx/Teleprompter'
+import { PrompterLine, Teleprompter, type PrompterPlace } from '../../../fx/Teleprompter'
 import { loadFx, saveFx, type FxSettings } from '../../../fx/settings'
 import { useFxEngine } from '../../../fx/useFxEngine'
 
@@ -58,7 +58,8 @@ function pickMime(video: boolean): { mime: string; ext: string } {
 const PREFS = 'vf.studio.v1'
 type Prefs = { cpm: number; fontSize: number; place: PrompterPlace; mirrorText: boolean; mirrorPreview: boolean }
 function loadPrefs(): Prefs {
-  const d: Prefs = { cpm: 240, fontSize: 34, place: 'top', mirrorText: false, mirrorPreview: true }
+  // one line above the picture by default: the face stays visible and the eyes stay by the lens
+  const d: Prefs = { cpm: 240, fontSize: 34, place: 'line', mirrorText: false, mirrorPreview: true }
   try {
     return { ...d, ...JSON.parse(localStorage.getItem(PREFS) || '{}') }
   } catch {
@@ -78,7 +79,7 @@ function loadPrefs(): Prefs {
  * to perform the same paragraph twice is how a channel dies.
  */
 export function RecordStudio() {
-  const { raw, reload } = useProject()
+  const { raw, reload, view } = useProject()
   const [cams, setCams] = useState<Device[]>([])
   const [mics, setMics] = useState<Device[]>([])
   const [cam, setCam] = useState('')
@@ -365,6 +366,10 @@ export function RecordStudio() {
   const text = seg?.text || ''
   const chars = text.replace(/\s/g, '').length
   const expected = (chars / prefs.cpm) * 60
+  // the pace the dubbed narration of this segment was read at: recording at it keeps the
+  // segment's length, so its pictures and subtitles do not need retiming
+  const dubbed = seg ? view?.resolved?.[seg.id]?.duration : null
+  const dubbedCpm = dubbed && chars ? Math.round(chars / (dubbed / 60) / 10) * 10 : null
   const mirrorCss = prefs.mirrorPreview ? 'scaleX(-1)' : undefined
 
   return (
@@ -396,6 +401,9 @@ export function RecordStudio() {
           <Chip size="small" label={live ? '设备已打开' : '未打开'} color={live ? 'success' : 'default'} variant="outlined" />
         </Stack>
 
+        {live && withVideo && prefs.place === 'line' && (
+          <PrompterLine text={text || '这一段还没有文字——先在第 1 步写脚本。'} fontSize={prefs.fontSize} cpm={prefs.cpm} running={scrolling} mirror={prefs.mirrorText} resetKey={resetKey} />
+        )}
         <Box
           sx={{
             position: 'relative',
@@ -438,7 +446,9 @@ export function RecordStudio() {
               </Typography>
             </Stack>
           )}
-          {live && <Teleprompter text={text || '这一段还没有文字——先在第 1 步写脚本。'} fontSize={prefs.fontSize} cpm={prefs.cpm} running={scrolling} mirror={prefs.mirrorText} place={withVideo ? prefs.place : 'full'} resetKey={resetKey} />}
+          {live && !(withVideo && prefs.place === 'line') && (
+            <Teleprompter text={text || '这一段还没有文字——先在第 1 步写脚本。'} fontSize={prefs.fontSize} cpm={prefs.cpm} running={scrolling} mirror={prefs.mirrorText} place={withVideo ? prefs.place : 'full'} resetKey={resetKey} />
+          )}
           {countdown > 0 && (
             <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0,0,0,.3)' }}>
               <Typography sx={{ fontSize: 140, color: '#fff', fontWeight: 700, textShadow: '0 4px 20px #000' }}>{countdown}</Typography>
@@ -617,6 +627,11 @@ export function RecordStudio() {
               速度 {prefs.cpm} 字/分钟
             </Typography>
             <Slider size="small" min={120} max={420} step={10} value={prefs.cpm} onChange={(_, v) => setPrefs({ ...prefs, cpm: v as number })} />
+            {dubbedCpm && (
+              <Button size="small" onClick={() => setPrefs({ ...prefs, cpm: Math.min(420, Math.max(120, dubbedCpm)) })} disabled={prefs.cpm === dubbedCpm}>
+                按这一段配音的速度（{dubbedCpm} 字/分钟，约 {dubbed?.toFixed(0)} 秒）
+              </Button>
+            )}
           </Box>
           <Box>
             <Typography variant="caption" color="text.secondary">
@@ -626,7 +641,8 @@ export function RecordStudio() {
           </Box>
           {withVideo && (
             <ToggleButtonGroup size="small" exclusive value={prefs.place} onChange={(_, v: PrompterPlace | null) => v && setPrefs({ ...prefs, place: v })}>
-              <ToggleButton value="top">靠上（贴近镜头）</ToggleButton>
+              <ToggleButton value="line" title="画面上方单独一行，不挡画面，眼睛离摄像头最近">上方一行</ToggleButton>
+              <ToggleButton value="top" title="压在画面上部，贴近镜头">靠上</ToggleButton>
               <ToggleButton value="full">满屏</ToggleButton>
               <ToggleButton value="bottom">靠下</ToggleButton>
             </ToggleButtonGroup>
