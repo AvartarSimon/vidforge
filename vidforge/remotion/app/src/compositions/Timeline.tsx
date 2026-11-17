@@ -12,15 +12,50 @@ export type TimelineProps = Base & {
 
 // Horizontal timeline: the rule draws across, events pop in one after another, evenly spread
 // over `revealBy` of the narration so the last one lands before the voice moves on.
+// On a phone the band is narrow and tall, and five events across it leave each about 200 px for
+// a date and a sentence — so there the rule runs down the left and the events stack beside it.
 export const Timeline: React.FC<TimelineProps> = ({ title, events, revealBy = 0.85, theme }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
-  const { width, height, scale } = useLayout();
+  const { tall, width, height, scale } = useLayout();
   const t = mergeTheme(theme);
   const n = Math.max(events.length, 1);
 
   const revealFrames = durationInFrames * revealBy;
   const lineProgress = interpolate(frame, [0, revealFrames], [0, 1], { extrapolateRight: "clamp" });
+
+  if (tall) {
+    const titleH = title ? 110 * scale : 0;
+    const x = width * 0.12;
+    const top = titleH + 30 * scale;
+    const row = (height - top - 20 * scale) / n;
+    // the text shrinks with the number of rows rather than spilling out of the band
+    const fs = Math.min(1, 4 / n);
+    return (
+      <Stage theme={t}>
+        {title && (
+          <div style={{ position: "absolute", top: 0, left: width * 0.06, right: width * 0.06, textAlign: "center", color: t.fg, fontSize: 58 * scale, fontWeight: 700, lineHeight: 1.2 }}>
+            {title}
+          </div>
+        )}
+        <div style={{ position: "absolute", left: x - 2 * scale, top, width: 4 * scale, height: (row * n) * lineProgress, backgroundColor: t.muted, borderRadius: 2 }} />
+        {events.map((e, i) => {
+          const start = (revealFrames * i) / n + 6;
+          const s = spring({ frame: frame - start, fps, config: { damping: 14, stiffness: 160 } });
+          const y = top + row * (i + 0.5);
+          return (
+            <div key={i} style={{ position: "absolute", left: 0, top: y, width, opacity: frame >= start ? 1 : 0 }}>
+              <div style={{ position: "absolute", left: x - 13 * scale, top: -13 * scale, width: 26 * scale, height: 26 * scale, borderRadius: "50%", backgroundColor: t.accent, transform: `scale(${s})` }} />
+              <div style={{ position: "absolute", left: x + 40 * scale, right: width * 0.06, top: 0, transform: `translateY(-50%) translateX(${(1 - s) * 30}px)`, opacity: s }}>
+                <div style={{ color: t.accent, fontSize: 64 * scale * fs, fontWeight: 700 }}>{e.date}</div>
+                <div style={{ color: t.fg, fontSize: 52 * scale * fs, lineHeight: 1.25, marginTop: 4 * scale }}>{e.text}</div>
+              </div>
+            </div>
+          );
+        })}
+      </Stage>
+    );
+  }
 
   const left = width * 0.08;
   const right = width * 0.92;

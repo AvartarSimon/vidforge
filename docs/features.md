@@ -116,7 +116,7 @@
 | **8 种转场** | ✅ | `render.TRANSITIONS` — xfade 里挑了适合讲解类的 8 种（不是炫技那些） |
 | **统一调色** | ✅ | `render.LOOKS` + `look_filter()` |
 | **段间黑场** | ✅ | `_boundary_fade()` — **保持时长**的淡入淡出，不是 xfade（xfade 会吃掉时间，把字幕推偏） |
-| **10 个 Remotion 组件** | 🟡 | [`remotion/app/src/compositions/`](../vidforge/remotion/app/src/compositions/) — Intro、Outro、TitleCard、Timeline、BarChart、LineChart、BigNumber、Compare、Host、Vocab。**每个都按旁白的精确长度渲染**，图表自带出处字幕。需要 Node |
+| **10 个 Remotion 组件** | 🟡 | [`remotion/app/src/compositions/`](../vidforge/remotion/app/src/compositions/) — Intro、Outro、TitleCard、Timeline、BarChart、LineChart、BigNumber、Compare、Host、Vocab。**每个都按旁白的精确长度渲染**，图表自带出处字幕。竖屏项目里 Timeline 改成竖排（左边竖线、事件上下排列），图表都画在小窗和字幕之间那一带。需要 Node |
 | **真实数据 → 图表** | ✅ | [`data/worldbank.py`](../vidforge/data/worldbank.py) — 世界银行开放数据，不要 key、约 16000 个指标、缓存 30 天。数值自动换算成万亿/亿/万，**出处一路带到屏幕上**。也支持 `from_csv()` 粘表格。原则：**绝不编数字** |
 
 ### 4.3 出镜与人脸
