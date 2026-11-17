@@ -14,6 +14,8 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import DeleteIcon from '@mui/icons-material/Delete'
+import PictureInPictureAltIcon from '@mui/icons-material/PictureInPictureAlt'
+import FullscreenIcon from '@mui/icons-material/Fullscreen'
 import { apiPost } from '../../../api/client'
 import type { Clip, Overlay, ResolvedClip, ResolvedSegment, Segment } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
@@ -40,7 +42,7 @@ function clipThumb(c: Clip, r?: ResolvedClip) {
 }
 
 export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
-  const { view, patch, saveNow } = useProject()
+  const { view, patch, saveNow, reload } = useProject()
   const [previewing, setPreviewing] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewInfo, setPreviewInfo] = useState('')
@@ -133,11 +135,19 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
   const overlayLabel = (o: Overlay) =>
     `${o.avatar ? '主持人' : o.me ? '🎥 我' : o.video ? '视频' : '图片'}${o.shape === 'circle' ? '（圆）' : typeof o.height === 'number' ? '（分屏）' : ''} · ${Math.round((o.size || 0.3) * 100)}% · ${o.at || 0}s${o.duration ? `→${(o.at || 0) + o.duration}s` : '→末'}`
 
-  const preview = async () => {
-    if (!seg.clips.length) {
-      window.alert('先给这一段加画面')
-      return
+  // 小窗 ⇄ 全屏 for one take, at any time after it was placed
+  const swap = async (what: { clip: number } | { overlay: number }) => {
+    if (!(await saveNow())) return
+    try {
+      await apiPost('/api/segment/swap', { id: segId, ...what })
+      await reload()
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e))
     }
+  }
+
+  // a segment with no picture previews too: it renders with its stand-in (your take, or a plain page)
+  const preview = async () => {
     if (!(await saveNow())) return
     setPreviewing(true)
     setPreviewInfo('渲染中（配音 + 画面，通常 5–30 秒）…')
@@ -211,6 +221,11 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
                   <IconButton size="small" disabled={i === seg.clips.length - 1} onClick={() => move(i, 1)}>
                     <ArrowForwardIcon fontSize="inherit" />
                   </IconButton>
+                  {c.video && !c.remotion && (
+                    <IconButton size="small" title="改成小窗（画中画），下面露出这一段的其它画面" onClick={() => swap({ clip: i })}>
+                      <PictureInPictureAltIcon fontSize="inherit" />
+                    </IconButton>
+                  )}
                   <IconButton size="small" onClick={() => remove(i)}>
                     <DeleteIcon fontSize="inherit" />
                   </IconButton>
@@ -268,13 +283,14 @@ export function ClipStrip({ seg, segId }: { seg: Segment; segId: string }) {
             画中画
           </Typography>
           {(seg.overlays || []).map((o, i) => (
-            <Chip
-              key={i}
-              size="small"
-              label={overlayLabel(o)}
-              onClick={() => setOverlayEditor({ index: i })}
-              onDelete={() => removeOverlay(i)}
-            />
+            <Stack key={i} direction="row" alignItems="center">
+              <Chip size="small" label={overlayLabel(o)} onClick={() => setOverlayEditor({ index: i })} onDelete={() => removeOverlay(i)} />
+              {o.video && (
+                <IconButton size="small" title="改成全屏：这段视频当这一段的主画面" onClick={() => swap({ overlay: i })}>
+                  <FullscreenIcon fontSize="inherit" />
+                </IconButton>
+              )}
+            </Stack>
           ))}
           <Button size="small" onClick={() => setOverlayEditor({ index: null })}>
             ＋ 画中画 / 分屏

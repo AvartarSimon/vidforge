@@ -111,9 +111,7 @@ class BuildTimePicks(unittest.TestCase):
             p = self.project(Path(td))
             with mock.patch.object(assets, "search", return_value=[self.cand("Republic of China Ministry of Justice", "1")]):
                 assets.resolve_all(p, log=lambda *_: None)
-            clip = p.segments[0].clips[0]
-            self.assertIsNone(clip.source, "the search spec is gone")
-            self.assertEqual(clip.image.parent.name, "blank", "a plain page, not the unrelated photo")
+            self.assertEqual(p.segments[0].clips, [], "left empty, not the unrelated photo (the build fills it honestly)")
 
     def test_a_result_that_names_the_subject_is_taken(self):
         from vidforge import assets

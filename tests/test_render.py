@@ -224,19 +224,39 @@ class ColourRange(unittest.TestCase):
 
 
 
-class MissingPictures(unittest.TestCase):
-    def test_a_build_with_bare_segments_stops_before_any_work_and_says_which(self):
-        # it used to make all the narration, start rendering and stop at "segment seg3 has no clips"
+class OptionalPictures(unittest.TestCase):
+    """Pictures are optional: a bare segment renders with the best thing it has, and says so."""
+
+    def test_each_bare_segment_gets_the_best_it_has(self):
+        from vidforge import pipeline
+        from vidforge.project import Overlay
+        td = Path(tempfile.mkdtemp())
+        segs = [Segment(id="own", text="x", clips=[], narration=td / "take.mp4"),
+                Segment(id="window", text="x", clips=[], overlays=[Overlay(video=td / "w.mp4", size=0.24, height=0.18)]),
+                Segment(id="none", text="x", clips=[], label="开场"),
+                Segment(id="has", text="x", clips=[Clip(image=td / "a.jpg")])]
+        p = proj.Project(title="t", segments=segs, root=td, width=320, height=180, theme={"palette": "mint"})
+        lines = []
+        self.assertEqual(pipeline.fill_bare_segments(p, log=lines.append), ["own", "window", "none"])
+        self.assertEqual(segs[0].clips[0].video, td / "take.mp4", "your own recording, full screen")
+        self.assertEqual((segs[1].clips[0].video, segs[1].overlays), (td / "w.mp4", []), "the window, full screen")
+        page = segs[2].clips[0].image
+        self.assertEqual(page.parent.name, "blank")
+        from PIL import Image
+        with Image.open(page) as im:
+            self.assertEqual(im.size, (320, 180))
+            self.assertGreater(len(im.getcolors(1 << 16) or []), 1, "the chapter name is written on it")
+        self.assertEqual(segs[3].clips[0].image, td / "a.jpg", "a segment with a picture is left alone")
+        self.assertEqual(len(lines), 3)
+        self.assertTrue(all("第 3 步" in x for x in lines), "never silent: where to add a picture")
+
+    @unittest.skipUnless(_ff_available(), "ffmpeg not installed")
+    def test_a_project_with_no_pictures_at_all_still_renders(self):
+        # "segment seg3 has no clips" stopped a five-segment project after all its narration was made
         from vidforge import pipeline
         td = Path(tempfile.mkdtemp())
-        segs = [Segment(id=f"seg{i}", text="x", clips=[]) for i in range(1, 4)]
-        segs[1].clips = [Clip(image=td / "a.jpg")]
-        p = proj.Project(title="t", segments=segs, root=td)
-        with mock.patch.object(pipeline, "_stage_tts") as tts:
-            with self.assertRaises(pipeline.MissingVisuals) as cm:
-                pipeline.build(p)
-        tts.assert_not_called()
-        self.assertIn("seg1、seg3", str(cm.exception))
-        self.assertIn("一键配图", str(cm.exception))
-        with mock.patch.object(pipeline, "_stage_tts"), mock.patch.object(pipeline, "_stage_retention"):
-            self.assertEqual(pipeline.build(p, only_tts=True), p.build_dir, "listening to the narration needs no pictures")
+        segs = [Segment(id=f"seg{i}", text="一句话。", clips=[], label=f"第{i}章") for i in (1, 2)]
+        p = proj.Project(title="t", segments=segs, root=td, width=320, height=180, quality="draft", encoder="libx264",
+                         tts=proj.TtsConfig(provider="silent"), language="zh")
+        final = pipeline.build(p)
+        self.assertGreater(ffmpeg.duration(final), 0.5)

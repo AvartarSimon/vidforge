@@ -571,7 +571,7 @@ export function RecordStudio() {
             </Stack>
             {withVideo && target === 'window' && !seg?.clips.length && (
               <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 0.5 }}>
-                这一段还没有主画面——小窗下面要有图片或视频，先在「画面」里给它配图。
+                这一段还没有主画面：渲染时这个小窗会放大成全屏；想要小窗压在画面上的效果，再去「画面」里给它配一张图（随时可以）。
               </Typography>
             )}
             <Stack direction="row" spacing={1} sx={{ mt: 1 }}>

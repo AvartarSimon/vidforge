@@ -247,6 +247,23 @@ class Api(unittest.TestCase):
         self.assertNotIn("youtube", made)
         self.assertTrue((self.td / "ep10" / "assets" / "music" / "pad.m4a").is_file(), "the music came along")
 
+    def test_a_take_moves_between_the_window_and_the_full_frame(self):
+        import json
+        raw = {"title": "t", "width": 1080, "height": 1920, "segments": [
+            {"id": "a", "text": "x", "clips": [{"image": "pic.jpg"}, {"video": "assets/takes/a_1.mp4", "in": 1.0}]}]}
+        self.state.project_path.write_text(json.dumps(raw), encoding="utf-8")
+        code, j = self.call("/api/segment/swap", {"id": "a", "clip": 1, "shape": "circle", "corner": "top-right"})
+        self.assertEqual(code, 200, j)
+        seg = self.raw()["segments"][0]
+        self.assertEqual(seg["clips"], [{"image": "pic.jpg"}])
+        self.assertEqual((seg["overlays"][0]["video"], seg["overlays"][0]["shape"], seg["overlays"][0]["in"]),
+                         ("assets/takes/a_1.mp4", "circle", 1.0))
+        code, j = self.call("/api/segment/swap", {"id": "a", "overlay": 0})
+        seg = self.raw()["segments"][0]
+        self.assertEqual((seg["clips"][0], seg["overlays"]), ({"video": "assets/takes/a_1.mp4", "in": 1.0}, []), "back to full screen, first")
+        self.assertEqual(self.call("/api/segment/swap", {"id": "a", "clip": 1})[0], 400, "a picture is not a take")
+        self.assertEqual(self.call("/api/segment/swap", {"id": "a", "overlay": 5})[0], 400)
+
     def test_a_project_in_the_temp_folder_stays_off_the_recent_list(self):
         from vidforge import ui
         ui.remember_project(self.td / "p")

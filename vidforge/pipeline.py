@@ -113,6 +113,7 @@ def preview_segment(project: Project, seg_id: str) -> tuple[Path, float]:
         video = avatar.render_presenter(project, seg, audio, narration + seg.pause_after, bd / "presenter", log=lambda *_: None)
         for ov in layers:
             ov.video = video; ov.avatar = False
+    fill_bare_segments(draft)
     out = bd / "preview" / f"{_safe(seg_id)}.mp4"
     dur = render.render_segment(draft, seg, audio, out, cache_dir=bd / "preview")
     return out, dur
@@ -615,22 +616,38 @@ def build(project: Project, *, only_tts: bool = False, burn: bool | None = None)
         return _build(project, only_tts=only_tts, burn=burn)
 
 
-class MissingVisuals(RuntimeError):
-    pass
+_VIDEO_EXT = (".mp4", ".mov", ".m4v", ".webm", ".mkv")
 
 
-def _check_visuals(project: Project) -> None:
-    """Every segment needs a picture before anything is rendered. Found only when the renderer
-    reached it, after all the narration was made, the answer was "segment seg3 has no clips" —
-    one segment, in English, with no word on what to do."""
-    missing = [s.id for s in project.segments
-               if not s.clips and not (project.auto_title_cards and s.label)]
-    if not missing:
-        return
-    which = "、".join(missing[:8]) + (f" 等 {len(missing)} 段" if len(missing) > 8 else "")
-    lead = "所有段落都还没有画面" if len(missing) == len(project.segments) else f"有 {len(missing)} 段还没有画面"
-    raise MissingVisuals(f"{lead}（{which}）。到第 3 步「画面」点「一键配图」自动找图，或者给这几段选图、上传、"
-                         "放一个动画图表；也可以在录制棚里录一段当画面。")
+def fill_bare_segments(project: Project, log=None) -> list[str]:
+    """Pictures are optional: a segment nobody gave one to still renders, with the best thing it has.
+
+        your own recording as its narration, and it is a video  -> that take, full screen
+        only a small window (a take over nothing)                 -> the window, full screen
+        nothing at all                                            -> a page in the template's
+                                                                     colour with the chapter name
+    Said in the log, segment by segment — never silent; pictures can be added later at any time."""
+    from .project import Clip
+    filled = []
+    for seg in project.segments:
+        if seg.clips:
+            continue
+        own = seg.narration if seg.narration and Path(seg.narration).suffix.lower() in _VIDEO_EXT else None
+        window = next((o for o in seg.overlays if o.video and not o.avatar and (o.height is None or o.size < 1)), None)
+        if own:
+            seg.clips = [Clip(video=Path(own))]
+            why = "用你录的这段视频全屏"
+        elif window is not None:
+            seg.overlays.remove(window)
+            seg.clips = [Clip(video=window.video, in_=window.in_, out=window.out)]
+            why = "把小窗放大成全屏"
+        else:
+            seg.clips = [Clip(image=render.plain_page(project, seg.id, seg.label or ""), motion="none")]
+            why = "用纯色底" + ("（写着章节名）" if seg.label else "")
+        filled.append(seg.id)
+        if log:
+            log(f"  画面 {seg.id:<12} 还没配图：{why}——想配图随时去第 3 步「画面」")
+    return filled
 
 
 def _build(project: Project, *, only_tts: bool, burn: bool | None) -> Path:
@@ -653,8 +670,6 @@ def _build(project: Project, *, only_tts: bool, burn: bool | None) -> Path:
             print(line, flush=True)
     set_log(tee)
     try:
-        if not only_tts:
-            _check_visuals(project)
         _stage_vocab(project)
         ctx = _Ctx(project)
         _stage_tts(ctx)
@@ -666,6 +681,7 @@ def _build(project: Project, *, only_tts: bool, burn: bool | None) -> Path:
         _stage_remotion(ctx)
         _stage_me(ctx)
         _stage_presenter(ctx)
+        fill_bare_segments(ctx.project, log=_log)
         _stage_render(ctx)
         final, timeline, total = _stage_assemble(ctx)
         _set_progress("done", 1, 1)

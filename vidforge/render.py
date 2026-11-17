@@ -579,6 +579,26 @@ def audio_is_silent(path: Path, floor_db: float = -60.0) -> bool:
     return False
 
 
+def plain_page(project: Project, seg_id: str, label: str = "") -> Path:
+    """An honest blank for a segment without a picture: the template's page colour (a quiet dark
+    grey without one), the chapter name in the middle when there is one."""
+    from PIL import Image, ImageDraw
+    from . import hook, theme
+    colours = theme.graphics_theme(project.theme)
+    bg, fg = (colours["bg"], colours["fg"]) if colours else ("#1f2a30", "#e8e9eb")
+    im = Image.new("RGB", (project.width, project.height), bg)
+    if label.strip():
+        size = round(min(project.width, project.height) * 0.08)
+        font = hook.bold_font(size)
+        d = ImageDraw.Draw(im)
+        l, t, r, b = d.textbbox((0, 0), label, font=font)
+        d.text(((project.width - (r - l)) / 2 - l, (project.height - (b - t)) / 2 - t), label, font=font, fill=fg)
+    f = project.build_dir / "blank" / f"{seg_id}.png"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    im.save(f)
+    return f
+
+
 def match_clip(clip: Path, like: Path, project: Project, encoder: str, out: Path) -> Path:
     """Re-encode `clip` so it splices onto `like` without a change of stream parameters.
 

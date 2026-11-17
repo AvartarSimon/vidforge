@@ -885,6 +885,8 @@ def make_handler(state: State):
                             return self._error(e.args[0])
                     state.write_raw(raw, snapshot=True)
                     return self._json({"theme": raw.get("theme"), "subtitles": raw.get("subtitles")})
+                if path == "/api/segment/swap":
+                    return self.segment_swap(body)
                 if path in ("/api/refs/download", "/api/refs/extract", "/api/refs/import", "/api/refs/delete",
                             "/api/structure/templates/delete"):
                     return self.refs_post(path, body)
@@ -2221,6 +2223,37 @@ def make_handler(state: State):
                 state.enqueue_check(state.rel(dest))
             return self._json({"path": state.rel(dest), "credit": c.credit_line(), "duration": c.duration,
                                "kind": c.kind, "checking": checking})
+
+        def segment_swap(self, body: dict):
+            """小窗 ⇄ 全屏 for one take, after the fact: a video clip becomes the small window over
+            the segment's other pictures, or a window becomes the segment's full-screen picture."""
+            from .. import theme as th
+            raw = state.read_raw()
+            seg = next((s for s in raw.get("segments") or [] if s.get("id") == body.get("id")), None)
+            if seg is None:
+                return self._error(f"没有段落 '{body.get('id')}'")
+            clips, overlays = seg.setdefault("clips", []), seg.setdefault("overlays", [])
+            try:
+                if body.get("clip") is not None:
+                    c = clips[int(body["clip"])]
+                    if not c.get("video"):
+                        return self._error("只有视频片段能改成小窗")
+                    clips.remove(c)
+                    o = th.presenter_overlay(c["video"], raw, shape=body.get("shape"), corner=body.get("corner"))
+                    o.update({k: c[k] for k in ("in", "out") if k in c})
+                    overlays.append(o)
+                elif body.get("overlay") is not None:
+                    o = overlays[int(body["overlay"])]
+                    if not o.get("video"):
+                        return self._error("只有视频小窗能改成全屏")
+                    overlays.remove(o)
+                    clips.insert(0, {"video": o["video"], **{k: o[k] for k in ("in", "out") if k in o}})
+                else:
+                    return self._error("要指定 clip 或 overlay")
+            except (IndexError, ValueError):
+                return self._error("没有这一项（页面可能过期了，刷新一下）")
+            state.write_raw(raw, snapshot=True)
+            return self._json({"segment": seg})
 
         # -- 参考视频 / 框架 ----------------------------------------------------------------
         def refs_post(self, path: str, body: dict):

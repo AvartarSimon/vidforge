@@ -24,13 +24,14 @@ export function RenderStep() {
       <LearningEditionCard />
       <PresenterCard />
       {(() => {
-        // said here, before the button: the build would only find it after making all the narration
+        // pictures are optional; what a bare segment will show instead is said before the render, not after
         const missing = raw.segments.filter((sg) => !(sg.clips || []).length && !(raw.auto_title_cards && sg.label)).map((sg) => sg.id)
         if (!missing.length) return null
         return (
-          <Alert severity="warning">
+          <Alert severity="info">
             {missing.length === raw.segments.length ? '所有段落都还没有画面' : `有 ${missing.length} 段还没有画面`}（{missing.slice(0, 8).join('、')}
-            {missing.length > 8 ? ' 等' : ''}），现在渲染会停下来。到顶部第 3 步「画面」点「一键配图」，或者给这几段选图、上传、放一个动画图表。
+            {missing.length > 8 ? ' 等' : ''}）：照样可以渲染——用你自己录的视频全屏，或者把小窗放大成全屏，都没有就用配色的纯色底写上章节名。
+            想配图随时去第 3 步「画面」（「一键配图」是可选的）。
           </Alert>
         )
       })()}
