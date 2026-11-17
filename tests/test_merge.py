@@ -114,6 +114,56 @@ class Server(unittest.TestCase):
         self.assertEqual(on_disk["title"], "改了标题", "the page's save survives the late write")
         self.assertEqual(on_disk["segments"][0]["narration"], "assets/takes/seg1.mp4")
 
+    def call(self, path, body=None):
+        req = urllib.request.Request(f"http://127.0.0.1:{self.httpd.server_address[1]}{path}",
+                                     data=json.dumps(body).encode() if body is not None else None,
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def test_every_recording_is_listed_and_one_the_project_lost_goes_back(self):
+        import subprocess
+        from vidforge import ffmpeg
+        ff = ffmpeg.find_binary("ffmpeg")
+        take = self.td / "p" / "assets" / "takes" / "seg2_20261117-201620_cut.mp4"
+        subprocess.run([ff, "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=160x90:r=10:d=2", "-f", "lavfi", "-i", "sine=d=2",
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(take)], check=True)
+        voice = self.td / "p" / "assets" / "narration" / "seg2_20261117-201620.m4a"
+        voice.parent.mkdir(parents=True)
+        subprocess.run([ff, "-v", "error", "-y", "-f", "lavfi", "-i", "sine=d=2", str(voice)], check=True)
+        code, j = self.call("/api/takes")
+        listed = {t["name"]: t for t in j["takes"]}
+        self.assertEqual(listed[take.name]["used_by"], [], "on disk, not in the project: the case to recover")
+        self.assertTrue(listed[take.name]["video"])
+        self.assertFalse(listed[voice.name]["video"])
+        code, j = self.call("/api/takes/use", {"path": f"assets/takes/{take.name}", "segment": "seg2", "as": "window"})
+        self.assertEqual(code, 200, j)
+        seg = self.disk()["segments"][1]
+        self.assertEqual((seg["narration"], seg["overlays"][0]["video"]), (f"assets/takes/{take.name}",) * 2)
+        self.assertEqual({t["name"]: t["used_by"] for t in self.call("/api/takes")[1]["takes"]}[take.name], ["seg2"])
+        self.assertEqual(self.call("/api/takes/use", {"path": f"assets/narration/{voice.name}", "segment": "seg2", "as": "visual"})[0], 400,
+                         "a voice recording has no picture")
+        self.assertEqual(self.call("/api/takes/use", {"path": "../../etc/passwd", "segment": "seg2"})[0], 400)
+
+    def test_a_take_moved_on_from_is_kept_without_touching_the_project(self):
+        import base64
+        import subprocess
+        from vidforge import ffmpeg
+        clip = self.td / "c.webm"
+        subprocess.run([ffmpeg.find_binary("ffmpeg"), "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=160x90:r=10:d=1",
+                        "-f", "lavfi", "-i", "sine=d=1", "-c:v", "libvpx", "-c:a", "libopus", "-shortest", str(clip)], check=True)
+        before = self.path.read_bytes()
+        code, j = self.call("/api/record/save", {"segment": "seg2", "data": base64.b64encode(clip.read_bytes()).decode(),
+                                                 "ext": "webm", "keep_only": True, "as_narration": False})
+        self.assertEqual(code, 200, j)
+        self.assertTrue((self.td / "p" / j["kept"]).is_file())
+        self.assertEqual(self.path.read_bytes(), before, "kept, not used")
+        listed = {t["path"]: t for t in self.call("/api/takes")[1]["takes"]}
+        self.assertEqual(listed[j["kept"]]["used_by"], [])
+
     def test_an_old_page_without_a_base_still_saves(self):
         page = self.disk()
         page["title"] = "旧页面"

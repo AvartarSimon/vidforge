@@ -523,6 +523,8 @@ def make_handler(state: State):
                     return self._json({"palettes": th.listing(), "current": raw.get("theme") or None,
                                        "frames": {k: list(v) for k, v in th.FRAMES.items()}, "frame": frame,
                                        "window": {"size": th.WINDOW_W, "height": th.WINDOW_H}})
+                if path == "/api/takes":                         # every recording in the project, used or not
+                    return self._json({"takes": self.takes_list()})
                 if path == "/api/refs":
                     from .. import references
                     return self._json({"items": references.listing(), "job": state.refjob})
@@ -914,6 +916,8 @@ def make_handler(state: State):
                     return self._json({"theme": raw.get("theme"), "subtitles": raw.get("subtitles")})
                 if path == "/api/segment/swap":
                     return self.segment_swap(body)
+                if path == "/api/takes/use":
+                    return self.takes_use(body)
                 if path in ("/api/refs/download", "/api/refs/extract", "/api/refs/import", "/api/refs/delete",
                             "/api/structure/templates/delete"):
                     return self.refs_post(path, body)
@@ -1821,7 +1825,11 @@ def make_handler(state: State):
             as_narration = bool(body.get("as_narration", True))
             as_footage = bool(body.get("as_footage", False))
             as_visual = bool(body.get("as_visual", False))
-            if not as_narration and not as_footage and not as_visual:
+            # keep_only: a take the user moved on from without choosing a use (recorded again,
+            # went to the next segment, left the page). It is stored and nothing else — the
+            # takes list shows it as unused, one click from going back in.
+            keep_only = bool(body.get("keep_only", False))
+            if not keep_only and not as_narration and not as_footage and not as_visual:
                 return self._error("这条录像要用来做什么？旁白、画面、素材库，至少选一个")
             try:
                 data = base64.b64decode(body.get("data") or "", validate=True)
@@ -1833,7 +1841,7 @@ def make_handler(state: State):
 
             raw = state.read_raw()
             seg = next((x for x in (raw.get("segments") or []) if x.get("id") == seg_id), None)
-            if (as_narration or as_visual) and seg is None:
+            if (as_narration or as_visual) and seg is None and not keep_only:
                 return self._error(f"没有段落 '{seg_id}'")
 
             out: dict = {}
@@ -1848,6 +1856,8 @@ def make_handler(state: State):
                 saved.unlink(missing_ok=True)
                 return self._error(f"这个文件读不出时长，可能没录上：{e}")
             out["seconds"] = seconds
+            if keep_only:
+                return self._json({"kept": saved.relative_to(state.root).as_posix(), "seconds": seconds})
 
             if as_visual:
                 # The take becomes this segment's picture *and* (if asked) its voice, from one mp4
@@ -2260,6 +2270,72 @@ def make_handler(state: State):
                 state.enqueue_check(state.rel(dest))
             return self._json({"path": state.rel(dest), "credit": c.credit_line(), "duration": c.duration,
                                "kind": c.kind, "checking": checking})
+
+        # -- 录过的视频 ------------------------------------------------------------------------
+        # A recording is never thrown away (narration.save_upload keeps every one; takes/ is
+        # timestamped), and this lists them all with where each is used — so a take the project
+        # no longer points at is one click from being put back, whatever made it lose its place.
+        _TAKE_DIRS = ("assets/takes", "assets/narration")
+
+        def takes_list(self) -> list[dict]:
+            raw = state.read_raw()
+            used: dict[str, list[str]] = {}
+            for seg in raw.get("segments") or []:
+                refs = [seg.get("narration")] + [c.get("video") for c in seg.get("clips") or []] + \
+                       [o.get("video") for o in seg.get("overlays") or []]
+                for r in {x for x in refs if x}:
+                    used.setdefault(str(r).replace("\\", "/"), []).append(seg.get("id"))
+            out = []
+            for d in self._TAKE_DIRS:
+                for f in sorted((state.root / d).glob("*")) if (state.root / d).is_dir() else []:
+                    if f.suffix.lower() not in (".mp4", ".mov", ".webm", ".m4v", ".mkv", ".m4a", ".mp3", ".wav", ".ogg", ".aac"):
+                        continue
+                    rel = state.rel(f)
+                    try:
+                        seconds = round(ffmpeg.duration(f), 1)
+                    except ffmpeg.FfmpegError:
+                        seconds = None
+                    out.append({"path": rel, "name": f.name, "seconds": seconds, "mb": round(f.stat().st_size / 1e6, 1),
+                                "time": time.strftime("%m-%d %H:%M", time.localtime(f.stat().st_mtime)), "mtime": f.stat().st_mtime,
+                                "video": f.suffix.lower() in (".mp4", ".mov", ".webm", ".m4v", ".mkv") and self._has_video(f),
+                                "used_by": used.get(rel, [])})
+            return sorted(out, key=lambda t: -t["mtime"])
+
+        @staticmethod
+        def _has_video(f: Path) -> bool:
+            try:
+                ffmpeg.video_size(f)
+                return True
+            except ffmpeg.FfmpegError:
+                return False
+
+        def takes_use(self, body: dict):
+            """Put a recording (back) into a segment: as its full-screen picture, as the small window,
+            or only as its voice — the picture uses also make it the voice, as the studio does."""
+            from .. import theme as th
+            rel = str(body.get("path") or "").replace("\\", "/")
+            f = self._safe_path(rel) if rel else None
+            if not f or not f.is_file() or not any(rel.startswith(d + "/") for d in self._TAKE_DIRS):
+                return self._error(f"找不到这个录像：{rel}")
+            how = body.get("as") or "visual"
+            raw = state.read_raw()
+            seg = next((x for x in raw.get("segments") or [] if x.get("id") == body.get("segment")), None)
+            if seg is None:
+                return self._error(f"没有段落 '{body.get('segment')}'")
+            if how in ("visual", "window") and not self._has_video(f):
+                return self._error("这是一段录音，没有画面：只能当旁白")
+            if how == "visual":
+                seg["clips"] = [{"video": rel}] + [c for c in seg.get("clips") or [] if c.get("video") != rel]
+                seg["overlays"] = [o for o in seg.get("overlays") or [] if o.get("video") != rel]
+            elif how == "window":
+                seg["clips"] = [c for c in seg.get("clips") or [] if c.get("video") != rel]
+                seg["overlays"] = [o for o in seg.get("overlays") or [] if not th.is_presenter_overlay(o)]
+                seg["overlays"].append(th.presenter_overlay(rel, raw, shape=body.get("shape"), corner=body.get("corner")))
+            elif how != "narration":
+                return self._error("as 要是 visual / window / narration")
+            seg["narration"] = rel
+            state.write_raw(raw, snapshot=True)
+            return self._json({"segment": seg})
 
         def segment_swap(self, body: dict):
             """小窗 ⇄ 全屏 for one take, after the fact: a video clip becomes the small window over

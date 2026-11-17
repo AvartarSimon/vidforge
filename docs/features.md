@@ -82,6 +82,7 @@
 | **实时美颜/美型/换背景/换装** | ✅ | [`ui/react/src/fx/`](../vidforge/ui/react/src/fx/) — 浏览器内 MediaPipe（人像多类分割：背景/头发/身体皮肤/脸部皮肤/衣服 + 478 点人脸网格）+ WebGL。磨皮是**只作用在皮肤上**的双边滤波；瘦脸/大眼是局部形变，上限压低；背景虚化/书房/图片/视频/纯色不要绿幕；衣服/头发只换色。录的是处理后的 canvas，所见即所得。模型首次使用时由 [`webmodels.py`](../vidforge/webmodels.py) 下到 `~/.vidforge/models/` |
 | **提词器自动滚动** | ✅ | `fx/Teleprompter.tsx` — 按字/分钟滚动，空格暂停、↑↓ 调速、R 回开头；位置靠上/满屏/靠下，可镜像 |
 | **一条录像 = 画面 + 旁白** | ✅ | `/api/record/save` `as_visual` — 按首尾声音切同一个 mp4，旁白掐静音时没东西可掐，口型和声音同帧开始；`as_window` 让它当竖屏模板的小窗 |
+| **录像不丢** | ✅ | `narration.save_upload` 每条按时间命名，重录不覆盖；`/api/takes` 列出项目里全部录像和用在哪一段，`/api/takes/use` 放回（画面/小窗/旁白）；录了没用就重录、换段、离开页面时 `RecordStudio` 以 `keep_only` 自动存下。保存走 `merge.merge3` 三方合并（页面带上它载入时的 `base`），后台写入不再被页面的旧副本盖掉——实测过五条录像就是这样从项目里「消失」的 |
 | **画面预设（柔肤/补光）** | ✅ | [`videofx.py`](../vidforge/videofx.py) — `bilateral` 保边平滑 + `unsharp` 回加细节。**不是 `gblur`**：普通模糊会把眼睛、发丝、下颌线一起抹掉。每个预设都不改分辨率和时长 |
 | **用我自己的录音当旁白** | ✅ | [`narration.py`](../vidforge/narration.py) — `Segment.narration` 指一个文件就不走 TTS。解码（**视频也行，自动抽音频**）→ 掐掉首尾静音 → 强制对齐 → sidecar 缓存。按段落录，不是整条录 |
 | **字幕与任意录音对齐** | ✅ | [`align.py`](../vidforge/align.py) — faster-whisper（可选依赖）。**转写只用来定位时间，不用来决定字幕内容**：字幕永远显示脚本原文。`difflib` 在归一化 key 上对齐两串 token，没命中的借相邻词插值。实测中文平均误差 **0.068s**，比平均摊好 4.4 倍 |

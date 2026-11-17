@@ -32,6 +32,7 @@ import { apiPost } from '../../../api/client'
 import { useProject } from '../../../state/ProjectContext'
 import { FxPanel } from '../../../fx/FxPanel'
 import { PrompterLine, Teleprompter, type PrompterPlace } from '../../../fx/Teleprompter'
+import { TakesLibrary } from './TakesLibrary'
 import { loadFx, saveFx, type FxSettings } from '../../../fx/settings'
 import { useFxEngine } from '../../../fx/useFxEngine'
 
@@ -104,6 +105,7 @@ export function RecordStudio() {
   const [countdown, setCountdown] = useState(0)
   const [elapsed, setElapsed] = useState(0)
   const [take, setTake] = useState<{ blob: Blob; url: string; ext: string; seconds: number } | null>(null)
+  const [kept, setKept] = useState(0)
   // where the picture of a take goes: the segment's whole frame, a small window over its pictures, or nowhere
   const [target, setTarget] = useState<'visual' | 'window' | 'none'>(() => (raw?.theme ? 'window' : 'visual'))
   // the window's shape and corner, remembered between takes: a series keeps its window in one place
@@ -264,7 +266,7 @@ export function RecordStudio() {
     if (!stream) return
     setError(null)
     setStatus('')
-    discardTake()
+    keepAndClear()
     setResetKey((k) => k + 1)
     for (let n = 3; n > 0; n--) {
       setCountdown(n)
@@ -309,20 +311,53 @@ export function RecordStudio() {
     setTake(null)
   }
 
+  // A take that was neither used nor thrown away is kept in the project instead of vanishing:
+  // recording again, moving to the next segment or leaving the page used to drop it silently.
+  // It shows in 「这个项目录过的视频」 as unused, one click from going back in.
+  const toB64 = async (blob: Blob) => {
+    const buf = new Uint8Array(await blob.arrayBuffer())
+    let bin = ''
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000))
+    return btoa(bin)
+  }
+  const keep = async (t: { blob: Blob; ext: string }, seg: string) => {
+    try {
+      await apiPost('/api/record/save', { segment: seg, data: await toB64(t.blob), ext: t.ext, keep_only: true })
+      setKept((k) => k + 1)
+    } catch {
+      // the server is gone (quitting): nothing more can be done from here
+    }
+  }
+  const keepAndClear = () => {
+    if (take) keep(take, segId)
+    discardTake()
+  }
+  const takeRef = useRef<{ take: typeof take; segId: string }>({ take: null, segId: '' })
+  takeRef.current = { take, segId }
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => {
+      if (takeRef.current.take) e.preventDefault()
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => {
+      window.removeEventListener('beforeunload', warn)
+      const { take: t, segId: s } = takeRef.current
+      if (t) keep(t, s)              // leaving the studio (another step or section) with a take in hand
+    }
+  }, [])
+
   const save = async () => {
     if (!take) return
     setBusy(true)
     setStatus('')
     setError(null)
     try {
-      const buf = new Uint8Array(await take.blob.arrayBuffer())
-      let bin = ''
-      for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000))
+      const data = await toB64(take.blob)
       const j = await apiPost<{ seconds: number; narration?: string; footage?: string; visual?: string; trimmed?: number[]; jumpcut?: { removed: number; cuts: number; fillers?: number } }>(
         '/api/record/save',
         {
           segment: segId,
-          data: btoa(bin),
+          data,
           ext: take.ext,
           as_narration: asNarration,
           as_visual: withVideo && asVisual,
@@ -347,6 +382,7 @@ export function RecordStudio() {
       if (j.narration) parts.push('已设为这一段的旁白（字幕会自动对齐）')
       if (j.footage) parts.push(`已存进素材库：${j.footage}`)
       setStatus(parts.join('　·　'))
+      setKept((k) => k + 1)
       discardTake()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -357,8 +393,8 @@ export function RecordStudio() {
   const go = (d: number) => {
     const next = raw.segments[segIndex + d]
     if (next) {
+      keepAndClear()
       setSegId(next.id)
-      discardTake()
       setStatus('')
     }
   }
@@ -682,6 +718,9 @@ export function RecordStudio() {
           </>
         )}
       </Paper>
+      <Box sx={{ gridColumn: '1 / -1' }}>
+        {segId && <TakesLibrary segId={segId} refreshKey={kept} />}
+      </Box>
     </Box>
   )
 }
