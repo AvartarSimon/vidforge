@@ -1728,10 +1728,14 @@ def make_handler(state: State):
                         from ..video import VideoToolError, jumpcut as jc
                         cut_take = take.with_name(f"{take.stem}_cut.mp4")
                         try:
-                            r = jc.cut(take, cut_take, fps=int(raw.get("fps") or 30), log=lambda *_: None)
+                            from .. import align as _align
+                            # without Whisper the pauses are still cut; the 嗯 just stay
+                            r = jc.cut(take, cut_take, fps=int(raw.get("fps") or 30),
+                                       fillers=bool(body.get("fillers")) and _align.available(),
+                                       lang=raw.get("language"), log=lambda *_: None)
                             take.unlink(missing_ok=True)
                             take = cut_take
-                            out["jumpcut"] = {"removed": r["removed"], "cuts": r["cuts"]}
+                            out["jumpcut"] = {"removed": r["removed"], "cuts": r["cuts"], "fillers": len(r.get("fillers") or [])}
                         except VideoToolError:
                             pass                  # nothing to cut is not a failure
                 except (ffmpeg.FfmpegError, KeyError) as e:
@@ -1813,7 +1817,8 @@ def make_handler(state: State):
             if not src or not src.is_file():
                 return self._error(f"找不到视频：{rel}")
             opts = {"threshold_db": float(body.get("threshold", jc.THRESHOLD_DB)),
-                    "min_gap": float(body.get("min_gap", jc.MIN_GAP)), "pad": float(body.get("pad", jc.PAD))}
+                    "min_gap": float(body.get("min_gap", jc.MIN_GAP)), "pad": float(body.get("pad", jc.PAD)),
+                    "fillers": bool(body.get("fillers")), "lang": state.read_raw().get("language")}
             try:
                 if not apply:
                     return self._json(jc.plan(src, **opts))

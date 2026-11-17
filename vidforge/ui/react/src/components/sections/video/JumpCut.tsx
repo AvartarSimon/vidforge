@@ -4,7 +4,7 @@ import { apiPost } from '../../../api/client'
 import { useProject } from '../../../state/ProjectContext'
 import { fileUrl } from '../../../utils'
 
-type Plan = { total: number; kept: number; removed: number; cuts: number; keep: [number, number][] }
+type Plan = { total: number; kept: number; removed: number; cuts: number; keep: [number, number][]; fillers?: { word: string; start: number; end: number }[]; fillers_unsure?: number }
 
 /** 智能剪口播: cut the pauses out of a talking-head take, picture and voice together. */
 export function JumpCut() {
@@ -14,6 +14,7 @@ export function JumpCut() {
   const [minGap, setMinGap] = useState(0.45)
   const [pad, setPad] = useState(0.12)
   const [replace, setReplace] = useState(true)
+  const [fillers, setFillers] = useState(false)
   const [plan, setPlan] = useState<Plan | null>(null)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
@@ -32,7 +33,7 @@ export function JumpCut() {
   useEffect(() => {
     if (!video) return setPlan(null)
     const t = setTimeout(() => {
-      apiPost<Plan>('/api/video/jumpcut/plan', { video, threshold, min_gap: minGap, pad })
+      apiPost<Plan>('/api/video/jumpcut/plan', { video, threshold, min_gap: minGap, pad, fillers })
         .then((p) => {
           setPlan(p)
           setError(null)
@@ -40,16 +41,16 @@ export function JumpCut() {
         .catch((e) => setError(e instanceof Error ? e.message : String(e)))
     }, 350)
     return () => clearTimeout(t)
-  }, [video, threshold, minGap, pad])
+  }, [video, threshold, minGap, pad, fillers])
 
   const apply = async () => {
     setBusy(true)
     setStatus('')
     setError(null)
     try {
-      const r = await apiPost<Plan & { path: string; replaced: string[] }>('/api/video/jumpcut', { video, threshold, min_gap: minGap, pad, replace })
+      const r = await apiPost<Plan & { path: string; replaced: string[] }>('/api/video/jumpcut', { video, threshold, min_gap: minGap, pad, fillers, replace })
       await reload()
-      setStatus(`剪掉 ${r.removed.toFixed(1)} 秒（${r.cuts} 处），${r.total.toFixed(1)}s → ${r.kept.toFixed(1)}s。${r.replaced.length ? `已替换 ${r.replaced.length} 段的画面和旁白。` : `新文件：${r.path}`}`)
+      setStatus(`剪掉 ${r.removed.toFixed(1)} 秒（${r.cuts} 处${r.fillers?.length ? `，含语气词 ${r.fillers.length} 个` : ''}），${r.total.toFixed(1)}s → ${r.kept.toFixed(1)}s。${r.replaced.length ? `已替换 ${r.replaced.length} 段的画面和旁白。` : `新文件：${r.path}`}`)
       setVideo(r.path)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -101,9 +102,14 @@ export function JumpCut() {
               {plan.keep.map(([a, b], i) => (
                 <Box key={i} sx={{ position: 'absolute', top: 0, bottom: 0, left: `${(a / plan.total) * 100}%`, width: `${((b - a) / plan.total) * 100}%`, bgcolor: 'primary.main' }} />
               ))}
+              {plan.fillers?.map((f, i) => (
+                <Box key={`f${i}`} title={f.word} sx={{ position: 'absolute', top: 0, bottom: 0, left: `${(f.start / plan.total) * 100}%`, width: `${Math.max(0.4, ((f.end - f.start) / plan.total) * 100)}%`, bgcolor: 'warning.main' }} />
+              ))}
             </Box>
             <Typography variant="caption" color="text.secondary">
               {plan.total.toFixed(1)}s → {plan.kept.toFixed(1)}s，剪掉 {plan.removed.toFixed(1)} 秒（{plan.cuts} 处）
+              {plan.fillers && `；语气词 ${plan.fillers.length} 个（橙色）`}
+              {!!plan.fillers_unsure && `，另有 ${plan.fillers_unsure} 个贴着别的字，不剪`}
             </Typography>
           </Box>
         )}
@@ -111,6 +117,10 @@ export function JumpCut() {
           <Button variant="contained" onClick={apply} disabled={!video || busy || !plan || plan.removed < 0.05}>
             剪
           </Button>
+          <FormControlLabel
+            control={<Switch size="small" checked={fillers} onChange={(e) => setFillers(e.target.checked)} />}
+            label={<Typography variant="body2">也剪掉「嗯」「呃」（第一次要听几秒）</Typography>}
+          />
           <FormControlLabel control={<Switch size="small" checked={replace} onChange={(e) => setReplace(e.target.checked)} />} label={<Typography variant="body2">替换项目里用到它的段落</Typography>} />
           {video && (
             <Button size="small" href={fileUrl(video) || ""} target="_blank">

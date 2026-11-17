@@ -500,7 +500,8 @@ def cmd_video(args: argparse.Namespace) -> int:
     if args.action == "jumpcut":
         from .video import jumpcut
         out = Path(args.out) if args.out else src.with_name(src.stem + "_cut.mp4")
-        jumpcut.cut(src, out, threshold_db=args.threshold, min_gap=args.min_gap, pad=args.pad)
+        jumpcut.cut(src, out, threshold_db=args.threshold, min_gap=args.min_gap, pad=args.pad,
+                    fillers=args.fillers, lang=args.lang)
         print(f"完成：{out}")
         return 0
     if args.action == "detect":
@@ -854,6 +855,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--threshold", type=float, default=-38.0, help="jumpcut: quieter than this (dB) counts as a pause")
     s.add_argument("--min-gap", dest="min_gap", type=float, default=0.45, help="jumpcut: only pauses at least this long (s) are cut")
     s.add_argument("--pad", type=float, default=0.12, help="jumpcut: seconds kept on each side of a cut")
+    s.add_argument("--fillers", action="store_true", help="jumpcut: also cut 嗯/呃/um/uh (needs faster-whisper)")
+    s.add_argument("--lang", default=None, help="jumpcut --fillers: language of the take (zh, en); default: detect")
     s.set_defaults(fn=cmd_video)
 
     s = sub.add_parser("category", help="topic-vertical presets (platforms/sources/banned keywords/defaults): plain JSON files, not a database")

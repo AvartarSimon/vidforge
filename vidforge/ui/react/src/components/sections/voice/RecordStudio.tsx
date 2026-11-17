@@ -109,6 +109,7 @@ export function RecordStudio() {
   const [asNarration, setAsNarration] = useState(true)
   const [asFootage, setAsFootage] = useState(false)
   const [jumpcut, setJumpcut] = useState(true)
+  const [fillers, setFillers] = useState(false)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -298,7 +299,7 @@ export function RecordStudio() {
       const buf = new Uint8Array(await take.blob.arrayBuffer())
       let bin = ''
       for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000))
-      const j = await apiPost<{ seconds: number; narration?: string; footage?: string; visual?: string; trimmed?: number[]; jumpcut?: { removed: number; cuts: number } }>(
+      const j = await apiPost<{ seconds: number; narration?: string; footage?: string; visual?: string; trimmed?: number[]; jumpcut?: { removed: number; cuts: number; fillers?: number } }>(
         '/api/record/save',
         {
           segment: segId,
@@ -309,6 +310,7 @@ export function RecordStudio() {
           as_window: withVideo && target === 'window',
           as_footage: withVideo && asFootage,
           jumpcut: withVideo && asVisual && jumpcut,
+          fillers: withVideo && asVisual && jumpcut && fillers,
           // the look is already baked in by the live effects
           look: 'none',
           name: `${segId || 'take'}_talking.mp4`,
@@ -319,7 +321,7 @@ export function RecordStudio() {
       await reload()
       const parts = [`录了 ${j.seconds.toFixed(1)} 秒`]
       if (j.trimmed && (j.trimmed[0] > 0.05 || j.trimmed[1] > 0.05)) parts.push(`掐掉首尾静音 ${j.trimmed[0]}s / ${j.trimmed[1]}s`)
-      if (j.jumpcut && j.jumpcut.removed > 0.05) parts.push(`剪口播剪掉 ${j.jumpcut.removed.toFixed(1)}s（${j.jumpcut.cuts} 处）`)
+      if (j.jumpcut && j.jumpcut.removed > 0.05) parts.push(`剪口播剪掉 ${j.jumpcut.removed.toFixed(1)}s（${j.jumpcut.cuts} 处${j.jumpcut.fillers ? `，含「嗯」「呃」${j.jumpcut.fillers} 个` : ''}）`)
       if (j.visual) parts.push(target === 'window' ? '已设为这一段的真人小窗' : '已设为这一段的画面')
       if (j.narration) parts.push('已设为这一段的旁白（字幕会自动对齐）')
       if (j.footage) parts.push(`已存进素材库：${j.footage}`)
@@ -514,6 +516,9 @@ export function RecordStudio() {
               )}
               {withVideo && asVisual && (
                 <FormControlLabel control={<Switch size="small" checked={jumpcut} onChange={(e) => setJumpcut(e.target.checked)} />} label={<Typography variant="body2">剪掉中间的停顿（剪口播）</Typography>} />
+              )}
+              {withVideo && asVisual && jumpcut && (
+                <FormControlLabel control={<Switch size="small" checked={fillers} onChange={(e) => setFillers(e.target.checked)} />} label={<Typography variant="body2">也剪掉「嗯」「呃」</Typography>} />
               )}
               <FormControlLabel control={<Switch size="small" checked={asNarration} onChange={(e) => setAsNarration(e.target.checked)} />} label={<Typography variant="body2">当这一段的旁白</Typography>} />
               {withVideo && (

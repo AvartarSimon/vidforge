@@ -133,14 +133,15 @@ def _samples(audio: Path):
     return np.frombuffer(raw, dtype="<f4").astype("float32")
 
 
-def transcribe(audio: Path, lang: str | None = None) -> list[tuple[str, float, float]]:
-    """Whisper's own words with timestamps, flattened to (text, start, end)."""
+def transcribe(audio: Path, lang: str | None = None, *, prompt: str | None = None) -> list[tuple[str, float, float]]:
+    """Whisper's own words with timestamps, flattened to (text, start, end).
+    `prompt` primes the style it writes in (jumpcut passes one full of 嗯/呃 so it keeps them)."""
     model = _load_model()
     data = _samples(audio)
     if not len(data):
         return []
     segments, _info = model.transcribe(data, language=lang, word_timestamps=True,
-                                       vad_filter=True, beam_size=5)
+                                       vad_filter=True, beam_size=5, initial_prompt=prompt)
     out: list[tuple[str, float, float]] = []
     for seg in segments:
         for w in (seg.words or []):

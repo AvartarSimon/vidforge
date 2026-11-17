@@ -15,6 +15,13 @@ Three numbers decide the cut, and the defaults are tuned for narration rather th
 
 Picture and sound are cut by the same ranges in one pass, so the lips stay on the words. The
 result is a new file; the original is never touched.
+
+`fillers=True` also cuts the 嗯 / 呃 / um / uh between sentences (Descript's "remove filler words").
+The level meter cannot tell a 嗯 from a word, so Whisper says *which* sounds are fillers — but its
+word boundaries are a few hundred ms loose, too loose to cut on. The cut is therefore made on the
+stretch of sound the level meter finds around the filler, and only when that stretch holds the
+filler and nothing else; anything less certain is left in and counted. A stray 嗯 costs nothing,
+a clipped word costs the take. 那个 / 就是 / 然后 are left alone: as often as not they carry meaning.
 """
 
 from __future__ import annotations
@@ -29,6 +36,14 @@ from . import VideoToolError
 THRESHOLD_DB = -38.0
 MIN_GAP = 0.45
 PAD = 0.12
+
+FILLERS = {"嗯", "嗯嗯", "呃", "呃呃", "额", "唔", "um", "umm", "uh", "uhh", "uhm", "er", "erm", "hmm", "mm"}
+# Whisper tidies speech up unless shown that the transcript keeps the hesitations
+_PROMPT = {"zh": "嗯，那个，呃，就是说，嗯……然后呃，我们来看。", "en": "Um, so, uh, I mean, like, hmm, okay."}
+_FILLER_STRIP = "，,。.!！?？…、 "
+# the UI re-plans on every slider move; Whisper's answer depends only on the file, the level
+# analysis on the sliders — so only the cheap half runs again
+_heard: dict[tuple, list[tuple[str, float, float]]] = {}
 
 
 def silences(path: Path, *, threshold_db: float = THRESHOLD_DB, min_gap: float = MIN_GAP) -> list[tuple[float, float]]:
@@ -68,22 +83,83 @@ def keep_ranges(total: float, quiet: list[tuple[float, float]], *, pad: float = 
     return merged
 
 
-def plan(path: Path, *, threshold_db: float = THRESHOLD_DB, min_gap: float = MIN_GAP, pad: float = PAD) -> dict:
+def is_filler(word: str) -> bool:
+    return word.strip(_FILLER_STRIP).lower() in FILLERS
+
+
+def find_fillers(path: Path, *, lang: str | None = None, threshold_db: float = THRESHOLD_DB,
+                 words: list[tuple[str, float, float]] | None = None) -> tuple[list[tuple[float, float, str]], int]:
+    """(start, end, word) of every filler that can be cut cleanly, and how many were heard but left in."""
+    from .. import align
+    if words is None:
+        if not align.available():
+            raise VideoToolError("剪「嗯」「呃」要先装 faster-whisper（pip install faster-whisper），用来听出哪些声音是语气词")
+        lang = (lang or "")[:2] or None
+        st = Path(path).stat()
+        key = (str(Path(path).resolve()), st.st_mtime_ns, st.st_size, lang)
+        if key not in _heard:
+            _heard[key] = align.transcribe(path, lang, prompt=_PROMPT.get(lang or ""))
+        words = _heard[key]
+    total = ffmpeg.duration(path)
+    # voiced stretches at a short gap: a filler is usually a little island between two pauses
+    islands = keep_ranges(total, silences(path, threshold_db=threshold_db, min_gap=0.12), pad=0)
+    spoken = [(a + b) / 2 for w, a, b in words if not is_filler(w)]
+    cuts: list[tuple[float, float, str]] = []
+    unsure = 0
+    for w, a, b in words:
+        if not is_filler(w):
+            continue
+        overlap = [(min(b, y) - max(a, x), (x, y)) for x, y in islands]
+        best = max(overlap, default=(0.0, None))
+        isl = best[1]
+        if best[0] <= 0 or isl is None or isl[1] - isl[0] > 1.2 or any(isl[0] < m < isl[1] for m in spoken):
+            unsure += 1
+            continue
+        cuts.append((round(max(0.0, isl[0] - 0.02), 3), round(min(total, isl[1] + 0.02), 3), w.strip(_FILLER_STRIP)))
+    return cuts, unsure
+
+
+def _subtract(keep: list[tuple[float, float]], cuts: list[tuple[float, float, str]]) -> list[tuple[float, float]]:
+    out: list[tuple[float, float]] = []
+    for a, b in keep:
+        pieces = [(a, b)]
+        for c, d, _ in cuts:
+            nxt = []
+            for x, y in pieces:
+                if d <= x or c >= y:
+                    nxt.append((x, y))
+                    continue
+                if c > x:
+                    nxt.append((x, c))
+                if d < y:
+                    nxt.append((d, y))
+            pieces = nxt
+        out += [(round(x, 3), round(y, 3)) for x, y in pieces if y - x > 0.08]
+    return out
+
+
+def plan(path: Path, *, threshold_db: float = THRESHOLD_DB, min_gap: float = MIN_GAP, pad: float = PAD,
+         fillers: bool = False, lang: str | None = None) -> dict:
     """What a cut would do, without doing it: for the UI's before/after bar."""
     total = ffmpeg.duration(path)
     keep = keep_ranges(total, silences(path, threshold_db=threshold_db, min_gap=min_gap), pad=pad)
+    extra: dict = {}
+    if fillers:
+        cuts, unsure = find_fillers(path, lang=lang, threshold_db=threshold_db)
+        keep = _subtract(keep, cuts)
+        extra = {"fillers": [{"word": w, "start": a, "end": b} for a, b, w in cuts], "fillers_unsure": unsure}
     kept = sum(b - a for a, b in keep)
     return {"total": round(total, 3), "kept": round(kept, 3), "removed": round(total - kept, 3),
             "cuts": max(0, len(keep) - 1) + (1 if keep and keep[0][0] > 0.01 else 0)
                     + (1 if keep and keep[-1][1] < total - 0.01 else 0),
-            "keep": [[round(a, 3), round(b, 3)] for a, b in keep]}
+            "keep": [[round(a, 3), round(b, 3)] for a, b in keep], **extra}
 
 
 def cut(src: Path, out: Path, *, threshold_db: float = THRESHOLD_DB, min_gap: float = MIN_GAP,
-        pad: float = PAD, fps: int = 30, log=print) -> dict:
-    """Write `out` with the gaps removed. Returns the plan that was applied."""
+        pad: float = PAD, fps: int = 30, fillers: bool = False, lang: str | None = None, log=print) -> dict:
+    """Write `out` with the gaps (and, with `fillers`, the 嗯/呃) removed. Returns the plan that was applied."""
     src, out = Path(src), Path(out)
-    p = plan(src, threshold_db=threshold_db, min_gap=min_gap, pad=pad)
+    p = plan(src, threshold_db=threshold_db, min_gap=min_gap, pad=pad, fillers=fillers, lang=lang)
     keep = p["keep"]
     if not keep:
         raise VideoToolError("整条都是静音——阈值是不是设得太高了？")
@@ -121,5 +197,8 @@ def cut(src: Path, out: Path, *, threshold_db: float = THRESHOLD_DB, min_gap: fl
                 ffmpeg.run(["-y", "-i", str(src), "-filter_complex_script", str(script), *tail])
         finally:
             script.unlink(missing_ok=True)
-    log(f"剪口播：{p['total']:.1f}s → {p['kept']:.1f}s，剪掉 {p['removed']:.1f}s（{p['cuts']} 处）")
+    note = ""
+    if fillers:
+        note = f"，其中语气词 {len(p['fillers'])} 个" + (f"（另有 {p['fillers_unsure']} 个贴着别的字，没剪）" if p["fillers_unsure"] else "")
+    log(f"剪口播：{p['total']:.1f}s → {p['kept']:.1f}s，剪掉 {p['removed']:.1f}s（{p['cuts']} 处）{note}")
     return {**p, "out": str(out)}

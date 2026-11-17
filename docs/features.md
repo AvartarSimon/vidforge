@@ -129,7 +129,7 @@
 | **人脸遮盖 / 换头** | ✅ | [`video/heads.py`](../vidforge/video/heads.py) — OpenCV YuNet 检测（权重自动下到 `~/.vidforge/models/`）→ 跟踪平滑 → 用静态图**或一段动态视频**（椭圆遮罩、逐帧锁定）盖住每张脸 |
 | **照片变会说话的头** | 🟡 | [`video/face.py`](../vidforge/video/face.py) — `motion`（音频包络驱动的木偶，不要 GPU）或 `cmd`（`PHOTO_TALK_CMD` → SadTalker/EchoMimic/Hallo，要 GPU） |
 | **叠加层 / 画中画 / 分屏** | ✅ | `Overlay` — 滑入/淡入、描边（可选颜色）、`shape` 方/圆角/圆（Pillow 抗锯齿遮罩 + alphamerge）、`height` 固定框裁切铺满（分屏）。`PipEditor.tsx` 在画面上拖动/缩放、吸附，七种一键布局 |
-| **智能剪口播** | ✅ | [`video/jumpcut.py`](../vidforge/video/jumpcut.py) — `silencedetect` 找停顿（默认 -38dB、≥0.45s 才剪、两边留 0.12s），trim+concat 画面声音同一组切点 |
+| **智能剪口播** | ✅ | [`video/jumpcut.py`](../vidforge/video/jumpcut.py) — `silencedetect` 找停顿（默认 -38dB、≥0.45s 才剪、两边留 0.12s），trim+concat 画面声音同一组切点。**剪「嗯」「呃」**（`fillers=True`，要 faster-whisper）：Whisper 认出哪些是语气词（提示词里带着「嗯、呃」它才不把它们删掉），切点按电平找到的那一小段声音定，那段声音里只有语气词才剪，贴着别的字的不剪只计数；那个/就是/然后不剪 |
 | **视频美化（后期）** | ✅ | `VideoBeautify.tsx` — 已有视频按原速过一遍实时特效并重录，`/api/fx/save` 收原始字节转 h264 |
 | **竖屏主题模板** | ✅ | [`theme.py`](../vidforge/theme.py) — 1080×1920、小窗 24% 宽 3:4 圆角在上方、字幕抬高 24% 避开平台底部、系列角标（`finalize` 叠加）、6 套明亮配色 |
 
