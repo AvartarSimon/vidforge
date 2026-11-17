@@ -94,6 +94,22 @@ class Apply(unittest.TestCase):
                     self.assertLess(bottom, h * (1 - band(22, 48)), (w, h, corner))
                 self.assertEqual(o["corner"], corner)
 
+    def test_a_window_put_in_the_badges_corner_starts_under_it(self):
+        raw = {"width": 1920, "height": 1080, "theme": {"palette": "mint", "badge": "S01", "side": "left"}}
+        mine = theme.presenter_overlay("v.mp4", raw, corner="top-right")
+        free = theme.presenter_overlay("v.mp4", raw, corner="top-left")
+        top = lambda o: float(o["position"].split(",")[1]) * (1080 - o["height"] * 1080)   # noqa: E731
+        x, y = theme.badge_position("left", 1920, 1080, 200)
+        from PIL import Image
+        with Image.open(theme.badge_png("S01", "mint", Path(tempfile.mkdtemp()) / "b.png", height=1080)) as im:
+            bh = im.height
+        self.assertGreater(top(mine), y + bh, "under the badge, not on it")
+        self.assertLess(top(free), top(mine))
+
+    def test_a_wide_circle_does_not_eat_half_the_height(self):
+        size, h = theme.window_box(1920, 1080, "circle")
+        self.assertLess(h, 0.3)
+
     def test_the_window_goes_opposite_the_badge(self):
         raw = {"width": 1920, "height": 1080, "theme": {"palette": "mint", "badge": "S01", "side": "left"}}
         self.assertEqual(theme.presenter_overlay("v.mp4", raw)["corner"], "top-left")

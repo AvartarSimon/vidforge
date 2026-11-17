@@ -120,14 +120,16 @@ def window_box(width: int, height: int, shape: str = "rounded") -> tuple[float, 
     461x194 in a 1920x1080 project. Upright frames get a 3:4 portrait box, wide ones a 4:3 one,
     a circle is square in pixels whatever the frame."""
     tall = height > width
-    size = WINDOW_W if tall else 0.22
+    # a circle in a wide frame is sized against the height it eats: at 22 % of 1920 it was 422 px,
+    # two fifths of the picture's height
+    size = WINDOW_W if tall else (0.16 if shape == "circle" else 0.22)
     px_w = size * width
     ratio = 1.0 if shape == "circle" else (4 / 3 if tall else 3 / 4)
     return size, round(px_w * ratio / height, 4)
 
 
 def window_place(width: int, height: int, size: float, box_h: float, corner: str = "top-left",
-                 sub_band: float = 0.0) -> str:
+                 sub_band: float = 0.0, below_badge: bool = False) -> str:
     """`position` (fractions of the free space, as render.py reads it) for a corner. A bottom
     corner sits above the subtitle line: wide subtitles run nearly edge to edge, and on a phone the
     lifted line and the platform's caption take the lower part of the frame."""
@@ -135,6 +137,10 @@ def window_place(width: int, height: int, size: float, box_h: float, corner: str
     win_w, win_h = size * width, box_h * height
     mx = width * (MARGIN_X if tall else 0.03)
     top = height * (MARGIN_TOP if tall else 0.05)
+    if below_badge:
+        # the series badge holds this top corner (badge_position: MARGIN_TOP down, a pill 0.022 of
+        # the height in type plus its padding): the window starts under it instead of over it
+        top = height * (MARGIN_TOP + 0.022 * 1.84 + 0.015)
     # upright: just above the lifted subtitle line — any higher and the window sits over the lower
     # part of a chart, where its source caption is
     bottom_clear = height * max(SUB_LIFT + 0.07 if tall else sub_band + 0.02, 0.05)
@@ -201,8 +207,10 @@ def presenter_overlay(video_rel: str, raw: dict, *, shape: str | None = None, co
         corner = f"top-{'right' if side == 'right' else 'left'}"
     size, box_h = window_box(w, h, shape)
     frame_colour = get(t.get("palette")).frame if t else "#ffffff"
+    badge_corner = f"top-{'left' if t.get('side') == 'right' else 'right'}" if (t.get("badge") or "").strip() else None
     return {"video": video_rel, "presenter": True, "shape": shape, "corner": corner, "size": size, "height": box_h,
-            "position": window_place(w, h, size, box_h, corner, _sub_band(raw)), "border": True,
+            "position": window_place(w, h, size, box_h, corner, _sub_band(raw), below_badge=corner == badge_corner),
+            "border": True,
             "border_color": frame_colour, "animate": "fade"}
 
 
