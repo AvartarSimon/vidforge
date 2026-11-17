@@ -164,3 +164,60 @@ class EditingLook(unittest.TestCase):
                                   Path("out.mp4"), "libx264")
         chain = calls[0][calls[0].index("-filter_complex") + 1]
         self.assertIn("d=0.250", chain)        # a quarter of the segment, not all of it
+
+
+@unittest.skipUnless(_ff_available(), "ffmpeg not installed")
+class BrandSplice(unittest.TestCase):
+    """The channel opener / end card spliced onto the segments, then every overlay laid over it."""
+
+    def test_the_end_card_is_matched_and_the_final_pass_finishes(self):
+        # full-range yuvj420p on 1/90000 straight from Remotion, stream-copied after yuv420p segments,
+        # deadlocked ffmpeg 9 in the final pass once the hook card, badge and progress bar were all on
+        import subprocess
+        import threading
+        td = Path(tempfile.mkdtemp())
+        ff = ffmpeg.find_binary("ffmpeg")
+
+        def make(name, colour, seconds, extra):
+            subprocess.run([ff, "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c={colour}:s=360x640:r=30:d={seconds}",
+                            "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", str(seconds), *extra, "-c:a", "aac",
+                            str(td / name)], check=True)
+        make("seg.mp4", "gray", 6, ["-c:v", "libx264", "-pix_fmt", "yuv420p"])
+        make("card.mp4", "black", 3, ["-c:v", "libx264", "-pix_fmt", "yuvj420p", "-color_range", "pc", "-video_track_timescale", "90000"])
+        p = proj.Project(title="t", segments=[], root=td, width=360, height=640, quality="draft", encoder="libx264",
+                         theme={"palette": "mint", "badge": "S01"}, progress_bar=True, hook=proj.HookCard("开场大字", 2))
+        card = render.match_clip(td / "card.mp4", td / "seg.mp4", p, "libx264", td / "card_m.mp4")
+
+        def probe(f, what):
+            return subprocess.run([ffmpeg.find_binary("ffprobe"), "-v", "error", "-select_streams", "v:0", "-show_entries",
+                                   f"stream={what}", "-of", "csv=p=0", str(f)], capture_output=True, text=True).stdout.strip()
+        self.assertEqual(probe(card, "pix_fmt"), "yuv420p")
+        self.assertEqual(probe(card, "time_base"), probe(td / "seg.mp4", "time_base"))
+        render.concat([td / "seg.mp4", card], td / "merged.mp4")
+        done = []
+        t = threading.Thread(target=lambda: done.append(render.finalize(p, td / "merged.mp4", None, 9.0, td / "final.mp4")), daemon=True)
+        t.start()
+        t.join(60)
+        self.assertFalse(t.is_alive(), "the final pass must not hang")
+        self.assertAlmostEqual(ffmpeg.duration(td / "final.mp4"), 9.0, delta=0.2)
+
+
+@unittest.skipUnless(_ff_available(), "ffmpeg not installed")
+class ColourRange(unittest.TestCase):
+    def test_a_full_range_photo_becomes_a_standard_range_clip(self):
+        # JPEGs and Remotion renders are full range; spliced beside video segments they changed the
+        # pixel format mid-file and the final pass hung
+        import subprocess
+        td = Path(tempfile.mkdtemp())
+        ff = ffmpeg.find_binary("ffmpeg")
+        subprocess.run([ff, "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=white:s=320x180,format=yuvj420p",
+                        "-frames:v", "1", str(td / "w.jpg")], check=True)
+        p = proj.Project(title="t", segments=[], root=td, width=320, height=180, quality="draft", encoder="libx264")
+        out = td / "c.mp4"
+        render.render_clip(p, render.PlannedClip(Clip(image=td / "w.jpg", motion="none"), 1.0), out, "libx264")
+        probe = subprocess.run([ffmpeg.find_binary("ffprobe"), "-v", "error", "-select_streams", "v:0", "-show_entries",
+                                "stream=pix_fmt,color_range", "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout.strip()
+        self.assertEqual(probe, "yuv420p,tv")
+        y = subprocess.run([ff, "-v", "error", "-i", str(out), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"],
+                           capture_output=True).stdout[160 * 90 * 0 + 5]
+        self.assertLessEqual(y, 236, "converted to the standard range, not just relabelled")

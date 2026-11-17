@@ -418,7 +418,7 @@ def _segment_key(project: Project, seg: Segment, audio: Path, encoder: str) -> s
     settings = [project.width, project.height, project.fps, project.quality, encoder, project.motion_amount,
                 project.effective_supersample, project.transition, project.transition_style, project.segment_fade,
                 project.look, project.look_strength, project.punch_in, project.normalize_audio,
-                project.voice_fx, project.voice_pitch, project.presenter.provider]
+                project.voice_fx, project.voice_pitch, project.presenter.provider, render.CLIP_FORMAT]
     blob = json.dumps([enc(seg), enc(audio), settings], sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:10]
 
@@ -580,6 +580,9 @@ def _with_brand(ctx, bd: Path, clips: list[Path]) -> tuple[list[Path], float, fl
     except Exception as e:  # noqa: BLE001  a missing Node or a bad logo must not fail the video
         _log(f"warning: brand clips skipped ({e})")
         return clips, 0.0, 0.0
+    if clips:
+        head = [render.match_clip(c, clips[0], p, ctx.encoder, c.with_name(c.stem + "_matched.mp4")) for c in head]
+        tail = [render.match_clip(c, clips[0], p, ctx.encoder, c.with_name(c.stem + "_matched.mp4")) for c in tail]
     lead = ffmpeg.duration(head[0]) if head else 0.0
     trail = ffmpeg.duration(tail[0]) if tail else 0.0
     return [*head, *clips, *tail], lead, trail
@@ -625,7 +628,8 @@ def _build(project: Project, *, only_tts: bool, burn: bool | None) -> Path:
         _stage_render(ctx)
         final, timeline, total = _stage_assemble(ctx)
         _set_progress("done", 1, 1)
-        _log(f"done in {time.time() - t0:.1f}s · {total:.1f}s video · {final}")
+        # the file's own length: the narration's end left out the end card's seconds
+        _log(f"done in {time.time() - t0:.1f}s · {ffmpeg.duration(final):.1f}s video · {final}")
         _log("chapters:\n" + "\n".join(_chapter_line(t) for t in timeline))
         return final
     except BaseException:

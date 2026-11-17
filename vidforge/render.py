@@ -56,7 +56,19 @@ def pick_encoder(project: Project) -> str:
     return "libx264"
 
 
+# What every rendered clip is made as. Part of the clip cache key: when it changes, clips cached in
+# the old form are rendered again instead of being spliced beside new ones.
+CLIP_FORMAT = "yuv420p-tv"
+
+
 def video_codec_args(project: Project, encoder: str | None = None) -> list[str]:
+    # every clip in the standard (tv) range: JPEG photos and Remotion renders arrive full-range, an
+    # encoder keeps whatever range it is handed, and segments of both kinds spliced together changed
+    # pixel format mid-file — which deadlocked the final pass. ffmpeg converts on this flag (Y 255 -> 235).
+    return _codec_args(project, encoder) + ["-color_range", "tv"]
+
+
+def _codec_args(project: Project, encoder: str | None = None) -> list[str]:
     enc = encoder or pick_encoder(project)
     final = project.quality == "final"
     if enc == "libx264":
@@ -565,6 +577,23 @@ def audio_is_silent(path: Path, floor_db: float = -60.0) -> bool:
     except Exception:  # noqa: BLE001
         pass
     return False
+
+
+def match_clip(clip: Path, like: Path, project: Project, encoder: str, out: Path) -> Path:
+    """Re-encode `clip` so it splices onto `like` without a change of stream parameters.
+
+    The channel opener and end card come straight from Remotion as full-range yuvj420p on a
+    1/90000 timebase; every segment is yuv420p on its encoder's timebase. Stream-copied together,
+    the pixel format changes mid-file — and ffmpeg 9 deadlocked on that change in the final pass
+    whenever the hook card, the badge and the progress bar were all laid over the video."""
+    r = subprocess.run([ffmpeg.find_binary("ffprobe"), "-v", "error", "-select_streams", "v:0", "-show_entries",
+                        "stream=time_base", "-of", "csv=p=0", str(like)], capture_output=True, text=True)
+    scale = (r.stdout.strip().split("/") + ["", ""])[1] if r.returncode == 0 else ""
+    args = ["-y", "-i", str(clip), "-vf", f"scale={project.width}:{project.height}:in_range=full:out_range=tv,"
+            f"format=yuv420p,fps={project.fps},setsar=1", *video_codec_args(project, encoder),
+            *(["-video_track_timescale", scale] if scale.isdigit() else []), *AUDIO_ARGS, str(out)]
+    ffmpeg.run(args)
+    return out
 
 
 def concat(clips: list[Path], out: Path) -> None:
