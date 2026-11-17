@@ -179,6 +179,29 @@ def split_hook(blocks: list[dict], parts: list[dict], zh: bool) -> list[dict]:
     return [hook, rest, *blocks[1:]]
 
 
+def split_long(blocks: list[dict], parts: list[dict], zh: bool) -> list[dict]:
+    """A block holding more than 40 % of the video is the model giving up, not a structure: an
+    eleven-minute talk came back as hook, set-up and one nine-minute "data" block. Such a block is
+    cut by time into two or three, so the template still has steps to write to."""
+    total = (parts[-1]["end"] - parts[0]["start"]) or 1.0
+    if total < 180:
+        return blocks          # a short video really is a few blocks
+    out: list[dict] = []
+    for b in blocks:
+        span = parts[b["to"]]["end"] - parts[b["from"]]["start"]
+        n_chunks = b["to"] - b["from"] + 1
+        pieces = min(3, n_chunks, max(1, round(span / (total * 0.25)))) if span > total * 0.4 else 1
+        if pieces <= 1:
+            out.append(b)
+            continue
+        size = n_chunks / pieces
+        for k in range(pieces):
+            a = b["from"] + round(k * size)
+            z = b["from"] + round((k + 1) * size) - 1
+            out.append({**b, "from": a, "to": max(a, z), "name": f"{b['name']} {k + 1}" if zh else f"{b['name']} {k + 1}"})
+    return out
+
+
 def extract(ref_id: str, log=print) -> dict:
     """Read one reference video into a framework; save it beside the video and as a template."""
     from . import align
@@ -203,7 +226,7 @@ def extract(ref_id: str, log=print) -> dict:
     how = "llm"
     if made is None:
         made, how = _time_blocks(parts, zh), "time"
-    made["blocks"] = split_hook(made["blocks"], parts, zh)
+    made["blocks"] = split_long(split_hook(made["blocks"], parts, zh), parts, zh)
     beats = []
     for b in made["blocks"]:
         start, end = parts[b["from"]]["start"], parts[b["to"]]["end"]

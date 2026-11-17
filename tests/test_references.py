@@ -98,6 +98,16 @@ class Framework(Isolated):
                                         {"name": "数据", "from": 5, "to": 7, "role": "r", "technique": ""}], parts, True)
         self.assertEqual([(b["name"], b["from"], b["to"]) for b in blocks], [("钩子", 0, 0), ("铺垫", 1, 4), ("数据", 5, 7)])
 
+    def test_a_block_holding_most_of_the_video_is_cut_into_steps(self):
+        parts = [{"start": i * 10.0, "end": i * 10.0 + 10, "text": f"t{i}"} for i in range(60)]
+        short = [{"name": "数据", "from": 0, "to": 9, "role": "r", "technique": ""}]
+        self.assertEqual(frameworks.split_long(short, parts[:10], True), short, "a short video keeps its blocks")
+        blocks = frameworks.split_long([{"name": "钩子", "from": 0, "to": 1, "role": "r", "technique": ""},
+                                        {"name": "数据", "from": 2, "to": 59, "role": "r", "technique": ""}], parts, True)
+        self.assertEqual([b["name"] for b in blocks], ["钩子", "数据 1", "数据 2", "数据 3"])
+        self.assertEqual((blocks[1]["from"], blocks[-1]["to"]), (2, 59), "still contiguous, still covering")
+        self.assertTrue(all(b["from"] <= b["to"] for b in blocks))
+
     def extract(self, llm_answer: dict | None):
         info = references.import_file("ref.mp4", self.clip(60), "参考")
         from vidforge import align, llm
