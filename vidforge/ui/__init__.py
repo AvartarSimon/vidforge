@@ -137,6 +137,11 @@ class State:
         self.project_path: Path | None = None
         self.root: Path = workspace_dir()
         self.lock = threading.Lock()
+        # project.json is read, changed and written back by many hands at once (the page's autosave,
+        # a studio take, the jump cut, a template): each write is merged with what is on disk, under
+        # this lock, against the copy that writer started from — see merge.py
+        self.doc_lock = threading.RLock()
+        self._read_copies: dict[int, tuple[dict, dict]] = {}
         self.build = {"state": "idle", "lines": [], "lang": None, "started": None, "finished": None, "error": None}
         self.autofill = {"state": "idle", "done": 0, "total": 0, "lines": [], "result": None, "cancel": False}
         self.heads = {"state": "idle", "lines": [], "result": None, "error": None}
@@ -194,11 +199,33 @@ class State:
     def read_raw(self) -> dict:
         if self.project_path is None:
             raise proj.ProjectError("no project open")
-        return json.loads(self.project_path.read_text(encoding="utf-8"))
+        text = self.project_path.read_text(encoding="utf-8")
+        data = json.loads(text)
+        # remembered (by identity) so write_raw knows what this writer started from
+        with self.doc_lock:
+            self._read_copies[id(data)] = (data, json.loads(text))
+            while len(self._read_copies) > 64:
+                self._read_copies.pop(next(iter(self._read_copies)))
+        return data
 
-    def write_raw(self, data: dict, *, snapshot: bool = False) -> None:
+    def write_raw(self, data: dict, *, snapshot: bool = False, base: dict | None = None) -> dict:
+        """Write `data`, merged with whatever was written since its writer read the file.
+        Returns what was written."""
         if self.project_path is None:
             raise proj.ProjectError("no project open")
+        with self.doc_lock:
+            seen = self._read_copies.pop(id(data), None)
+            if base is None and seen is not None and seen[0] is data:
+                base = seen[1]
+            if base is not None and self.project_path.exists():
+                from ..merge import merge3
+                current = json.loads(self.project_path.read_text(encoding="utf-8"))
+                if current != base:
+                    data = merge3(base, data, current)
+            self._write_raw(data, snapshot=snapshot)
+            return data
+
+    def _write_raw(self, data: dict, *, snapshot: bool = False) -> None:
         new_text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
         if self.project_path.exists():
             old = self.project_path.read_text(encoding="utf-8")
@@ -2142,14 +2169,24 @@ def make_handler(state: State):
             data = body.get("raw")
             if not isinstance(data, dict):
                 return self._error("raw must be an object")
+            base = body.get("base") if isinstance(body.get("base"), dict) else None
+            if base is not None:
+                # only the page's own changes: what the server wrote since the page loaded stays
+                from ..merge import merge3
+                with state.doc_lock:
+                    current = state.read_raw()
+                    data = merge3(base, data, current) if current != base else data
+            merged = base is not None and data != body.get("raw")
             tmp = state.project_path.with_suffix(".validate.json")
             tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             try:
                 proj.load(tmp)
             finally:
                 tmp.unlink(missing_ok=True)
-            state.write_raw(data, snapshot=snapshot)
-            return self._json({"saved": True, "at": time.time()})
+            with state.doc_lock:
+                written = state.write_raw(data, snapshot=snapshot, base=base)
+            merged = merged or written != body.get("raw")
+            return self._json({"saved": True, "at": time.time(), "merged": merged, "raw": written if merged else None})
 
         def voices(self, provider: str, lang: str | None) -> list[dict]:
             """Structured voice list; edge gives locale/gender/personality, others only names."""

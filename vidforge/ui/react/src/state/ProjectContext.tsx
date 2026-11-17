@@ -48,13 +48,33 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   rawRef.current = raw
   // bumped by every patch(): a reload that started before an edit must not overwrite it
   const editSeq = useRef(0)
+  // the project as the server last gave it to us (before any edit): sent with every save, so the
+  // server applies only our changes — a take the studio saved meanwhile is kept, not overwritten
+  const baseRef = useRef<RawProject | null>(null)
+  const copy = <T,>(v: T): T => JSON.parse(JSON.stringify(v))
 
   const save = useCallback(async (snapshot = false): Promise<boolean> => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
     if (!rawRef.current) return true
     setSaveState('saving')
     try {
-      await apiPost('/api/project', { raw: rawRef.current, snapshot })
+      const sent = copy(rawRef.current)
+      const seq = editSeq.current
+      const j = await apiPost<{ merged?: boolean; raw?: RawProject | null }>('/api/project', { raw: sent, base: baseRef.current, snapshot })
+      if (j.merged && j.raw) {
+        if (editSeq.current === seq) {
+          // the server added what it wrote meanwhile: show it, and start from it next time
+          normalizeSegments(j.raw)
+          rawRef.current = j.raw
+          setRaw({ ...j.raw })
+          baseRef.current = copy(j.raw)
+        } else {
+          // edited while saving: keep the screen; the next save merges again from what we sent
+          baseRef.current = sent
+        }
+      } else {
+        baseRef.current = sent
+      }
       setSaveState('saved')
       setSavedAt(new Date())
       return true
@@ -81,6 +101,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     const seq = editSeq.current
     try {
       const v = await apiGet<ProjectView>('/api/project')
+      const asLoaded = v.home ? null : copy(v.raw)
       if (!v.home) normalizeSegments(v.raw)
       if (editSeq.current !== seq && !v.home && rawRef.current) {
         // edited while the request was out (typing straight after an upload): the server's copy
@@ -90,6 +111,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       }
       setView(v)
       setRaw(v.home ? null : v.raw)
+      baseRef.current = asLoaded
       setSaveState('saved')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
