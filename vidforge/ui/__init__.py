@@ -783,6 +783,12 @@ def make_handler(state: State):
                     return self._json({"theme": raw.get("theme"), "subtitles": raw.get("subtitles")})
                 if path == "/api/platforms/export":
                     return self.platform_export(body)
+                if path == "/api/platforms/suggest":            # titles / description / tags by the local model
+                    from .. import llm, platforms
+                    try:
+                        return self._json(platforms.suggest_text(state.load(body.get("lang"))))
+                    except (llm.LlmError, platforms.PlatformError, proj.ProjectError) as e:
+                        return self._error(str(e))
                 if path == "/api/short":
                     return self.make_short(body)
                 if path == "/api/voicefx/preview":

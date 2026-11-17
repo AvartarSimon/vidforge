@@ -154,3 +154,109 @@ def export(project, source: Path, out_dir: Path, pid: str, *, mode: str = "blur"
               "mb": round(mb, 1), "warnings": warnings}
     (out_dir / f"{pid}.json").write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
     return result
+
+
+# -- 标题 / 简介 / 话题, written by the local model ---------------------------------------------------
+# The upload form is where a finished video stalls: five apps, each wanting a title that fits its
+# length, a description and hashtags. A small local model drafts them from the script; the user
+# picks. Nothing it writes is used unseen, and a title that carries a number the script does not
+# is dropped — a headline is exactly where an invented figure would do the most harm.
+_CN_DIGITS = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+_CN_UNITS = {"十": 10, "百": 100, "千": 1000}
+_CN_BIG = {"万": 10_000, "亿": 100_000_000}
+
+
+def cn_number(s: str) -> int | None:
+    """「六十一」→ 61, 「一九九零」→ 1990, 「八十五万」→ 850000; None when it is not a plain number."""
+    if not s:
+        return None
+    if all(ch in _CN_DIGITS for ch in s):                    # digit by digit, as years are said
+        return int("".join(str(_CN_DIGITS[ch]) for ch in s)) if len(s) > 1 else _CN_DIGITS[s]
+    total, section, digit = 0, 0, None
+    for ch in s:
+        if ch in _CN_DIGITS:
+            digit = _CN_DIGITS[ch]
+        elif ch in _CN_UNITS:
+            section += (1 if digit is None else digit) * _CN_UNITS[ch]
+            digit = None
+        elif ch in _CN_BIG:
+            total += (section + (digit or 0)) * _CN_BIG[ch]
+            section, digit = 0, None
+        else:
+            return None
+    return total + section + (digit or 0)
+
+
+def script_numbers(text: str) -> set[str]:
+    """Every number the script states, as digits: the only ones a title may use."""
+    import re
+    out = {m.replace(",", "") for m in re.findall(r"\d[\d,]*(?:\.\d+)?", text)}
+    for run in re.findall(r"[零〇一二两三四五六七八九十百千万亿]+", text):
+        n = cn_number(run)
+        if n is not None and (n >= 10 or len(run) == 1):
+            out.add(str(n))
+            if n >= 10_000:                                   # 八十五万 may be written 85万
+                for unit, k in (("万", 10_000), ("亿", 100_000_000)):
+                    if n % k == 0:
+                        out.add(str(n // k))
+    return out
+
+
+def _clean_line(v: object, limit: int) -> str:
+    import re
+    s = re.sub(r"[\U0001F000-\U0001FFFF☀-➿#《》\"“”]", "", str(v or "")).strip(" 。.,，:：")
+    return s[:limit]
+
+
+def suggest_text(project, *, n: int = 5) -> dict:
+    """Draft titles, a description and topic tags from the narration. Raises llm.LlmError when no
+    local model is running."""
+    import re
+    from . import llm
+    script = "\n".join(s.text for s in project.segments).strip()
+    if not script:
+        raise PlatformError("还没有脚本——先在第 1 步写好旁白，标题要从旁白里来")
+    zh = (project.language or "zh").startswith("zh")
+    if zh:
+        prompt = (f"下面是一条短视频的旁白稿：\n\n{script[:2500]}\n\n"
+                  f"为它写 {n} 个标题：每个 12 到 28 个字，口语，有悬念或反差，让人想点开；"
+                  "只能用稿子里出现过的数字，不要编数字；不要书名号、引号和表情符号。"
+                  "再写一段 60 到 120 字的简介，第一句说清这条视频回答什么问题。"
+                  "再给 5 个话题词，每个 2 到 6 个字，不带 # 号。"
+                  '只返回 JSON：{"titles": [...], "description": "...", "tags": [...]}')
+        system = "你是中文短视频平台的运营编辑，只用中文回答。"
+    else:
+        prompt = (f"Narration of a short explainer video:\n\n{script[:2500]}\n\n"
+                  f"Write {n} titles (40-80 characters each, curiosity or contrast, plain words; use only "
+                  "numbers that appear in the narration, never invent one; no emoji, no quotes), a 2-3 "
+                  "sentence description whose first sentence says what question the video answers, and "
+                  "5 topic tags (one or two words, no #). "
+                  'Return JSON only: {"titles": [...], "description": "...", "tags": [...]}')
+        system = "You are a video editor writing upload text for YouTube and TikTok."
+    try:
+        data = json.loads(llm.chat(prompt, system=system, json_mode=True, timeout=180))
+    except json.JSONDecodeError:
+        raise llm.LlmError("本地模型没有返回能读的结果，再点一次试试") from None
+    if not isinstance(data, dict):
+        data = {}
+    allowed = script_numbers(script)
+    titles, dropped = [], []
+    for t in data.get("titles") or []:
+        t = _clean_line(t, 100)
+        if not t or t in titles:
+            continue
+        nums = {m.replace(",", "") for m in re.findall(r"\d[\d,]*(?:\.\d+)?", t)}
+        nums |= {str(cn_number(r)) for r in re.findall(r"[零〇一二两三四五六七八九十百千万亿]{2,}", t) if cn_number(r) is not None}
+        if nums - allowed:
+            dropped.append(t)
+            continue
+        titles.append(t)
+    tags = []
+    for t in data.get("tags") or []:
+        t = _clean_line(t, 200).replace(" ", "" if zh else " ")
+        # too long to be a hashtag: left out rather than cut mid-word
+        if t and t not in tags and len(t) <= (8 if zh else 30):
+            tags.append(t)
+    desc = str(data.get("description") or "").strip()
+    return {"titles": titles, "description": desc, "tags": tags[:8], "dropped": dropped,
+            "lengths": {p.id: p.title_max for p in PLATFORMS}}

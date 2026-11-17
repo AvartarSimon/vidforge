@@ -79,5 +79,53 @@ class Export(unittest.TestCase):
             shutil.rmtree(td, ignore_errors=True)
 
 
+class SuggestText(unittest.TestCase):
+    """标题 / 简介 / 话题 by the local model: the model is mocked, the rules are not."""
+
+    SCRIPT = "2022年，中国人口六十一年来第一次减少了85万人。"
+
+    def project(self, text: str = SCRIPT, language: str = "zh"):
+        seg = proj.Segment(id="a", text=text, clips=[])
+        return proj.Project(title="t", segments=[seg], root=Path("."), language=language)
+
+    def answer(self, data: dict, project=None):
+        import json
+        from unittest import mock
+        from vidforge import llm
+        with mock.patch.object(llm, "chat", return_value=json.dumps(data, ensure_ascii=False)) as chat:
+            out = platforms.suggest_text(project or self.project())
+        return out, chat
+
+    def test_chinese_numerals_in_the_script_are_numbers_a_title_may_use(self):
+        self.assertEqual(platforms.cn_number("六十一"), 61)
+        self.assertEqual(platforms.cn_number("一九九零"), 1990)
+        self.assertEqual(platforms.cn_number("八十五万"), 850000)
+        self.assertIsNone(platforms.cn_number("百分之五"))
+        self.assertTrue({"2022", "61", "85"} <= platforms.script_numbers(self.SCRIPT))
+
+    def test_a_title_with_a_number_the_script_never_said_is_dropped(self):
+        out, _ = self.answer({"titles": ["中国人口61年来首次减少", "人口减少了100万？", "2022年发生了什么", "人口少了三千万"],
+                              "description": "d", "tags": ["人口"]})
+        self.assertEqual(out["titles"], ["中国人口61年来首次减少", "2022年发生了什么"])
+        self.assertEqual(out["dropped"], ["人口减少了100万？", "人口少了三千万"])
+
+    def test_decoration_is_stripped_and_long_tags_are_left_out_not_cut(self):
+        out, _ = self.answer({"titles": ["《人口》🔥 减少了"], "description": "d",
+                              "tags": ["#人口", "人口 变化", "中国人口六十一年来第一次减少", "人口"]})
+        self.assertEqual(out["titles"], ["人口 减少了"])
+        self.assertEqual(out["tags"], ["人口", "人口变化"])
+
+    def test_the_prompt_is_in_the_projects_language(self):
+        _, chat = self.answer({"titles": [], "description": "", "tags": []})
+        self.assertIn("只能用稿子里出现过的数字", chat.call_args.args[0])
+        _, chat = self.answer({"titles": [], "description": "", "tags": []},
+                              self.project("In 1815 a volcano erupted.", "en"))
+        self.assertIn("never invent", chat.call_args.args[0])
+
+    def test_without_a_script_there_is_nothing_to_title(self):
+        with self.assertRaisesRegex(platforms.PlatformError, "脚本"):
+            platforms.suggest_text(self.project(""))
+
+
 if __name__ == "__main__":
     unittest.main()

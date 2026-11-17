@@ -17,6 +17,7 @@ import { apiPost } from '../../api/client'
 import type { RawProject } from '../../api/types'
 import { useProject } from '../../state/ProjectContext'
 import { PlatformExport } from './publish/PlatformExport'
+import { TitleSuggest } from './publish/TitleSuggest'
 
 const CATEGORIES = [
   [27, 'Education'],
@@ -78,6 +79,7 @@ export function PublishStep() {
 
   return (
     <Stack spacing={2}>
+      <TitleSuggest />
       <PlatformExport />
       <Card variant="outlined">
         <CardContent>

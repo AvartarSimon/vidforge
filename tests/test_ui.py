@@ -55,6 +55,20 @@ class UiApi(unittest.TestCase):
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read() or b"{}")
 
+    def test_platform_text_is_drafted_from_the_projects_own_script(self):
+        from unittest import mock
+        from vidforge import llm
+        answer = json.dumps({"titles": ["Why 1815 had no summer", "What 1900 was like"], "description": "d", "tags": ["Tambora"]})
+        with mock.patch.object(llm, "chat", return_value=answer) as chat:
+            st, j = self.call("/api/platforms/suggest", {})
+        self.assertEqual(st, 200, j)
+        self.assertIn("Mount Tambora erupted in 1815", chat.call_args.args[0])
+        self.assertEqual(j["titles"], ["Why 1815 had no summer"], "1900 is not in the script")
+        with mock.patch.object(llm, "chat", side_effect=llm.LlmError("本地模型不可用")):
+            st, j = self.call("/api/platforms/suggest", {})
+        self.assertEqual(st, 400)
+        self.assertIn("本地模型", j.get("error", ""))
+
     def test_static_files(self):
         for path in ("/", "/static/app.js", "/static/style.css"):
             with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}") as r:
