@@ -2,18 +2,20 @@ import { useEffect, useRef, useState } from 'react'
 import { Alert, Box, Button, Card, CardContent, Checkbox, Chip, IconButton, LinearProgress, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import { apiGet, apiPost } from '../../../api/client'
-import { fileUrl } from '../../../utils'
+import { downloadUrl, fileUrl } from '../../../utils'
+import { useProject } from '../../../state/ProjectContext'
 import IosShareIcon from '@mui/icons-material/IosShare'
 import { PanelTitle } from '../../shared/ui'
 
 type Platform = { id: string; name: string; ratio: string; width: number; height: number; best: number[]; max_seconds: number | null; tips: string }
-type Exported = { id: string; name: string; path: string; seconds: number; mb: number; warnings: string[]; copy?: string; covers?: string[] }
+type Exported = { id: string; name: string; path: string; seconds: number; mb: number; warnings: string[]; copy?: string; covers?: string[]; mtime?: number }
 type Job = { state: string; lines: string[]; results: Exported[]; error: string | null }
 
 const KEY = 'vf.platforms.v1'
 
 /** 多平台导出: one finished video, a correctly shaped copy and the upload text for each app. */
 export function PlatformExport() {
+  const { raw } = useProject()
   const [list, setList] = useState<Platform[]>([])
   const [done, setDone] = useState<Exported[]>([])
   const [job, setJob] = useState<Job | null>(null)
@@ -36,8 +38,28 @@ export function PlatformExport() {
       return j.job
     })
 
+  // An export runs for minutes. The page used to poll only from the click, so leaving and coming
+  // back found it "导出中…" for good — the job had finished, nobody asked. Polling now follows
+  // the job's state, whoever started it.
+  const poll = () => {
+    if (timer.current) return
+    timer.current = setInterval(async () => {
+      try {
+        const j = await load()
+        if (j.state !== 'running' && timer.current) {
+          clearInterval(timer.current)
+          timer.current = null
+        }
+      } catch {
+        // the server restarted mid-export: try again on the next tick
+      }
+    }, 1200)
+  }
+
   useEffect(() => {
-    load().catch((e) => setError(String(e)))
+    load()
+      .then((j) => j.state === 'running' && poll())
+      .catch((e) => setError(String(e)))
     return () => {
       if (timer.current) clearInterval(timer.current)
     }
@@ -54,13 +76,8 @@ export function PlatformExport() {
     setError(null)
     try {
       await apiPost('/api/platforms/export', { platforms: chosen, mode })
-      timer.current = setInterval(async () => {
-        const j = await load()
-        if (j.state !== 'running' && timer.current) {
-          clearInterval(timer.current)
-          timer.current = null
-        }
-      }, 1200)
+      await load()
+      poll()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -133,10 +150,10 @@ export function PlatformExport() {
                   <Typography variant="caption" color="text.secondary">
                     {d.seconds.toFixed(1)}s · {d.mb} MB
                   </Typography>
-                  <Button size="small" href={fileUrl(d.path) || ''} target="_blank">
+                  <Button size="small" href={fileUrl(d.path, d.mtime) || ''} target="_blank">
                     播放
                   </Button>
-                  <Button size="small" href={fileUrl(d.path) || ''} download={`${d.id}.mp4`}>
+                  <Button size="small" href={downloadUrl(d.path, `${raw?.title || 'video'}-${d.name}.mp4`, d.mtime) || ''}>
                     下载
                   </Button>
                   {d.copy && (
@@ -151,8 +168,8 @@ export function PlatformExport() {
                   <Stack direction="row" spacing={1} alignItems="flex-end" sx={{ mt: 1 }}>
                     {d.covers.map((c) => (
                       <Tooltip key={c} title={`封面 ${c.split('_cover_').pop()?.replace('.jpg', '')}，点一下下载`}>
-                        <Box component="a" href={fileUrl(c) || ''} download={c.split('/').pop()} sx={{ display: 'block', lineHeight: 0 }}>
-                          <Box component="img" src={fileUrl(c) || ''} alt="封面" sx={{ height: 72, borderRadius: 0.5, border: '1px solid', borderColor: 'divider' }} />
+                        <Box component="a" href={downloadUrl(c, `${raw?.title || 'video'}-${d.name}-${c.split('_cover_').pop()}`, d.mtime) || ''} sx={{ display: 'block', lineHeight: 0 }}>
+                          <Box component="img" src={fileUrl(c, d.mtime) || ''} alt="封面" sx={{ height: 72, borderRadius: 0.5, border: '1px solid', borderColor: 'divider' }} />
                         </Box>
                       </Tooltip>
                     ))}

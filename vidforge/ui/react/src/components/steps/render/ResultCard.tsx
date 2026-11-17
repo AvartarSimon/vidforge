@@ -1,7 +1,11 @@
-import { Box, Card, CardContent, Link, Stack, Typography } from '@mui/material'
+import { useState } from 'react'
+import { Alert, Box, Button, Card, CardContent, Stack, Typography } from '@mui/material'
+import { apiPost } from '../../../api/client'
 import { useProject } from '../../../state/ProjectContext'
-import { fileUrl } from '../../../utils'
+import { downloadUrl, fileUrl } from '../../../utils'
 import MovieIcon from '@mui/icons-material/Movie'
+import DownloadIcon from '@mui/icons-material/Download'
+import FolderOpenIcon from '@mui/icons-material/FolderOpen'
 import { PanelTitle } from '../../shared/ui'
 
 function chaptersText(tl: { start: number; label?: string; id: string }[] | null | undefined) {
@@ -13,12 +17,28 @@ function chaptersText(tl: { start: number; label?: string; id: string }[] | null
     .join('\n')
 }
 
+/**
+ * 成片. Shown at the end of 渲染 and at the top of 发布 (where 导出 lands): the finished video is
+ * what "export" means first; the per-platform copies come after. Every link carries the render's
+ * mtime — the files keep their names across renders and the browser would hand back the old one.
+ */
 export function ResultCard() {
-  const { view } = useProject()
+  const { raw, view } = useProject()
+  const [error, setError] = useState<string | null>(null)
   const o = view?.outputs
   if (!o?.final) return null
 
   const total = o.timeline?.length ? o.timeline[o.timeline.length - 1].end : 0
+  const bust = o.final_mtime
+  const title = raw?.title || 'final'
+  const reveal = async () => {
+    setError(null)
+    try {
+      await apiPost('/api/reveal', { path: o.final })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
 
   return (
     <Card variant="outlined">
@@ -29,21 +49,33 @@ export function ResultCard() {
             {Math.round(total)} s{o.final_mtime ? ` · ${new Date(o.final_mtime * 1000).toLocaleString()}` : ''}
           </Typography>
         </Stack>
-        <video controls playsInline style={{ width: '100%', maxWidth: 640, marginTop: 8 }} src={fileUrl(o.final, o.final_mtime) || undefined} />
-        <Stack direction="row" spacing={2} sx={{ mt: 1 }}>
-          <Link href={fileUrl(o.final) || '#'} download>
-            final.mp4
-          </Link>
-          <Link href={fileUrl(o.srt) || '#'} download>
-            final.srt
-          </Link>
-          <Link href={fileUrl(o.thumbnail) || '#'} target="_blank" rel="noreferrer">
-            thumbnail.jpg
-          </Link>
+        <video controls playsInline style={{ width: '100%', maxWidth: 640, marginTop: 8 }} src={fileUrl(o.final, bust) || undefined} />
+        <Stack direction="row" spacing={1} sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
+          <Button variant="contained" size="small" startIcon={<DownloadIcon />} href={downloadUrl(o.final, `${title}.mp4`, bust) || ''}>
+            下载成片
+          </Button>
+          {o.srt && (
+            <Button size="small" startIcon={<DownloadIcon />} href={downloadUrl(o.srt, `${title}.srt`, bust) || ''}>
+              字幕 .srt
+            </Button>
+          )}
+          {o.thumbnail && (
+            <Button size="small" startIcon={<DownloadIcon />} href={downloadUrl(o.thumbnail, `${title}-封面.jpg`, bust) || ''}>
+              封面
+            </Button>
+          )}
+          <Button size="small" startIcon={<FolderOpenIcon />} onClick={reveal}>
+            在文件夹中显示
+          </Button>
         </Stack>
+        {error && (
+          <Alert severity="warning" sx={{ mt: 1 }}>
+            {error}
+          </Alert>
+        )}
         <Stack direction="row" spacing={2} sx={{ mt: 1 }}>
           {o.thumbnail && (
-            <Box component="img" src={fileUrl(o.thumbnail, o.final_mtime) || undefined} sx={{ width: 200, borderRadius: 1 }} />
+            <Box component="img" src={fileUrl(o.thumbnail, bust) || undefined} sx={{ width: 200, borderRadius: 1 }} />
           )}
           <Box component="pre" sx={{ fontSize: 12, m: 0 }}>
             {chaptersText(o.timeline)}

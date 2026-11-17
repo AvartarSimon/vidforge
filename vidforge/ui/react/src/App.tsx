@@ -154,7 +154,7 @@ function Shell({ mode, onToggleMode }: { mode: PaletteMode; onToggleMode: () => 
           {!loading && !error && raw && !section && step === 2 && <VoiceStep key={stepKey} />}
           {!loading && !error && raw && !section && step === 3 && <VisualsStep key={stepKey} />}
           {!loading && !error && raw && !section && step === 4 && <RenderStep key={stepKey} />}
-          {!loading && !error && raw && !section && step === 5 && <PublishStep key={stepKey} />}
+          {!loading && !error && raw && !section && step === 5 && <PublishStep key={stepKey} onRender={() => goStep(4)} />}
 
           {/* The wizard is a sequence, so it needs a way forward that is not "find it in the
               sidebar". The hint says what the next step expects, which is the question people

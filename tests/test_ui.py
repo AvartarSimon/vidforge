@@ -10,6 +10,7 @@ import threading
 import time
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -54,6 +55,34 @@ class UiApi(unittest.TestCase):
                 return r.status, json.loads(r.read() or b"{}")
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read() or b"{}")
+
+    def test_a_download_link_saves_the_file_under_the_videos_title(self):
+        root = Path(self.td)
+        (root / "build").mkdir(exist_ok=True)
+        (root / "build" / "final.mp4").write_bytes(b"0123456789")
+        url = f"http://127.0.0.1:{self.port}/files/build/final.mp4"
+        with urllib.request.urlopen(url) as r:
+            self.assertIsNone(r.headers.get("Content-Disposition"), "the player streams it")
+        name = urllib.parse.quote("四十岁/重启 2.5亿.mp4")
+        with urllib.request.urlopen(f"{url}?download={name}&t=1") as r:
+            cd = r.headers["Content-Disposition"]
+            self.assertEqual(r.read(), b"0123456789")
+        self.assertTrue(cd.startswith("attachment;"), cd)
+        self.assertIn("filename*=UTF-8''" + urllib.parse.quote("四十岁 重启 2.5亿.mp4"), cd, "no slash, no doubled .mp4")
+        with urllib.request.urlopen(f"{url}?download={urllib.parse.quote('只有标题')}") as r:
+            self.assertIn(urllib.parse.quote("只有标题.mp4"), r.headers["Content-Disposition"])
+
+    def test_reveal_opens_the_folder_only_for_files_in_the_project(self):
+        root = Path(self.td)
+        (root / "build").mkdir(exist_ok=True)
+        (root / "build" / "final.mp4").write_bytes(b"x")
+        with mock.patch.object(ui.subprocess, "Popen") as popen:
+            st, j = self.call("/api/reveal", {"path": "build/final.mp4"})
+            self.assertEqual(st, 200, j)
+            self.assertIn(str((root / "build" / "final.mp4").resolve()), " ".join(popen.call_args.args[0]))
+            for bad in ("../../etc/passwd", "build/nope.mp4", ""):
+                self.assertEqual(self.call("/api/reveal", {"path": bad})[0], 400, bad)
+            self.assertEqual(popen.call_count, 1)
 
     def test_platform_text_is_drafted_from_the_projects_own_script(self):
         from unittest import mock

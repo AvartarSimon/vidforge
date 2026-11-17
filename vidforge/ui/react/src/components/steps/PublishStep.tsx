@@ -17,6 +17,7 @@ import { apiPost } from '../../api/client'
 import type { RawProject } from '../../api/types'
 import { useProject } from '../../state/ProjectContext'
 import { PlatformExport } from './publish/PlatformExport'
+import { ResultCard } from './render/ResultCard'
 import { TitleSuggest } from './publish/TitleSuggest'
 
 const CATEGORIES = [
@@ -38,7 +39,7 @@ function chaptersText(tl: { start: number; label?: string; id: string }[] | null
     .join('\n')
 }
 
-export function PublishStep() {
+export function PublishStep({ onRender }: { onRender?: () => void }) {
   const { raw, view, patch, saveNow, reload } = useProject()
   const [uploading, setUploading] = useState(false)
   const [log, setLog] = useState<string | null>(null)
@@ -79,6 +80,22 @@ export function PublishStep() {
 
   return (
     <Stack spacing={2}>
+      {o?.final ? (
+        <ResultCard />
+      ) : (
+        <Alert
+          severity="info"
+          action={
+            onRender && (
+              <Button size="small" onClick={onRender}>
+                去渲染
+              </Button>
+            )
+          }
+        >
+          还没有成片，导出和上传都要等第 4 步渲染完。
+        </Alert>
+      )}
       <TitleSuggest />
       <PlatformExport />
       <Card variant="outlined">

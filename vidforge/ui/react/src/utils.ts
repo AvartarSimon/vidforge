@@ -27,6 +27,17 @@ export function fileUrl(rel: string | null | undefined, bust?: number | string |
   return `/files/${path}${bust ? `?t=${bust}` : ''}`
 }
 
+/**
+ * A link that saves the file instead of playing it. The server answers it as an attachment, named
+ * `name` (the video's title, not "final.mp4"); `bust` keeps a re-render from coming out of the cache.
+ */
+export function downloadUrl(rel: string | null | undefined, name: string, bust?: number | string | null): string | null {
+  const url = fileUrl(rel)
+  if (!url) return null
+  const clean = name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || (rel || '').split('/').pop() || 'video'
+  return `${url}?download=${encodeURIComponent(clean)}${bust ? `&t=${bust}` : ''}`
+}
+
 export function fmtDuration(s: number | null | undefined): string {
   if (s == null) return '–'
   return s >= 60 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : `${s.toFixed(1)} s`

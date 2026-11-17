@@ -362,7 +362,7 @@ def make_handler(state: State):
             n = int(self.headers.get("Content-Length") or 0)
             return json.loads(self.rfile.read(n).decode("utf-8")) if n else {}
 
-        def _file(self, path: Path):
+        def _file(self, path: Path, download: str | None = None):
             if not path.is_file():
                 return self._error("not found", HTTPStatus.NOT_FOUND)
             ctype = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
@@ -381,6 +381,15 @@ def make_handler(state: State):
             self.send_header("Accept-Ranges", "bytes")
             self.send_header("Content-Length", str(end - start + 1))
             self.send_header("Cache-Control", "no-store" if path.suffix in (".json", ".html", ".js", ".css") else "max-age=3600")
+            if download is not None:
+                # The `download` attribute alone is a hint some browsers ignore for video: they open
+                # a player tab instead of saving. An attachment header is not a hint. The name is
+                # the video's title (Chinese, so RFC 5987), with an ASCII fallback for old clients.
+                name = re.sub(r'[\\/:*?"<>|\r\n]+', " ", download).strip() or path.name
+                if not name.lower().endswith(path.suffix.lower()):    # a title like "2.5亿" has a "suffix" too
+                    name += path.suffix
+                self.send_header("Content-Disposition", f"attachment; filename=\"{path.name}\"; "
+                                                        f"filename*=UTF-8''{urllib.parse.quote(name)}")
             self.end_headers()
             with open(path, "rb") as f:
                 f.seek(start)
@@ -422,7 +431,9 @@ def make_handler(state: State):
                     return self._file(REACT_DIST / "favicon.svg")
                 if path.startswith("/files/"):
                     p = self._safe_path(path[len("/files/"):])
-                    return self._file(p) if p else self._error("forbidden", HTTPStatus.FORBIDDEN)
+                    if not p:
+                        return self._error("forbidden", HTTPStatus.FORBIDDEN)
+                    return self._file(p, download=q.get("download") if "download" in q else None)
                 if path.startswith("/mediapipe/wasm/"):          # runtime for the camera effects
                     from .. import webmodels
                     d = webmodels.wasm_dir()
@@ -589,6 +600,7 @@ def make_handler(state: State):
                             r = json.loads(f.read_text(encoding="utf-8"))
                             if Path(r["path"]).is_file():
                                 done.append({**r, "path": state.rel(Path(r["path"])), "text": state.rel(Path(r["text"])),
+                                             "mtime": Path(r["path"]).stat().st_mtime,
                                              "copy": Path(r["text"]).read_text(encoding="utf-8"),
                                              "covers": [state.rel(Path(c)) for c in r.get("covers") or [] if Path(c).is_file()]})
                         except (OSError, ValueError, KeyError):
@@ -684,6 +696,20 @@ def make_handler(state: State):
                         return self._error("value 不能为空")
                     f = env.save(state.root, key, value.strip())
                     return self._json({"saved": str(f)})
+                if path == "/api/reveal":                   # 在访达中显示: an 80 MB video is easier found than downloaded again
+                    f = self._safe_path(str(body.get("path") or ""))
+                    if not f or not f.is_file():
+                        return self._error("找不到这个文件")
+                    try:
+                        if sys.platform == "darwin":
+                            subprocess.Popen(["open", "-R", str(f)])
+                        elif os.name == "nt":
+                            subprocess.Popen(["explorer", f"/select,{f}"])
+                        else:
+                            subprocess.Popen(["xdg-open", str(f.parent)])
+                    except OSError as e:
+                        return self._error(f"打不开文件夹：{e}")
+                    return self._json({"revealed": state.rel(f)})
                 if path == "/api/open":
                     try:
                         state.open(Path(body["path"]))
