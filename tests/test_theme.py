@@ -228,6 +228,25 @@ class Api(unittest.TestCase):
         self.assertEqual(code, 400)
         self.assertIn("21:9", j["error"])
 
+    def test_the_next_episode_keeps_the_look_and_counts_the_badge_on(self):
+        import json
+        (self.td / "p" / "assets" / "music").mkdir(parents=True)
+        (self.td / "p" / "assets" / "music" / "pad.m4a").write_bytes(b"x")
+        raw = {"title": "第一期", "language": "zh", "voice": "zh-CN-YunxiNeural", "width": 1080, "height": 1920,
+               "theme": {"palette": "mint", "badge": "人口 · 009", "side": "left"}, "transition_sfx": "whoosh",
+               "bgm": {"file": "assets/music/pad.m4a", "volume_db": -20}, "hook": {"text": "旧的钩子"},
+               "youtube": {"title": "旧标题"}, "segments": [{"id": "a", "text": "旧脚本", "image": "x.jpg"}]}
+        self.state.project_path.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+        code, j = self.call("/api/new", {"name": "ep10", "title": "第十期", "next_episode": True, "dir": str(self.td)})
+        self.assertEqual(code, 200, j)
+        made = json.loads((self.td / "ep10" / "project.json").read_text(encoding="utf-8"))
+        self.assertEqual(made["theme"]["badge"], "人口 · 010")
+        self.assertEqual((made["title"], made["segments"]), ("第十期", []))
+        self.assertEqual((made["width"], made["height"], made["transition_sfx"], made["voice"]), (1080, 1920, "whoosh", "zh-CN-YunxiNeural"))
+        self.assertNotIn("hook", made)
+        self.assertNotIn("youtube", made)
+        self.assertTrue((self.td / "ep10" / "assets" / "music" / "pad.m4a").is_file(), "the music came along")
+
     def test_a_project_in_the_temp_folder_stays_off_the_recent_list(self):
         from vidforge import ui
         ui.remember_project(self.td / "p")

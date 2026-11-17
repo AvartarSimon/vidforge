@@ -707,3 +707,28 @@ def blank(title: str, language: str | None = None) -> dict[str, Any]:
             if "font" in (v.get("subtitles") or {}):
                 v["subtitles"]["font"] = cjk_font_family()
     return tpl
+
+
+# 下一期: what a series keeps from one episode to the next. The look and the sound of the channel —
+# not the script, not the pictures, not the upload text.
+SERIES_KEYS = ("language", "voice", "rate", "tts", "width", "height", "fps", "quality", "encoder", "theme",
+               "subtitles", "punch_in", "transition_sfx", "progress_bar", "look", "look_strength", "transition",
+               "transition_style", "segment_fade", "normalize_audio", "voice_fx", "voice_pitch", "brand", "bgm",
+               "category", "presenter", "lipsync", "take_look", "variants")
+
+
+def next_episode(raw: dict, title: str = "") -> dict:
+    """A new project with this one's settings and an empty script; the series badge counts on
+    ("人口 · 001" -> "人口 · 002"). Language variants keep their voices but lose their texts."""
+    import copy
+    out = {k: copy.deepcopy(raw[k]) for k in SERIES_KEYS if k in raw}
+    out["title"] = title.strip() or "下一期"
+    out["segments"] = []
+    badge = ((out.get("theme") or {}).get("badge") or "")
+    m = re.search(r"(\d+)(?!.*\d)", badge)
+    if m:
+        out["theme"]["badge"] = badge[:m.start()] + str(int(m.group(1)) + 1).zfill(len(m.group(1))) + badge[m.end():]
+    for v in (out.get("variants") or {}).values():
+        for k in ("title", "youtube", "hook"):
+            v.pop(k, None)
+    return out

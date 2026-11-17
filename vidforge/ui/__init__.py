@@ -684,6 +684,17 @@ def make_handler(state: State):
                         from .. import categories as cat_mod
                         cat = cat_mod.load(body["category"])
                     defaults = (cat or {}).get("defaults") or {}
+                    if body.get("next_episode") and state.has_project:
+                        # 下一期: this project's look and sound, an empty script, the badge counting on
+                        old_root, old = state.root, state.read_raw()
+                        tpl = proj.next_episode(old, body.get("title") or "")
+                        music = (tpl.get("bgm") or {}).get("file")
+                        if music and not Path(music).is_absolute() and (old_root / music).is_file():
+                            (root / music).parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(old_root / music, root / music)
+                        (root / "project.json").write_text(json.dumps(tpl, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                        state.open(root)
+                        return self._json({"opened": str(state.project_path), "badge": (tpl.get("theme") or {}).get("badge")})
                     tpl = proj.blank(body.get("title") or name, body.get("language") or defaults.get("language"))
                     if cat:
                         tpl["category"] = cat["id"]

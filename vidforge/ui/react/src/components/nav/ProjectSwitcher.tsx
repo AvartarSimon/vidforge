@@ -25,7 +25,7 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen'
 import { DialogHeader } from '../shared/ui'
 
 export function ProjectSwitcher({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { view, saveState, reload } = useProject()
+  const { view, raw, saveState, reload } = useProject()
   const [projects, setProjects] = useState<RecentProject[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -74,6 +74,19 @@ export function ProjectSwitcher({ open, onClose }: { open: boolean; onClose: () 
     try {
       const j = await apiPost<{ url: string }>('/api/instances/spawn', { path })
       window.open(j.url, '_blank')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  // a series: the next episode starts from this one's settings, not from scratch
+  const createNext = async () => {
+    try {
+      await apiPost('/api/new', { name: newName, title: newTitle, next_episode: true })
+      setNewName('')
+      setNewTitle('')
+      onClose()
+      await reload()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -156,6 +169,15 @@ export function ProjectSwitcher({ open, onClose }: { open: boolean; onClose: () 
           <Button variant="contained" onClick={createNew} sx={{ whiteSpace: 'nowrap' }}>
             创建
           </Button>
+          {raw && (
+            <Button
+              onClick={createNext}
+              sx={{ whiteSpace: 'nowrap' }}
+              title="沿用这一期的画幅、配色、字幕、片头片尾、音乐和音效，角标编号加一，脚本留空"
+            >
+              下一期
+            </Button>
+          )}
         </Stack>
         <Divider sx={{ mb: 1 }} />
         <Typography variant="subtitle2" gutterBottom>
