@@ -224,8 +224,8 @@ class ProjectClips(unittest.TestCase):
                 self._load([{"id": "s", "text": "a", "clips": bad}])
         with self.assertRaises(proj.ProjectError):
             self._load([{"id": "s", "text": "a", "image": "a.jpg", "clips": [{"image": "a.jpg"}]}])
-        with self.assertRaises(proj.ProjectError):
-            self._load([{"id": "s", "text": "a"}])
+        # no picture at all loads: pictures are optional, the build fills a bare segment in
+        self.assertEqual(self._load([{"id": "s", "text": "a"}]).segments[0].clips, [])
         with self.assertRaises(proj.ProjectError):
             self._load([{"id": "s", "text": "a", "image": "a.jpg", "pause_after": -1}])
 

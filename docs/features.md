@@ -83,6 +83,9 @@
 | **提词器自动滚动** | ✅ | `fx/Teleprompter.tsx` — 按字/分钟滚动，空格暂停、↑↓ 调速、R 回开头；位置靠上/满屏/靠下，可镜像 |
 | **一条录像 = 画面 + 旁白** | ✅ | `/api/record/save` `as_visual` — 按首尾声音切同一个 mp4，旁白掐静音时没东西可掐，口型和声音同帧开始；`as_window` 让它当竖屏模板的小窗 |
 | **录像不丢** | ✅ | `narration.save_upload` 每条按时间命名，重录不覆盖；`/api/takes` 列出项目里全部录像和用在哪一段，`/api/takes/use` 放回（画面/小窗/旁白）；录了没用就重录、换段、离开页面时 `RecordStudio` 以 `keep_only` 自动存下。保存走 `merge.merge3` 三方合并（页面带上它载入时的 `base`），后台写入不再被页面的旧副本盖掉——实测过五条录像就是这样从项目里「消失」的 |
+| **后台保存队列** | ✅ | `state/saveQueue.ts` — 「用这一条」把 Blob 交给模块级队列（切页面不丢），按顺序以原始字节 POST `/api/record/save?o=<json>`，页面立刻跳下一段；`BackgroundJobs` 在顶栏显示保存/渲染进度、渲染完成提醒并 reload。保存后 `State.warm_narration` 在后台把 Whisper 对齐写进渲染要用的 `build/audio/<seg>.own.json`，`narration.prepare` 有锁，不会和渲染重复跑 |
+| **特效引擎帧率** | ✅ | `fx/engine.ts` — 只处理摄像头新帧（`requestVideoFrameCallback`），以前 60Hz 循环把同一帧过两遍模型，M1 上录出来只有 14 帧；两个模型都开且单帧超过 24ms 时轮流跑、复用上一帧结果 |
+| **原声录音** | ✅ | `utils.micConstraints` — 默认关掉浏览器的回声消除/通话降噪/自动增益（为视频通话调的，会削掉低频和泛音、让音量起伏）；实测录音底噪本来就在 −76 dB。RNNoise（arnndn）也测过，在这种录音上没有改善，没加 |
 | **导出 / 下载** | ✅ | 第 5 步顶部是成片（`ResultCard`）：下载链接走 `/files/...?download=<标题>`，服务器回 `Content-Disposition: attachment`（RFC 5987 中文名）——只靠 `download` 属性时有的浏览器直接开播放页；所有链接带 mtime，重渲/重导后不会从缓存拿旧文件；`/api/reveal` 在访达/资源管理器中显示。多平台导出按任务状态轮询，离开页面再回来接着显示进度（以前会永远停在「导出中…」） |
 | **浑厚磁性（自然）人声** | ✅ | `voicefx` `magnetic`：胸腔 EQ + 轻泛音 + 慢压缩，不移调。试听 `/api/voicefx/preview` 现在走和渲染一样的 `chain()` + `pitch_filter()`（以前用原始滤镜串、不带音高滑块，试听和成片不一致）；面板同时放进录制棚 |
 | **画面预设（柔肤/补光）** | ✅ | [`videofx.py`](../vidforge/videofx.py) — `bilateral` 保边平滑 + `unsharp` 回加细节。**不是 `gblur`**：普通模糊会把眼睛、发丝、下颌线一起抹掉。每个预设都不改分辨率和时长 |
@@ -144,6 +147,8 @@
 | 功能 | 状态 | 怎么实现的 |
 |---|---|---|
 | **分段缓存** | ✅ | `pipeline._segment_key()` — 把段落定义、音频文件的**大小+mtime**、渲染设置一起哈希。改一段只重渲那一段。实测重建 0.6s |
+| **按段叠字幕（dress）** | ✅ | `pipeline._stage_dress` + `render.dress_segment` — 字幕（每段从 0 写 .ass/.srt）、系列角标、开场大字、进度条按段叠加，缓存为 `clips/<seg>.<key>.d<k>.mp4`（`_dress_key`）；`finalize(dressed=True)` 画面直接拷贝、只混音。`merged.mp4`（没烧字幕）仍由未叠加的段拼成，给竖版切片用。实测 M1、128 秒视频：无改动重渲 4s（以前约 19s），全部重叠 23s。单个硬件编码器，并发 1/2/4 一样快 |
+| **两遍响度** | ✅ | `voicefx.loudnorm` — 先 `print_format=json` 量整段，再 `linear=true` 固定增益；量不出（静音）回到单遍动态。`render.AUDIO_FORMAT` 在分段缓存键里，旧缓存自动重做一次 |
 | **硬编自动选择** | ✅ | `render.pick_encoder()` — nvenc / qsv / amf / videotoolbox / libx264 按序探测。实测 30 分钟 40 段约 2.7–4.5 分钟渲完 |
 | **并行段渲染** | ✅ | `_stage_render` 多 worker |
 | **字幕** | ✅ | [`subtitles.py`](../vidforge/subtitles.py) — SRT + ASS。`write_ass()` 支持 `none`/`keywords`/`karaoke`/`word`（逐词：正在说的词变色放大 112%，竖屏模板默认）四种高亮；**数字和关键词自动高亮**；双语字幕；可选烧入。⚠ 实测烧字幕从 45s 涨到 89s，**瓶颈是字幕滤镜本身，不是编码器** |

@@ -484,8 +484,8 @@ def load(path: str | Path, lang: str | None = None) -> Project:
             if "motion" in s:
                 one["motion"] = s["motion"]
             clips.append(_parse_clip(one, ctx, resolve, lang, base_lang, langs))
-        else:
-            raise ProjectError(f"{ctx}: segment has no visual — add 'clips' or an image/video/remotion")
+        # no picture at all is allowed: the build gives a bare segment the best it has
+        # (pipeline.fill_bare_segments) — own video, the window enlarged, or a plain page
 
         overlays: list[Overlay] = []
         for j, o in enumerate(s.get("overlays") or []):

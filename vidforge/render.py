@@ -59,6 +59,9 @@ def pick_encoder(project: Project) -> str:
 # What every rendered clip is made as. Part of the clip cache key: when it changes, clips cached in
 # the old form are rendered again instead of being spliced beside new ones.
 CLIP_FORMAT = "yuv420p-tv"
+# How the narration's sound is finished (voicefx.loudnorm): in the cache key like CLIP_FORMAT, so
+# segments cached with the old single-pass level are redone once rather than kept.
+AUDIO_FORMAT = "loudnorm-2pass"
 
 
 def video_codec_args(project: Project, encoder: str | None = None) -> list[str]:
@@ -434,7 +437,7 @@ def render_segment(project: Project, seg: Segment, audio: Path, out: Path, *, en
     # on digital silence: loudnorm turns it into NaN, and there is no tone to shape.
     live = not audio_is_silent(audio)
     fx = (voicefx.chain(project.voice_fx) + voicefx.pitch_filter(project.voice_pitch)) if live else ""
-    norm = "loudnorm=I=-16:TP=-1.5:LRA=11," if project.normalize_audio and live else ""
+    norm = voicefx.loudnorm(audio, fx) if project.normalize_audio and live else ""
     ffmpeg.run(["-y", "-i", str(visual), "-i", str(audio),
                 "-filter_complex", f"[1:a]{fx}{norm}apad=pad_dur={seg.pause_after}[a]",
                 "-map", "0:v", "-map", "[a]", "-c:v", "copy", *AUDIO_ARGS,
@@ -595,7 +598,13 @@ def plain_page(project: Project, seg_id: str, label: str = "") -> Path:
         d.text(((project.width - (r - l)) / 2 - l, (project.height - (b - t)) / 2 - t), label, font=font, fill=fg)
     f = project.build_dir / "blank" / f"{seg_id}.png"
     f.parent.mkdir(parents=True, exist_ok=True)
-    im.save(f)
+    import io
+    buf = io.BytesIO()
+    im.save(buf, format="PNG")
+    # rewritten only when it changes: the file's mtime is part of the segment's cache key, and a
+    # page saved afresh on every build made a picture-less segment render again every time
+    if not f.is_file() or f.read_bytes() != buf.getvalue():
+        f.write_bytes(buf.getvalue())
     return f
 
 
@@ -623,51 +632,54 @@ def concat(clips: list[Path], out: Path) -> None:
     ffmpeg.run(["-y", "-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", str(out)])
 
 
-def finalize(project: Project, merged: Path, srt: Path | None, total: float, out: Path,
-             hook_at: float = 0.0, sfx: Path | None = None, content_end: float | None = None,
-             hook_over_face: bool = False) -> None:
-    """Mix BGM under the narration (ducked while the voice speaks) and optionally burn
-    subtitles. One encode pass; video is stream-copied when nothing is burned.
-    `hook_at`: where the narration starts (after the channel opener) — the hook card's start.
-    `sfx`: a track of transition sounds (sfx.track), laid over the mix.
-    `content_end`: where the end card starts; the badge shows only between the opener and it."""
-    args: list[str] = ["-y", "-i", str(merged)]
-    filters: list[str] = []
-    maps: list[str] = []
-    # the theme's series badge sits over the whole video, so it is laid on here, once
+def _video_layers(project: Project, args: list[str], filters: list[str], out: Path, *, total: float,
+                  badge_span: tuple[float, float] | None, hook_window: tuple[float, float] | None,
+                  hook_over_face: bool, progress: tuple[float, float] | None, srt: Path | None,
+                  prefix: str = "") -> str:
+    """The layers laid over the picture — series badge, 开场大字, progress bar, burned subtitles —
+    appended to `args`/`filters` on top of input 0. Returns the label of the result ("[0:v]" when
+    there is nothing to lay on).
+
+    Shared by the whole-video pass (finalize) and the per-segment one (dress_segment), so the
+    two cannot drift apart. Times are in the clip's own seconds: `badge_span` limits the badge
+    (None = always), `hook_window` is where the card shows (its start may be negative when an
+    earlier segment already showed the start of it), `progress` is (this clip's offset in the
+    video, the video's length)."""
     vin = "[0:v]"
-    n_in = 1
+    n_in = 1 + sum(1 for a in args if a == "-i") - 1      # inputs already added after input 0
     badge_text = (project.theme or {}).get("badge", "").strip()
     if badge_text:
         from . import theme as th
-        png = th.badge_png(badge_text, project.theme.get("palette"), out.with_name("badge.png"), height=project.height)
+        # `prefix` keeps segments dressed in parallel from writing over each other's picture
+        png = th.badge_png(badge_text, project.theme.get("palette"), out.with_name(f"{prefix}badge.png"), height=project.height)
         from PIL import Image
         with Image.open(png) as im:
             bw = im.width
         x, y = th.badge_position(project.theme.get("side", "left"), project.width, project.height, bw)
         args += ["-loop", "1", "-i", str(png)]
         # the opener and the end card already carry the channel's name: the series badge is for the video
-        span = (f":enable='between(t,{hook_at:.3f},{content_end:.3f})'"
-                if hook_at > 0 or (content_end is not None and content_end < total - 0.05) else "")
-        filters.append(f"[0:v][{n_in}:v]overlay={x}:{y}:shortest=1{span}[bv]")
+        span = f":enable='between(t,{badge_span[0]:.3f},{badge_span[1]:.3f})'" if badge_span else ""
+        filters.append(f"{vin}[{n_in}:v]overlay={x}:{y}:shortest=1{span}[bv]")
         vin, n_in = "[bv]", n_in + 1
-    if project.hook.text:
+    if project.hook.text and hook_window and hook_window[1] > 0:
         from . import brand as brandkit, hook
-        png = hook.card_png(project.hook.text, out.with_name("hook.png"), width=project.width, height=project.height,
+        png = hook.card_png(project.hook.text, out.with_name(f"{prefix}hook.png"), width=project.width, height=project.height,
                             theme=project.theme or None, accent=brandkit.load(project.raw).accent)
         from PIL import Image
         with Image.open(png) as im:
             cw, ch = im.size
         x, y = hook.position(project.width, project.height, cw, ch, over_face=hook_over_face)
-        start, end = hook_at, hook_at + project.hook.seconds
+        start, end = hook_window
         args += ["-loop", "1", "-framerate", str(project.fps), "-t", f"{end:.3f}", "-i", str(png)]
         # alpha fades rather than a cut: a card that snaps on and off reads as a glitch
-        filters.append(f"[{n_in}:v]format=rgba,fade=t=in:st={start:.3f}:d=0.2:alpha=1,"
-                       f"fade=t=out:st={end - 0.3:.3f}:d=0.3:alpha=1[hk];"
+        fade_in = f"fade=t=in:st={start:.3f}:d=0.2:alpha=1," if start >= 0 else ""
+        filters.append(f"[{n_in}:v]format=rgba,{fade_in}"
+                       f"fade=t=out:st={max(0.0, end - 0.3):.3f}:d=0.3:alpha=1[hk];"
                        f"{vin}[hk]overlay={x}:{y}:eof_action=pass[hv]")
         vin, n_in = "[hv]", n_in + 1
-    if project.progress_bar:
+    if project.progress_bar and progress:
         from . import brand as brandkit, theme as th
+        offset, length = progress
         # the template's darker strong colour, as the charts use: its yellow accent is for words
         # inside the subtitle box and vanishes against the pale pages
         colour = (th.graphics_theme(project.theme)["accent"] if project.theme
@@ -679,19 +691,17 @@ def finalize(project: Project, merged: Path, srt: Path | None, total: float, out
         args += ["-f", "lavfi", "-i", f"color=c=0x{colour}:s={project.width}x{bh}:r={project.fps}:d={total:.3f}"]
         # a dim track under it: an orange bar over an orange picture was invisible
         filters.append(f"{vin}drawbox=x=0:y={y}:w=iw:h={bh}:color=black@0.35:t=fill[pt];"
-                       f"[pt][{n_in}:v]overlay=x='-w+w*t/{total:.3f}':y={y}:eof_action=pass[pb]")
+                       f"[pt][{n_in}:v]overlay=x='-w+w*(t+{offset:.3f})/{length:.3f}':y={y}:eof_action=pass[pb]")
         vin, n_in = "[pb]", n_in + 1
-    audio_in = n_in
     if srt is not None and project.subtitles.burn and not ffmpeg.has_filter("subtitles"):
         # an ffmpeg without libass cannot burn anything; a finished video with the .srt beside it
         # beats a failed build (pipeline logs the warning)
         srt = None
-
     if srt is not None and project.subtitles.burn and srt.suffix == ".ass":
         # ASS carries its own style block (and the per-word colours), so force_style would only
         # fight it; libass is the same renderer either way.
         filters.append(f"{vin}subtitles='{ffmpeg.filter_path(srt)}'[v]")
-        maps += ["-map", "[v]", *video_codec_args(project)]
+        vin = "[v]"
     elif srt is not None and project.subtitles.burn:
         st = project.subtitles
         if st.style == "box":       # semi-transparent box behind the text (BorderStyle 3 uses BackColour)
@@ -701,10 +711,60 @@ def finalize(project: Project, merged: Path, srt: Path | None, total: float, out
             style = (f"FontName={st.font},FontSize={st.font_size},Outline=1,Shadow=0,"
                      f"MarginV={st.margin_v},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000")
         filters.append(f"{vin}subtitles='{ffmpeg.filter_path(srt)}':force_style='{style}'[v]")
+        vin = "[v]"
+    return vin
+
+
+def dress_segment(project: Project, clip: Path, out: Path, *, encoder: str | None = None, srt: Path | None = None,
+                  hook_window: tuple[float, float] | None = None, hook_over_face: bool = False,
+                  progress: tuple[float, float] | None = None) -> Path:
+    """One segment with its badge, 开场大字, progress bar and subtitles laid on — or `clip` itself
+    when there is nothing to lay on.
+
+    These used to go on in one pass over the whole joined video, so every build re-encoded every
+    frame of it: 27 s for a 3-minute video on an M1, even when nothing had changed. Per segment,
+    the result is cached with the segment, an unchanged segment costs nothing and the final
+    video is a stream copy. The audio is copied untouched."""
+    total = ffmpeg.duration(clip)
+    args: list[str] = ["-y", "-i", str(clip)]
+    filters: list[str] = []
+    vin = _video_layers(project, args, filters, out, total=total, badge_span=None, hook_window=hook_window,
+                        hook_over_face=hook_over_face, progress=progress, srt=srt, prefix=f"{out.stem}.")
+    if vin == "[0:v]":
+        return clip
+    tmp = out.with_name(out.stem + ".tmp" + out.suffix)
+    ffmpeg.run([*args, "-filter_complex", ";".join(filters), "-map", vin, "-map", "0:a?",
+                *video_codec_args(project, encoder), "-c:a", "copy", "-t", f"{total:.3f}",
+                "-movflags", "+faststart", str(tmp)])
+    replace_with_retry(tmp, out)
+    return out
+
+
+def finalize(project: Project, merged: Path, srt: Path | None, total: float, out: Path,
+             hook_at: float = 0.0, sfx: Path | None = None, content_end: float | None = None,
+             hook_over_face: bool = False, dressed: bool = False) -> None:
+    """Mix BGM under the narration (ducked while the voice speaks) and optionally burn
+    subtitles. One encode pass; video is stream-copied when nothing is burned.
+    `hook_at`: where the narration starts (after the channel opener) — the hook card's start.
+    `sfx`: a track of transition sounds (sfx.track), laid over the mix.
+    `content_end`: where the end card starts; the badge shows only between the opener and it.
+    `dressed`: the segments already carry the badge, card, bar and subtitles (dress_segment), so
+    the picture is stream-copied and only the sound is mixed here."""
+    args: list[str] = ["-y", "-i", str(merged)]
+    filters: list[str] = []
+    maps: list[str] = []
+    if dressed:
+        vin = "[0:v]"
+    else:
+        span = ((hook_at, content_end if content_end is not None else total)
+                if hook_at > 0 or (content_end is not None and content_end < total - 0.05) else None)
+        vin = _video_layers(project, args, filters, out, total=total, badge_span=span,
+                            hook_window=(hook_at, hook_at + project.hook.seconds), hook_over_face=hook_over_face,
+                            progress=(0.0, total), srt=srt)
+    audio_in = 1 + sum(1 for a in args if a == "-i") - 1
+    if vin != "[0:v]":
         # the encoder the project picked, not a hard-coded libx264: burning already costs a full
         # re-encode, so doing it on the CPU when a GPU/QSV encoder is available is pure loss
-        maps += ["-map", "[v]", *video_codec_args(project)]
-    elif vin != "[0:v]":
         maps += ["-map", vin, *video_codec_args(project)]
     else:
         maps += ["-map", "0:v", "-c:v", "copy"]

@@ -438,7 +438,8 @@ def _segment_key(project: Project, seg: Segment, audio: Path, encoder: str) -> s
     settings = [project.width, project.height, project.fps, project.quality, encoder, project.motion_amount,
                 project.effective_supersample, project.transition, project.transition_style, project.segment_fade,
                 project.look, project.look_strength, project.punch_in, project.normalize_audio,
-                project.voice_fx, project.voice_pitch, project.presenter.provider, render.CLIP_FORMAT]
+                project.voice_fx, project.voice_pitch, project.presenter.provider, render.CLIP_FORMAT,
+                render.AUDIO_FORMAT]
     blob = json.dumps([enc(seg), enc(audio), settings], sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:10]
 
@@ -469,9 +470,13 @@ def _stage_render(ctx: _Ctx) -> None:
                 clip.unlink(missing_ok=True)
         dur = render.render_segment(p, seg, ctx.audio[seg.id], clip, encoder=ctx.encoder,
                                     beats=_sentence_breaks(ctx.words.get(seg.id) or []))
-        siblings = sorted((ctx.bd / "clips").glob(f"{_safe(seg.id)}.*.mp4"), key=lambda f: f.stat().st_mtime)
+        # <seg>.<key>.mp4 only: the dressed copies (<seg>.<key>.d<k>.mp4) go with their clip
+        siblings = sorted((f for f in (ctx.bd / "clips").glob(f"{_safe(seg.id)}.*.mp4") if f.stem.count(".") == 1),
+                          key=lambda f: f.stat().st_mtime)
         for old in siblings[:-5]:
             old.unlink(missing_ok=True)
+            for d in old.parent.glob(f"{old.stem}.d*.mp4"):
+                d.unlink(missing_ok=True)
             import shutil
             shutil.rmtree(old.with_name(old.stem + "_parts"), ignore_errors=True)
         return seg.id, clip, dur, False
@@ -514,31 +519,23 @@ def _stage_assemble(ctx: _Ctx) -> tuple[Path, list[dict], float]:
     (bd / "timeline.json").write_text(json.dumps(timeline, indent=1), encoding="utf-8")
     srt = bd / "final.srt"
     subtitles.write_srt(cues, srt)                       # the sidecar YouTube gets, always plain
-    burn_file = srt
-    if cues and p.subtitles.burn and p.subtitles.highlight != "none":
-        # Figures lit up as they are spoken: the one retention trick that falls out of the word
-        # timings we already have. Only the burned-in copy carries it — a caption file should stay
-        # plain text for the platform's own player and for translation.
-        from . import brand as brandkit
-        colour = p.subtitles.highlight_colour or brandkit.load(p.raw).accent
-        ass = bd / "final.ass"
-        subtitles.write_ass(cues, ass, font=p.subtitles.font, font_size=p.subtitles.font_size,
-                            margin_v=p.subtitles.margin_v, box=p.subtitles.style == "box",
-                            highlight=p.subtitles.highlight, colour=colour,
-                            width=p.width, height=p.height,
-                            box_colour=p.subtitles.box_colour, text_colour=p.subtitles.text_colour)
-        burn_file = ass
-        _log(f"  subtitles  {p.subtitles.highlight} highlight in {colour}")
     if not cues:
         _log("warning: no word timings received - subtitles skipped")
+    if cues and p.subtitles.burn and not ffmpeg.has_filter("subtitles"):
+        _log("warning: 这个 ffmpeg 没有 libass，字幕没有烧进画面（final.srt 照常生成）。macOS: brew install ffmpeg-full")
 
+    # The unburned picture, for vertical shorts (they burn their own, bigger captions): a stream copy.
     merged = bd / "merged.mp4"
     render.concat(branded, merged)
     _set_progress("assemble", 1, 3)
     _check_cancel()
+
+    dressed = _stage_dress(ctx, lead, cursor + trail)
+    head, tail = (branded[:1] if lead else []), (branded[-1:] if trail else [])
+    joined = bd / "dressed.mp4"
+    render.concat([*head, *dressed, *tail], joined)
+    _check_cancel()
     final = bd / "final.mp4"
-    if cues and p.subtitles.burn and not ffmpeg.has_filter("subtitles"):
-        _log("warning: 这个 ffmpeg 没有 libass，字幕没有烧进画面（final.srt 照常生成）。macOS: brew install ffmpeg-full")
     sound = None
     if p.transition_sfx != "none":
         from . import sfx
@@ -547,9 +544,9 @@ def _stage_assemble(ctx: _Ctx) -> tuple[Path, list[dict], float]:
         sound = sfx.track(p.transition_sfx, cuts, cursor + trail, bd / "sfx.wav")
         if sound:
             _log(f"  sfx        {p.transition_sfx} × {len(cuts)}")
-    first = p.segments[0].clips[0] if p.segments and p.segments[0].clips else None
-    render.finalize(p, merged, burn_file if cues else None, cursor + trail, final, hook_at=lead, sfx=sound,
-                    content_end=cursor, hook_over_face=bool(first and render.is_talking_head(first)))
+    # the picture is finished per segment: here only the sound is mixed, the video stream-copied
+    render.finalize(p, joined, None, cursor + trail, final, hook_at=lead, sfx=sound, content_end=cursor, dressed=True)
+    joined.unlink(missing_ok=True)                       # final.mp4 holds the same picture
     _set_progress("assemble", 2, 3)
 
     thumb_src = next((s.image for s in p.segments if s.image), None)
@@ -569,6 +566,85 @@ def _stage_assemble(ctx: _Ctx) -> tuple[Path, list[dict], float]:
         (bd / "credits.txt").write_text(credits, encoding="utf-8")
     _set_progress("assemble", 3, 3)
     return final, timeline, cursor
+
+
+def _dress_key(p: Project, clip: Path, sub_text: str, hook_window, progress, over_face: bool, encoder: str) -> str:
+    """Everything dress_segment lays on: a change to any of it re-dresses the segment."""
+    import hashlib
+    from . import brand as brandkit
+    st = p.subtitles
+    layers = [clip.name, sub_text, st.burn, st.font, st.font_size, st.style, st.margin_v, p.theme.get("badge") if p.theme else None,
+              p.theme.get("palette") if p.theme else None, p.theme.get("side") if p.theme else None,
+              p.hook.text, p.hook.seconds, hook_window, over_face, p.progress_bar, progress,
+              brandkit.load(p.raw).accent, p.width, p.height, p.fps, p.quality, encoder, render.CLIP_FORMAT,
+              ffmpeg.has_filter("subtitles")]
+    blob = json.dumps(layers, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:8]
+
+
+def _stage_dress(ctx: _Ctx, lead: float, total: float) -> list[Path]:
+    """Each segment with its subtitles, badge, 开场大字 and progress bar, in script order.
+
+    Cached beside the segment's clip, so a build where nothing changed re-encodes nothing and a
+    build after one edit re-dresses one segment — the whole-video pass this replaces re-encoded
+    every frame on every build (27 s for 3 minutes on an M1). Subtitles are written per segment
+    from zero: a segment's cues never cross into the next one, the clip is cut there anyway."""
+    p, bd = ctx.project, ctx.bd
+    first = p.segments[0].clips[0] if p.segments and p.segments[0].clips else None
+    over_face = bool(first and render.is_talking_head(first))
+    burn = p.subtitles.burn and ffmpeg.has_filter("subtitles")
+    colour = None
+    if burn and p.subtitles.highlight != "none":
+        from . import brand as brandkit
+        colour = p.subtitles.highlight_colour or brandkit.load(p.raw).accent
+        _log(f"  subtitles  {p.subtitles.highlight} highlight in {colour}")
+    jobs, offset = [], 0.0
+    for seg in p.segments:
+        jobs.append((seg, offset))
+        offset += ctx.durations[seg.id]
+    subs_dir = bd / "subs"
+    subs_dir.mkdir(parents=True, exist_ok=True)
+
+    def one(job):
+        seg, at = job
+        _check_cancel()
+        clip = ctx.clips[seg.id]
+        sub = None
+        sub_text = ""
+        if burn:
+            cues = subtitles.build_cues(ctx.words[seg.id], offset=0.0, max_chars=p.subtitles.max_chars)
+            if p.subtitles.bilingual and seg.alt_text:
+                cues = subtitles.bilingual(cues, seg.alt_text)
+            if cues:
+                if colour:
+                    sub = subs_dir / f"{_safe(seg.id)}.ass"
+                    subtitles.write_ass(cues, sub, font=p.subtitles.font, font_size=p.subtitles.font_size,
+                                        margin_v=p.subtitles.margin_v, box=p.subtitles.style == "box",
+                                        highlight=p.subtitles.highlight, colour=colour,
+                                        width=p.width, height=p.height,
+                                        box_colour=p.subtitles.box_colour, text_colour=p.subtitles.text_colour)
+                else:
+                    sub = subs_dir / f"{_safe(seg.id)}.srt"
+                    subtitles.write_srt(cues, sub)
+                sub_text = sub.read_text(encoding="utf-8")
+        window = (0.0 - at, p.hook.seconds - at) if p.hook.text and p.hook.seconds - at > 0 else None
+        progress = (lead + at, total) if p.progress_bar else None
+        key = _dress_key(p, clip, sub_text, window, progress, over_face, ctx.encoder)
+        out = clip.with_name(f"{clip.stem}.d{key}.mp4")
+        if out.is_file() and out.stat().st_size > 0:
+            return out, True
+        for old in clip.parent.glob(f"{clip.stem}.d*.mp4"):       # one dressed copy per clip is enough
+            old.unlink(missing_ok=True)
+        dressed = render.dress_segment(p, clip, out, encoder=ctx.encoder, srt=sub, hook_window=window,
+                                       hook_over_face=over_face, progress=progress)
+        return dressed, dressed == clip            # nothing to lay on: the clip itself, no work done
+
+    with ThreadPoolExecutor(max_workers=_workers(p)) as pool:
+        results = list(pool.map(one, jobs))
+    fresh = sum(1 for _, cached in results if not cached)
+    if fresh:
+        _log(f"  dress      {fresh} segment(s) re-dressed, {len(results) - fresh} cached")
+    return [r for r, _ in results]
 
 
 def _with_brand(ctx, bd: Path, clips: list[Path]) -> tuple[list[Path], float, float]:

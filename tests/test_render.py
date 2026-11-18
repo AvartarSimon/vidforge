@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -260,3 +262,86 @@ class OptionalPictures(unittest.TestCase):
                          tts=proj.TtsConfig(provider="silent"), language="zh")
         final = pipeline.build(p)
         self.assertGreater(ffmpeg.duration(final), 0.5)
+
+
+@unittest.skipUnless(_ff_available(), "ffmpeg not installed")
+class DressedSegments(unittest.TestCase):
+    """Subtitles, badge and hook card go on per segment and are cached with it: a build where
+    nothing changed re-encodes nothing; the final video is a stream copy of the dressed segments."""
+
+    def setUp(self):
+        self.td = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.td, True)
+        self.raw = {"title": "t", "language": "zh", "width": 320, "height": 180, "quality": "draft", "encoder": "libx264",
+                    "tts": {"provider": "silent"}, "theme": {"badge": "第1期", "palette": "mint"},
+                    "hook": {"text": "开场一句话", "seconds": 1.0},
+                    "subtitles": {"burn": True, "font_size": 16},
+                    "segments": [{"id": "a", "text": "第一段话。", "label": "一"}, {"id": "b", "text": "第二段话。", "label": "二"}]}
+        self.write()
+
+    def write(self):
+        (self.td / "project.json").write_text(json.dumps(self.raw, ensure_ascii=False), encoding="utf-8")
+
+    def build(self):
+        from vidforge import pipeline
+        lines = []
+        pipeline.set_log(lines.append)
+        try:
+            final = pipeline.build(proj.load(self.td / "project.json"))
+        finally:
+            pipeline.set_log(None)
+        clips = self.td / "build" / "clips"
+        stamp = {f.name: f.stat().st_mtime_ns for f in clips.glob("*.mp4")}
+        return final, stamp, lines
+
+    def test_nothing_changed_nothing_encoded_and_a_style_change_keeps_the_pictures(self):
+        final, first, _ = self.build()
+        dressed = [n for n in first if ".d" in n]
+        self.assertEqual(len(dressed), 2, "one dressed copy per segment")
+        self.assertAlmostEqual(ffmpeg.duration(final), sum(ffmpeg.duration(self.td / "build" / "clips" / n) for n in dressed), delta=0.2)
+        _, again, lines = self.build()
+        self.assertEqual(again, first, "an unchanged build touches no clip")
+        self.assertFalse(any("re-dressed" in x for x in lines))
+        self.raw["subtitles"]["font_size"] = 20
+        self.write()
+        _, styled, lines = self.build()
+        base = {n: t for n, t in first.items() if ".d" not in n}
+        self.assertEqual({n: t for n, t in styled.items() if ".d" not in n}, base, "the pictures are not rendered again")
+        self.assertTrue(any("2 segment(s) re-dressed" in x for x in lines))
+
+    def test_the_badge_is_burned_into_the_segment_and_the_join_is_a_copy(self):
+        final, stamp, _ = self.build()
+        clips = self.td / "build" / "clips"
+        plain = next(clips / n for n in stamp if ".d" not in n and n.startswith("b."))
+        dressed = next(clips / n for n in stamp if ".d" in n and n.startswith("b."))
+        from PIL import Image
+
+        def frame(src, at, name):
+            ffmpeg.run(["-y", "-ss", str(at), "-i", str(src), "-frames:v", "1", str(self.td / name)])
+            with Image.open(self.td / name) as im:
+                return im.convert("RGB").copy()
+        a, b = frame(plain, 0.3, "p.png"), frame(dressed, 0.3, "d.png")
+        diff = sum(1 for x in range(0, 320, 4) for y in range(0, 60, 4) if a.getpixel((x, y)) != b.getpixel((x, y)))
+        self.assertGreater(diff, 10, "the badge is on the dressed copy, not the plain one")
+        self.assertFalse((self.td / "build" / "dressed.mp4").exists(), "the join's intermediate is cleaned up")
+        self.assertTrue((self.td / "build" / "merged.mp4").is_file(), "the unburned copy stays for shorts")
+
+
+@unittest.skipUnless(_ff_available(), "ffmpeg not installed")
+class MeasuredLoudness(unittest.TestCase):
+    def test_speech_is_levelled_with_one_fixed_gain_and_silence_falls_back(self):
+        from vidforge import voicefx
+        td = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, td, True)
+        tone = td / "t.wav"
+        ffmpeg.run(["-y", "-f", "lavfi", "-i", "sine=f=220:d=3", "-af", "volume=-20dB", str(tone)])
+        f = voicefx.loudnorm(tone)
+        self.assertIn("linear=true", f)
+        self.assertIn("measured_I=", f)
+        self.assertTrue(f.endswith(","))
+        out = td / "o.wav"
+        ffmpeg.run(["-y", "-i", str(tone), "-af", f.rstrip(","), str(out)])
+        self.assertAlmostEqual(ffmpeg.duration(out), 3.0, delta=0.05)
+        quiet = td / "q.wav"
+        ffmpeg.run(["-y", "-f", "lavfi", "-i", "anullsrc=d=2", str(quiet)])
+        self.assertEqual(voicefx.loudnorm(quiet), "loudnorm=I=-16:TP=-1.5:LRA=11,", "nothing to measure: the usual mode")
