@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Alert,
   Box,
@@ -61,6 +61,12 @@ export function TrendsSection() {
     }
     setBusy(false)
   }
+
+  // the lists are cached for 15 minutes on the server: opening the page can simply show them
+  useEffect(() => {
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // the title goes straight to the research endpoint that already exists
   const check = async (title: string) => {

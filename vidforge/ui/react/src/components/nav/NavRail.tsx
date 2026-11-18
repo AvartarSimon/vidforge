@@ -65,7 +65,8 @@ export function stepDone(step: number, raw: RawProject | null, view: ProjectView
     case 1:
       return segs.every((s) => (s.text || '').trim().length > 0)
     case 2:
-      return segs.every((s) => resolved[s.id]?.audio_fresh)
+      // your own recording is this segment's voice: nothing to synthesise, the step is done
+      return segs.every((s) => s.narration || resolved[s.id]?.audio_fresh)
     case 3:
       return segs.every((s) => s.remotion || (resolved[s.id]?.clips || []).some((c) => c.path || c.remotion))
     case 4:

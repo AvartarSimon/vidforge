@@ -19,7 +19,6 @@ import { apiGet, apiPost } from '../../api/client'
 import { useProject } from '../../state/ProjectContext'
 import { RecordStudio } from './voice/RecordStudio'
 import { OwnVoicePanel } from './voice/OwnVoicePanel'
-import { VoiceFxPanel } from './voice/VoiceFxPanel'
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic'
 import { PanelTitle } from '../shared/ui'
 
@@ -108,9 +107,9 @@ export function VoiceSection() {
         </CardContent>
       </Card>
 
+      {/* the studio carries the 人声处理 panel itself */}
       <RecordStudio />
       <OwnVoicePanel />
-      <VoiceFxPanel />
 
       <Card variant="outlined">
         <CardContent>

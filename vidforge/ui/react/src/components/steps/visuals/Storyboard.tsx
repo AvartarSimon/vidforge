@@ -9,8 +9,7 @@ import {
   Select,
   Slider,
   Stack,
-  Typography,
-} from '@mui/material'
+  Typography, Tooltip } from '@mui/material'
 import { apiGet, apiPost } from '../../../api/client'
 import { useProject } from '../../../state/ProjectContext'
 import { fileUrl, fmtDuration } from '../../../utils'
@@ -185,10 +184,14 @@ export function Storyboard({ selId, onSelect }: { selId: string | null; onSelect
   return (
     <Stack spacing={1}>
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-        <Button size="small" variant="contained" onClick={autofill} disabled={busy || (!overwrite && missing === 0)}>
-          ✨ 一键配{kind === 'video' ? '视频' : '图'}
-          {overwrite ? '（全部重配）' : missing ? `（${missing} 段没画面）` : ''}
-        </Button>
+        <Tooltip title={!busy && !overwrite && missing === 0 ? '每一段都已经有画面了。想换掉现有的，勾下面的「已有画面的段也重配」' : ''}>
+          <span>
+            <Button size="small" variant="contained" onClick={autofill} disabled={busy || (!overwrite && missing === 0)}>
+              ✨ 一键配{kind === 'video' ? '视频' : '图'}
+              {overwrite ? '（全部重配）' : missing ? `（${missing} 段没画面）` : '（都有画面了）'}
+            </Button>
+          </span>
+        </Tooltip>
         <Select size="small" value={kind} onChange={(e) => pickKind(e.target.value as 'image' | 'video')} disabled={busy} sx={{ fontSize: 12 }}>
           <MenuItem value="image" sx={{ fontSize: 12 }}>图片</MenuItem>
           <MenuItem value="video" sx={{ fontSize: 12 }}>视频</MenuItem>
