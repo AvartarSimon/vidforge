@@ -16,6 +16,8 @@ from pathlib import Path
 
 from vidforge import ffmpeg, me, project as proj, ui, videofx
 
+ui.State.WARM = False      # no background Whisper outliving a temp project; tested on its own
+
 
 def clip(path: Path, seconds: float = 2.0, *, size: str = "320x180", audio: bool = True) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)

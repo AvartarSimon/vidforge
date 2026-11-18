@@ -28,7 +28,8 @@ import CompareIcon from '@mui/icons-material/Compare'
 import SaveIcon from '@mui/icons-material/Save'
 import NavigateBeforeIcon from '@mui/icons-material/NavigateBefore'
 import NavigateNextIcon from '@mui/icons-material/NavigateNext'
-import { apiPost } from '../../../api/client'
+import { enqueueTake, useSaveQueue } from '../../../state/saveQueue'
+import { SaveQueueList } from '../../shared/SaveQueueList'
 import { useProject } from '../../../state/ProjectContext'
 import { FxPanel } from '../../../fx/FxPanel'
 import { PrompterLine, Teleprompter, type PrompterPlace } from '../../../fx/Teleprompter'
@@ -81,7 +82,7 @@ function loadPrefs(): Prefs {
  * to perform the same paragraph twice is how a channel dies.
  */
 export function RecordStudio() {
-  const { raw, reload, view } = useProject()
+  const { raw, view } = useProject()
   const [cams, setCams] = useState<Device[]>([])
   const [mics, setMics] = useState<Device[]>([])
   const [cam, setCam] = useState('')
@@ -106,7 +107,8 @@ export function RecordStudio() {
   const [countdown, setCountdown] = useState(0)
   const [elapsed, setElapsed] = useState(0)
   const [take, setTake] = useState<{ blob: Blob; url: string; ext: string; seconds: number } | null>(null)
-  const [kept, setKept] = useState(0)
+  // takes landed so far: refreshes the takes list and the voice panel's sample
+  const kept = useSaveQueue().filter((j) => j.status === 'done').length
   // where the picture of a take goes: the segment's whole frame, a small window over its pictures, or nowhere
   const [target, setTarget] = useState<'visual' | 'window' | 'none'>(() => (raw?.theme ? 'window' : 'visual'))
   // the window's shape and corner, remembered between takes: a series keeps its window in one place
@@ -132,7 +134,6 @@ export function RecordStudio() {
   const [asFootage, setAsFootage] = useState(false)
   const [jumpcut, setJumpcut] = useState(true)
   const [fillers, setFillers] = useState(false)
-  const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState<string | null>(null)
 
@@ -315,20 +316,8 @@ export function RecordStudio() {
   // A take that was neither used nor thrown away is kept in the project instead of vanishing:
   // recording again, moving to the next segment or leaving the page used to drop it silently.
   // It shows in 「这个项目录过的视频」 as unused, one click from going back in.
-  const toB64 = async (blob: Blob) => {
-    const buf = new Uint8Array(await blob.arrayBuffer())
-    let bin = ''
-    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000))
-    return btoa(bin)
-  }
-  const keep = async (t: { blob: Blob; ext: string }, seg: string) => {
-    try {
-      await apiPost('/api/record/save', { segment: seg, data: await toB64(t.blob), ext: t.ext, keep_only: true })
-      setKept((k) => k + 1)
-    } catch {
-      // the server is gone (quitting): nothing more can be done from here
-    }
-  }
+  const keep = (t: { blob: Blob; ext: string }, seg: string) =>
+    enqueueTake(seg, t.blob, t.ext, { keep_only: true, as_narration: false }, 'keep')
   const keepAndClear = () => {
     if (take) keep(take, segId)
     discardTake()
@@ -347,48 +336,34 @@ export function RecordStudio() {
     }
   }, [])
 
-  const save = async () => {
+  // 用这一条 hands the take to the background queue and clears the stage at once: the next
+  // segment can be recorded while this one uploads and gets cut (3–15 s that used to block).
+  const save = () => {
     if (!take) return
-    setBusy(true)
-    setStatus('')
     setError(null)
-    try {
-      const data = await toB64(take.blob)
-      const j = await apiPost<{ seconds: number; narration?: string; footage?: string; visual?: string; trimmed?: number[]; jumpcut?: { removed: number; cuts: number; fillers?: number } }>(
-        '/api/record/save',
-        {
-          segment: segId,
-          data,
-          ext: take.ext,
-          as_narration: asNarration,
-          as_visual: withVideo && asVisual,
-          as_window: withVideo && target === 'window',
-          window_shape: winShape,
-          window_corner: winCorner || undefined,
-          as_footage: withVideo && asFootage,
-          jumpcut: withVideo && asVisual && jumpcut,
-          fillers: withVideo && asVisual && jumpcut && fillers,
-          // the look is already baked in by the live effects
-          look: 'none',
-          name: `${segId || 'take'}_talking.mp4`,
-          tags: 'studio',
-          talking: true,
-        },
-      )
-      await reload()
-      const parts = [`录了 ${j.seconds.toFixed(1)} 秒`]
-      if (j.trimmed && (j.trimmed[0] > 0.05 || j.trimmed[1] > 0.05)) parts.push(`掐掉首尾静音 ${j.trimmed[0]}s / ${j.trimmed[1]}s`)
-      if (j.jumpcut && j.jumpcut.removed > 0.05) parts.push(`剪口播剪掉 ${j.jumpcut.removed.toFixed(1)}s（${j.jumpcut.cuts} 处${j.jumpcut.fillers ? `，含「嗯」「呃」${j.jumpcut.fillers} 个` : ''}）`)
-      if (j.visual) parts.push(target === 'window' ? '已设为这一段的真人小窗' : '已设为这一段的画面')
-      if (j.narration) parts.push('已设为这一段的旁白（字幕会自动对齐）')
-      if (j.footage) parts.push(`已存进素材库：${j.footage}`)
-      setStatus(parts.join('　·　'))
-      setKept((k) => k + 1)
-      discardTake()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+    enqueueTake(segId, take.blob, take.ext, {
+      as_narration: asNarration,
+      as_visual: withVideo && asVisual,
+      as_window: withVideo && target === 'window',
+      window_shape: winShape,
+      window_corner: winCorner || undefined,
+      as_footage: withVideo && asFootage,
+      jumpcut: withVideo && asVisual && jumpcut,
+      fillers: withVideo && asVisual && jumpcut && fillers,
+      // the look is already baked in by the live effects
+      look: 'none',
+      name: `${segId || 'take'}_talking.mp4`,
+      tags: 'studio',
+      talking: true,
+    })
+    discardTake()
+    const next = raw.segments[segIndex + 1]
+    if (next) {
+      setSegId(next.id)
+      setStatus(`${segId} 已放进后台保存——接着录 ${next.id}`)
+    } else {
+      setStatus(`${segId} 已放进后台保存——这是最后一段`)
     }
-    setBusy(false)
   }
 
   const go = (d: number) => {
@@ -548,7 +523,7 @@ export function RecordStudio() {
               size="large"
               startIcon={<FiberManualRecordIcon />}
               onClick={start}
-              disabled={!canRecord || busy || !text}
+              disabled={!canRecord || !text}
               sx={{ minWidth: 160, borderRadius: 99 }}
             >
               开始录制
@@ -615,19 +590,19 @@ export function RecordStudio() {
               </Typography>
             )}
             <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-              <Button variant="contained" startIcon={<SaveIcon />} onClick={save} disabled={busy}>
+              <Button variant="contained" startIcon={<SaveIcon />} onClick={save}>
                 用这一条
               </Button>
-              <Button onClick={start} disabled={busy} startIcon={<ReplayIcon />}>
+              <Button onClick={start} startIcon={<ReplayIcon />}>
                 重录
               </Button>
-              <Button color="inherit" onClick={discardTake} disabled={busy}>
+              <Button color="inherit" onClick={discardTake}>
                 丢掉
               </Button>
             </Stack>
-            {busy && <LinearProgress sx={{ mt: 1 }} />}
           </Paper>
         )}
+        <SaveQueueList sx={{ mt: 1.5 }} />
         {status && (
           <Alert severity="success" sx={{ mt: 1.5 }} action={segIndex < raw.segments.length - 1 ? <Button size="small" onClick={() => go(1)}>录下一段 →</Button> : undefined}>
             {status}

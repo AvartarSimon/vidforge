@@ -81,6 +81,15 @@ export class FxEngine {
   private fpsStart = 0
   private running = false
   private bypass = false
+  // Only new camera frames are worth processing. The loop runs at the display's 60 Hz while a
+  // webcam delivers 30 (15 in dim light), so every frame went through both models twice; on an
+  // M1 that halved the rate to ~14 fps — and the recording is the canvas, so the take was 14 fps.
+  private fresh = true
+  private rvfc = false
+  // both models every frame cost more than a frame lasts: past this, they take turns and each
+  // reuses its last answer on the other's frame (a mask or a face moves little in 33 ms)
+  private mlCost = 0
+  private tick = 0
   status: FxStatus
   onStatus?: (s: FxStatus) => void
 
@@ -185,18 +194,32 @@ export class FxEngine {
   // -- public -----------------------------------------------------------------------------------
   setSource(v: HTMLVideoElement | null) {
     this.source = v
+    this.fresh = true
+    const rv = v as (HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number }) | null
+    this.rvfc = !!rv?.requestVideoFrameCallback
+    if (rv && this.rvfc) {
+      const onFrame = () => {
+        if (this.source !== v) return
+        this.fresh = true
+        rv.requestVideoFrameCallback!(onFrame)
+      }
+      rv.requestVideoFrameCallback!(onFrame)
+    }
   }
 
   setBackground(el: HTMLImageElement | HTMLVideoElement | null) {
     this.bgEl = el
+    this.fresh = true
   }
 
   setBypass(on: boolean) {
     this.bypass = on // the 对比 button: show the untouched picture while held
+    this.fresh = true
   }
 
   update(s: FxSettings) {
     this.settings = s
+    this.fresh = true // a paused clip (视频美化) still shows a slider change at once
     this.ensureModels()
   }
 
@@ -276,6 +299,9 @@ export class FxEngine {
     const v = this.source
     const gl = this.gl!
     if (!v || v.readyState < 2 || !v.videoWidth) return
+    // a video backdrop moves on its own clock, so it keeps the loop drawing every frame
+    if (this.rvfc && !this.fresh && !(this.bgEl instanceof HTMLVideoElement)) return
+    this.fresh = false
     const W = v.videoWidth
     const H = v.videoHeight
     const s = this.settings
@@ -296,8 +322,18 @@ export class FxEngine {
     let ts = performance.now()
     if (ts <= this.lastTs) ts = this.lastTs + 1
     this.lastTs = ts
-    const hasMask = fx && needsSegmentation(s) && !!this.seg && this.runSegmenter(v, ts)
-    const hasFace = fx && needsFace(s) && !!this.face && this.runFace(v, ts)
+    const wantMask = fx && needsSegmentation(s) && !!this.seg
+    const wantFace = fx && needsFace(s) && !!this.face
+    const turns = wantMask && wantFace && this.mlCost > 24
+    const odd = (this.tick++ & 1) === 1
+    const t0 = performance.now()
+    const hasMask = wantMask && (turns && odd ? !!this.mask : this.runSegmenter(v, ts))
+    const hasFace = wantFace && (turns && !odd ? !!this.landmarks : this.runFace(v, ts))
+    if (!turns) {
+      const cost = performance.now() - t0
+      this.mlCost = this.mlCost <= 0 ? cost : this.mlCost * 0.9 + cost * 0.1 // one slow frame decides, not ten
+    }
+    else if (this.tick % 120 === 0) this.mlCost = 0 // look again now and then: the load may have eased
 
     // 1. warp (美型)
     const warp = this.target('warp', W, H)

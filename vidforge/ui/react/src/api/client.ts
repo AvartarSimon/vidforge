@@ -37,3 +37,11 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
 
 export const apiGet = <T,>(path: string): Promise<T> => call<T>(path)
 export const apiPost = <T,>(path: string, body: unknown = {}): Promise<T> => call<T>(path, body)
+
+/** POST raw bytes (a recorded take), options in the query string. */
+export async function apiPostBytes<T>(path: string, data: Blob): Promise<T> {
+  const res = await fetch(withLang(path), { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: data })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new ApiError(json.error || res.statusText, json)
+  return json as T
+}

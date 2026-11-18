@@ -5,6 +5,7 @@ import IosShareIcon from '@mui/icons-material/IosShare'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useProject } from '../../state/ProjectContext'
 import { ProjectSwitcher } from './ProjectSwitcher'
+import { BackgroundJobs } from './BackgroundJobs'
 import { STEPS, stepDone } from './NavRail'
 import { FRAME_INFO, ThemePicker } from '../shared/ThemePicker'
 import { DialogHeader } from '../shared/ui'
@@ -130,6 +131,7 @@ export function TopBar({ step, inWizard, onStep }: { step: number; inWizard: boo
           ))}
         </TextField>
       )}
+      <BackgroundJobs onStep={onStep} />
       {raw && (
         <Typography variant="caption" sx={{ color: saveState === 'error' ? 'error.main' : saveState === 'dirty' ? 'warning.main' : 'text.secondary', whiteSpace: 'nowrap' }}>
           {SAVE_LABEL[saveState]}

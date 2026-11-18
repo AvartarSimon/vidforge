@@ -13,6 +13,8 @@ from pathlib import Path
 from unittest import mock
 
 from vidforge import ui
+
+ui.State.WARM = False      # no background Whisper outliving a temp project; tested on its own
 from vidforge.merge import merge3
 
 BASE = {"title": "四十岁", "voice": "zh-CN-YunxiNeural", "segments": [
@@ -139,6 +141,7 @@ class Server(unittest.TestCase):
         self.assertEqual(listed[take.name]["used_by"], [], "on disk, not in the project: the case to recover")
         self.assertTrue(listed[take.name]["video"])
         self.assertFalse(listed[voice.name]["video"])
+        self.assertEqual(listed[voice.name].get("source_of"), take.name, "the raw upload is paired, not 「没被用上」")
         code, j = self.call("/api/takes/use", {"path": f"assets/takes/{take.name}", "segment": "seg2", "as": "window"})
         self.assertEqual(code, 200, j)
         seg = self.disk()["segments"][1]

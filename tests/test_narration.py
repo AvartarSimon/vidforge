@@ -15,6 +15,7 @@ import tempfile
 import threading
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -22,6 +23,8 @@ from unittest import mock
 
 from vidforge import align as aligner, ffmpeg, narration, project as proj, ui, voicefx
 from vidforge.tts import Word
+
+ui.State.WARM = False      # no background Whisper outliving a temp project; tested on its own
 
 ZH = "去年全国有六百八十万平方米的新房没有卖掉。这个数字背后是三个故事。"
 EN = "Last year six hundred thousand homes went unsold. That number hides three stories."
@@ -469,6 +472,25 @@ class NarrationApi(unittest.TestCase):
                 return r.status, json.loads(r.read() or b"{}")
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read() or b"{}")
+
+    def test_a_take_sent_as_bytes_is_aligned_in_the_background(self):
+        import time
+        take = (self.td / "assets" / "take.mp3").read_bytes()
+        url = f"http://127.0.0.1:{self.port}/api/record/save?o=" + urllib.parse.quote(json.dumps({"segment": "s1", "ext": "mp3"}))
+        sidecar = self.td / "build" / "audio" / "s1.own.json"
+        with mock.patch.object(self.state, "WARM", True), mock.patch.object(aligner, "available", return_value=False):
+            req = urllib.request.Request(url, data=take, headers={"Content-Type": "application/octet-stream"})
+            with urllib.request.urlopen(req, timeout=60) as r:
+                j = json.loads(r.read())
+            self.assertRegex(j["narration"], r"^assets/narration/s1_")
+            for _ in range(100):                      # the build's own file, written while you record on
+                if sidecar.is_file():
+                    break
+                time.sleep(0.1)
+        self.assertTrue(sidecar.is_file(), "aligned before any build asked")
+        p = proj.load(self.td / "project.json")
+        words = narration.prepare(p.segments[0].narration, self.td / "build" / "audio" / "s1.own.mp3", p.segments[0].text, lang="zh")
+        self.assertEqual(len(words), json.loads(sidecar.read_text(encoding="utf-8"))["words"].__len__(), "the build reuses it")
 
     def test_voicefx_lists_presets_and_the_current_one(self):
         status, j = self.call("/api/voicefx")

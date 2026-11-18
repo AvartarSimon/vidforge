@@ -29,6 +29,7 @@ import hashlib
 import json
 import os
 import re
+import threading
 from dataclasses import asdict
 from pathlib import Path
 
@@ -102,12 +103,23 @@ def _key(source: Path, text: str, trim: bool) -> str:
     return f"own:{source.name}:{st.st_size}:{int(st.st_mtime)}:{digest}:{model}:trim={trim}"
 
 
+# One alignment at a time: the studio warms a fresh take in the background while a build may be
+# asking for the same file. Waiting for the other one and then reading its sidecar beats two
+# Whisper runs fighting over the same cores and the same output file.
+_PREPARE_LOCK = threading.Lock()
+
+
 def prepare(source: Path, out: Path, text: str, *, lang: str | None = None,
             trim: bool = True, log=None) -> list[Word]:
     """The mp3 at `out` plus word timings for `text`, reusing both when nothing changed."""
     source, out = Path(source), Path(out)
     if not source.is_file():
         raise NarrationError(f"找不到录音文件：{source}")
+    with _PREPARE_LOCK:
+        return _prepare(source, out, text, lang=lang, trim=trim, log=log)
+
+
+def _prepare(source: Path, out: Path, text: str, *, lang: str | None, trim: bool, log) -> list[Word]:
     meta_path = out.with_suffix(".json")
     key = _key(source, text, trim)
 
@@ -153,4 +165,21 @@ def save_upload(root: Path, seg_id: str, data: bytes, suffix: str) -> Path:
         path = folder / f"{safe}_{time.strftime('%Y%m%d-%H%M%S')}-{n}{suffix}"
         n += 1
     path.write_bytes(data)
+    if suffix == ".webm":
+        _fix_webm_duration(path)
     return path
+
+
+def _fix_webm_duration(path: Path) -> None:
+    """A browser's MediaRecorder writes webm as it goes and never goes back to fill in the length,
+    so ffprobe guesses — a 40 s take was listed as 599.5 s. A stream copy writes the header
+    properly; nothing is re-encoded. A take that will not remux is kept as it came."""
+    tmp = path.with_name(path.stem + ".fixed.webm")
+    try:
+        ffmpeg.run(["-y", "-i", str(path), "-c", "copy", str(tmp)])
+        if tmp.is_file() and tmp.stat().st_size > 0:
+            os.replace(tmp, path)
+    except ffmpeg.FfmpegError:
+        pass
+    finally:
+        tmp.unlink(missing_ok=True)

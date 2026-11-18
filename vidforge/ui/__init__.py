@@ -302,6 +302,33 @@ class State:
     def rel(self, p: Path) -> str:
         return p.resolve().relative_to(self.root.resolve()).as_posix()
 
+    # off in the test suite: a background Whisper run outliving its temp project is only noise
+    WARM = os.environ.get("VIDFORGE_WARM", "1") != "0"
+
+    def warm_narration(self, seg_id: str) -> None:
+        """Align a fresh take in the background, into the very file the build will look for.
+
+        Whisper is the slow part of rendering your own voice (~6 s a segment on an M1, every
+        segment, serially). Done here, while the next take is being recorded, the build finds
+        it cached. narration.prepare holds a lock, so a build started meanwhile waits for this
+        one instead of running Whisper on the same take twice."""
+        if not self.WARM:
+            return
+
+        def run():
+            try:
+                from .. import narration, pipeline
+                p = self.load(None)
+                seg = next((s for s in p.segments if s.id == seg_id and s.narration), None)
+                if seg is None:
+                    return
+                out = p.build_dir / "audio" / f"{pipeline._safe(seg.id)}.own.mp3"
+                out.parent.mkdir(parents=True, exist_ok=True)
+                narration.prepare(seg.narration, out, seg.text, lang=p.language, trim=p.narration_trim)
+            except Exception:  # noqa: BLE001  only a head start; the build does it properly anyway
+                pass
+        threading.Thread(target=run, daemon=True).start()
+
     def start_build(self, lang: str | None, burn: bool | None) -> bool:
         with self.lock:
             if self.build["state"] == "running":
@@ -683,6 +710,15 @@ def make_handler(state: State):
             try:
                 if path == "/api/fx/save":                 # raw bytes: a processed video can be 100 MB
                     return self.fx_save(q)
+                if path == "/api/record/save" and (self.headers.get("Content-Type") or "").startswith("application/octet-stream"):
+                    # the take as bytes, its options in ?o=: base64 inside JSON made the browser build a
+                    # string a third larger than the video and the server parse all of it
+                    n = int(self.headers.get("Content-Length") or 0)
+                    try:
+                        opts = json.loads(q.get("o") or "{}")
+                    except ValueError:
+                        return self._error("参数损坏")
+                    return self.record_save(opts, data=self.rfile.read(n) if n else b"")
                 body = self._body()
                 if path == "/api/project":
                     return self.save_project(body, snapshot=bool(body.get("snapshot")))
@@ -1846,7 +1882,7 @@ def make_handler(state: State):
             synthesize_cached(prov, seg.text, seg.voice or p.voice, out)
             return out
 
-        def record_save(self, body: dict):
+        def record_save(self, body: dict, data: bytes | None = None):
             """One take from the recording studio, used for up to three things at once.
 
             A take in front of the camera is a voice *and* a face *and* a B-roll shot, and asking
@@ -1864,10 +1900,11 @@ def make_handler(state: State):
             keep_only = bool(body.get("keep_only", False))
             if not keep_only and not as_narration and not as_footage and not as_visual:
                 return self._error("这条录像要用来做什么？旁白、画面、素材库，至少选一个")
-            try:
-                data = base64.b64decode(body.get("data") or "", validate=True)
-            except (ValueError, TypeError):
-                return self._error("录像数据损坏")
+            if data is None:
+                try:
+                    data = base64.b64decode(body.get("data") or "", validate=True)
+                except (ValueError, TypeError):
+                    return self._error("录像数据损坏")
             if not data:
                 return self._error("录像是空的")
             ext = (body.get("ext") or "webm").lstrip(".").lower()
@@ -1902,8 +1939,8 @@ def make_handler(state: State):
                     chain = videofx.chain(look).rstrip(",")
                     folder = state.root / "assets" / "takes"
                     folder.mkdir(parents=True, exist_ok=True)
-                    safe = re.sub(r"[^\w-]+", "_", seg_id) or "take"
-                    take = folder / f"{safe}_{time.strftime('%Y%m%d-%H%M%S')}.mp4"
+                    # named after the raw upload it was cut from, so the takes list can pair them
+                    take = folder / f"{saved.stem}.mp4"
                     args = ["-y", "-ss", f"{a:.3f}", "-i", str(saved), "-t", f"{b - a:.3f}"]
                     if chain:
                         args += ["-vf", chain]
@@ -1942,6 +1979,8 @@ def make_handler(state: State):
                 if as_narration:
                     seg["narration"] = rel
                 state.write_raw(raw, snapshot=True)
+                if as_narration:
+                    state.warm_narration(seg_id)
                 out["visual"] = rel
                 out["trimmed"] = [round(a, 2), round(seconds - b, 2)]
                 if as_narration:
@@ -1955,6 +1994,7 @@ def make_handler(state: State):
                     rel = str(saved)
                 seg["narration"] = rel
                 state.write_raw(raw, snapshot=True)
+                state.warm_narration(seg_id)
                 out["narration"] = rel
 
             if as_footage:
@@ -2105,6 +2145,7 @@ def make_handler(state: State):
                 rel = str(saved)
             seg["narration"] = rel
             state.write_raw(raw, snapshot=True)
+            state.warm_narration(seg_id)
             return self._json({"segment": seg_id, "narration": rel,
                                "seconds": ffmpeg.duration(saved)})
 
@@ -2332,6 +2373,14 @@ def make_handler(state: State):
                                 "time": time.strftime("%m-%d %H:%M", time.localtime(f.stat().st_mtime)), "mtime": f.stat().st_mtime,
                                 "video": f.suffix.lower() in (".mp4", ".mov", ".webm", ".m4v", ".mkv") and self._has_video(f),
                                 "used_by": used.get(rel, [])})
+            # The studio keeps the raw upload (assets/narration/x.webm) beside what it made of it
+            # (assets/takes/x.mp4, x_cut.mp4). Listed alone, every raw file read as 「没被用上」 —
+            # as if a take had gone missing. It is the source of one that is in use.
+            made = {Path(t["name"]).stem.removesuffix("_cut"): t for t in out if t["path"].startswith("assets/takes/")}
+            for t in out:
+                twin = made.get(Path(t["name"]).stem) if t["path"].startswith("assets/narration/") else None
+                if twin is not None and not t["used_by"]:
+                    t["source_of"] = twin["name"]
             return sorted(out, key=lambda t: -t["mtime"])
 
         @staticmethod

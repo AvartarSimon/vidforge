@@ -6,7 +6,7 @@ import { useProject } from '../../../state/ProjectContext'
 import { fileUrl } from '../../../utils'
 import { PanelTitle } from '../../shared/ui'
 
-type Take = { path: string; name: string; seconds: number | null; mb: number; time: string; video: boolean; used_by: string[] }
+type Take = { path: string; name: string; seconds: number | null; mb: number; time: string; video: boolean; used_by: string[]; source_of?: string }
 
 /**
  * 这个项目录过的视频: every recording in the project, newest first, with the segments using it.
@@ -42,7 +42,7 @@ export function TakesLibrary({ segId, refreshKey }: { segId: string; refreshKey?
   }
 
   if (!takes?.length) return null
-  const unused = takes.filter((t) => !t.used_by.length).length
+  const unused = takes.filter((t) => !t.used_by.length && !t.source_of).length
 
   return (
     <Card>
@@ -68,6 +68,8 @@ export function TakesLibrary({ segId, refreshKey }: { segId: string; refreshKey?
                 </Typography>
                 {t.used_by.length ? (
                   t.used_by.map((s) => <Chip key={s} size="small" color="success" variant="outlined" label={`用在 ${s}`} />)
+                ) : t.source_of ? (
+                  <Chip size="small" variant="outlined" label="原始文件" title={`剪好的是 ${t.source_of}`} />
                 ) : (
                   <Chip size="small" color="warning" variant="outlined" label="没被用上" />
                 )}
