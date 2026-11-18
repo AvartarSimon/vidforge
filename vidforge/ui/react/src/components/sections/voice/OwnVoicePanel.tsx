@@ -18,6 +18,7 @@ import UploadFileIcon from '@mui/icons-material/UploadFile'
 import { apiGet, apiPost } from '../../../api/client'
 import type { AlignResult, VoiceFxState } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
+import { micConstraints } from '../../../utils'
 import MicIcon from '@mui/icons-material/Mic'
 import { PanelTitle } from '../../shared/ui'
 
@@ -71,8 +72,7 @@ export function OwnVoicePanel() {
     setError(null)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        // the browser's own cleanup is free and happens before anything reaches us
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        audio: micConstraints(),
       })
       const mr = new MediaRecorder(stream)
       chunks.current = []

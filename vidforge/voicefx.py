@@ -20,8 +20,11 @@ it (atempo, rubberband) would silently slide the whole subtitle track.
 
 from __future__ import annotations
 
+import json
 import re
+import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 
 from . import ffmpeg
 
@@ -153,3 +156,29 @@ def pitch_filter(semitones: float) -> str:
 
 def listing() -> list[dict]:
     return [{"id": p.id, "name": p.name, "about": p.about, "chain": p.chain} for p in PRESETS]
+
+
+LOUDNORM = "loudnorm=I=-16:TP=-1.5:LRA=11"
+
+
+def loudnorm(source: Path, pre: str = "") -> str:
+    """The level stage, comma-terminated: loudnorm measured first, then applied as one fixed gain.
+
+    Single-pass loudnorm guesses as it goes and keeps correcting itself — on a voice that is the
+    level swelling between sentences, the "pumping" that makes a take sound processed. Measured
+    over the whole segment (after the preset, `pre`, since that changes the level), the second
+    pass can apply it linearly: the same dynamics as spoken, only louder or quieter. When the
+    measurement fails or a linear gain would clip, loudnorm falls back to its usual dynamic mode."""
+    try:
+        r = subprocess.run([ffmpeg.find_binary("ffmpeg"), "-hide_banner", "-nostdin", "-i", str(source),
+                            "-af", f"{pre}{LOUDNORM}:print_format=json", "-f", "null", "-"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+        m = json.loads(r.stderr[r.stderr.rindex("{"):r.stderr.rindex("}") + 1])
+        vals = {k: float(m[k]) for k in ("input_i", "input_tp", "input_lra", "input_thresh", "target_offset")}
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, ffmpeg.FfmpegError):
+        return f"{LOUDNORM},"
+    if any(v != v or abs(v) == float("inf") for v in vals.values()):     # silence measures as -inf
+        return f"{LOUDNORM},"
+    return (f"{LOUDNORM}:measured_I={vals['input_i']:.2f}:measured_TP={vals['input_tp']:.2f}"
+            f":measured_LRA={vals['input_lra']:.2f}:measured_thresh={vals['input_thresh']:.2f}"
+            f":offset={vals['target_offset']:.2f}:linear=true,")

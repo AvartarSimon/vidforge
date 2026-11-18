@@ -75,3 +75,38 @@ export function takeFiles(e: { target: HTMLInputElement }): File[] {
   e.target.value = ''
   return files
 }
+
+// -- microphone -----------------------------------------------------------------------------------
+// The browser's call processing (echo cancellation, noise suppression, auto gain) is tuned for
+// video calls, and a voiceover is the opposite case: the gain pumps between sentences, and the
+// suppressor takes the low end and the overtones — the 浑厚 and 磁性 — with the hiss. Measured on
+// a real studio take, the room was already at -76 dB, so nothing was left for it to save. Off by
+// default; the voice presets clean up afterwards, and only the take itself is kept unprocessed.
+const MIC_KEY = 'vf.mic.natural'
+
+export function micNatural(): boolean {
+  try {
+    return localStorage.getItem(MIC_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+
+export function setMicNatural(on: boolean) {
+  try {
+    localStorage.setItem(MIC_KEY, on ? '1' : '0')
+  } catch {
+    // private browsing: the default stands
+  }
+}
+
+export function micConstraints(deviceId?: string): MediaTrackConstraints {
+  const call = !micNatural()
+  return {
+    ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+    echoCancellation: call,
+    noiseSuppression: call,
+    autoGainControl: call,
+    sampleRate: { ideal: 48000 },
+  }
+}

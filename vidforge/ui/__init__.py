@@ -1863,7 +1863,7 @@ def make_handler(state: State):
                 return self._error(str(e.args[0]) if e.args else str(e))
             wet = folder / f"{preset.id}_{pitch:+.1f}.mp3"
             chain = preset.chain
-            ffmpeg.run(["-y", "-i", str(dry), "-af", fx + "loudnorm=I=-16:TP=-1.5:LRA=11", str(wet)])
+            ffmpeg.run(["-y", "-i", str(dry), "-af", (fx + voicefx.loudnorm(dry, fx)).rstrip(","), str(wet)])
             return self._json({"before": state.rel(dry), "after": state.rel(wet),
                                "preset": preset.id, "chain": chain,
                                "duration": ffmpeg.duration(wet)})

@@ -31,6 +31,7 @@ import NavigateNextIcon from '@mui/icons-material/NavigateNext'
 import { enqueueTake, useSaveQueue } from '../../../state/saveQueue'
 import { SaveQueueList } from '../../shared/SaveQueueList'
 import { useProject } from '../../../state/ProjectContext'
+import { micConstraints, micNatural, setMicNatural } from '../../../utils'
 import { FxPanel } from '../../../fx/FxPanel'
 import { PrompterLine, Teleprompter, type PrompterPlace } from '../../../fx/Teleprompter'
 import { TakesLibrary } from './TakesLibrary'
@@ -97,6 +98,7 @@ export function RecordStudio() {
     }
   })
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs)
+  const [natural, setNatural] = useState(micNatural)
   const [fx, setFx] = useState<FxSettings>(loadFx)
   const [level, setLevel] = useState(0)
   const [peak, setPeak] = useState(0)
@@ -217,13 +219,7 @@ export function RecordStudio() {
         video: withVideo
           ? { deviceId: cam ? { exact: cam } : undefined, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
           : false,
-        audio: {
-          deviceId: mic ? { exact: mic } : undefined,
-          // the browser's own cleanup is free and happens before anything reaches us
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
+        audio: micConstraints(mic || undefined),
       })
       streamRef.current = stream
       if (videoRef.current && withVideo) {
@@ -690,6 +686,31 @@ export function RecordStudio() {
                   </MenuItem>
                 ))}
               </TextField>
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={natural}
+                    disabled={recording}
+                    onChange={(e) => {
+                      setMicNatural(e.target.checked)
+                      setNatural(e.target.checked)
+                      if (live) openPreview() // the constraints only apply to a newly opened microphone
+                    }}
+                  />
+                }
+                label={
+                  <Box>
+                    <Typography variant="body2">原声录音（推荐）</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {natural
+                        ? '不做通话式降噪和自动音量：低频和泛音留在声音里，更饱满自然。很吵的环境再关掉。'
+                        : '通话式处理已开：浏览器降噪、自动音量。适合嘈杂环境，但声音会薄、发闷。'}
+                    </Typography>
+                  </Box>
+                }
+                sx={{ alignItems: 'flex-start', ml: 0, '& .MuiSwitch-root': { mt: 0.25 } }}
+              />
               <Button size="small" variant="outlined" onClick={openPreview} disabled={recording}>
                 换设备后点这里重开
               </Button>
