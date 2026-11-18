@@ -248,6 +248,42 @@ class AlignFallbackTest(unittest.TestCase):
     def test_empty_text(self):
         self.assertEqual(aligner.align(self.audio, "   "), [])
 
+    def test_whisper_is_told_how_to_write_never_what_was_said(self):
+        # the script as the prompt made Whisper skip a faithful take: 81 % of it heard -> 3 %
+        with mock.patch.object(aligner, "available", return_value=True), \
+             mock.patch.object(aligner, "transcribe", return_value=[("去年", 0.0, 0.4)]) as tr:
+            aligner.align(self.audio, ZH)
+        prompt = tr.call_args.kwargs["prompt"]
+        self.assertIn("简体", prompt)
+        self.assertNotIn("六百八十万", prompt)
+        self.assertIsNone(aligner.style_prompt(EN))
+
+    def test_how_much_of_the_script_was_heard_is_counted_and_a_low_share_said(self):
+        heard = [(c, i * 0.2, i * 0.2 + 0.2) for i, c in enumerate("去年全国有")]
+        stats, lines = {}, []
+        with mock.patch.object(aligner, "available", return_value=True), \
+             mock.patch.object(aligner, "transcribe", return_value=heard):
+            aligner.align(self.audio, ZH, stats=stats, log=lines.append)
+        self.assertEqual((stats["hits"], stats["total"]), (5, len(aligner.tokenize(ZH))))
+        self.assertTrue(any("按录音识别文字" in x for x in lines), "a stray take is pointed at the fix")
+
+    def test_recognize_gives_back_what_was_said_as_a_sentence(self):
+        heard = [("我想", 0.0, 0.4), ("换一种", 0.4, 0.9), ("方式", 0.9, 1.2)]
+        with mock.patch.object(aligner, "available", return_value=True), \
+             mock.patch.object(aligner, "transcribe", return_value=heard):
+            self.assertEqual(aligner.recognize(self.audio, "我决定换一种方式。"), "我想换一种方式。")
+        heard = [("我想,", 0.0, 0.4), ("换一种方式,", 0.4, 1.2)]
+        with mock.patch.object(aligner, "available", return_value=True), \
+             mock.patch.object(aligner, "transcribe", return_value=heard):
+            self.assertEqual(aligner.recognize(self.audio, "我想。"), "我想，换一种方式。", "full-width, no 「，。」 at the end")
+        heard = [("今年﹐", 0.0, 0.4), ("涨了1.5倍,", 0.4, 1.0), ("卖了1,000套﹐", 1.0, 1.6)]
+        with mock.patch.object(aligner, "available", return_value=True), \
+             mock.patch.object(aligner, "transcribe", return_value=heard):
+            self.assertEqual(aligner.recognize(self.audio, "今年。"), "今年，涨了1.5倍，卖了1,000套。", "small-form ﹐ too; numbers keep their marks")
+        with mock.patch.object(aligner, "available", return_value=False):
+            with self.assertRaises(aligner.AlignError):
+                aligner.recognize(self.audio, "x")
+
     def test_the_transcription_never_overrides_the_script(self):
         # the subtitle says what the script says; Whisper is only asked *when*
         heard = [("去", 0.0, 0.2), ("年", 0.2, 0.4), ("有", 0.4, 0.6)]
@@ -295,7 +331,7 @@ class NarrationTest(unittest.TestCase):
         out = self.td / "seg1.own.mp3"
         calls = []
 
-        def fake(audio, text, *, lang=None, log=None):
+        def fake(audio, text, *, lang=None, log=None, stats=None):
             calls.append(text)
             return aligner.even_spread(text, 4.0)
 
@@ -310,7 +346,7 @@ class NarrationTest(unittest.TestCase):
         out = self.td / "seg1.own.mp3"
         calls = []
 
-        def fake(audio, text, *, lang=None, log=None):
+        def fake(audio, text, *, lang=None, log=None, stats=None):
             calls.append(text)
             return aligner.even_spread(text, 4.0)
 
@@ -491,6 +527,26 @@ class NarrationApi(unittest.TestCase):
         p = proj.load(self.td / "project.json")
         words = narration.prepare(p.segments[0].narration, self.td / "build" / "audio" / "s1.own.mp3", p.segments[0].text, lang="zh")
         self.assertEqual(len(words), json.loads(sidecar.read_text(encoding="utf-8"))["words"].__len__(), "the build reuses it")
+
+    def test_recognize_shows_the_take_beside_the_script_and_apply_replaces_it(self):
+        data = base64.b64encode((self.td / "assets" / "take.mp3").read_bytes()).decode()
+        self.call("/api/narration/upload", {"segment": "s1", "data": data, "ext": "mp3"})
+        heard = [(c, i * 0.1, i * 0.1 + 0.1) for i, c in enumerate("去年全国")]
+        with mock.patch.object(aligner, "available", return_value=True), \
+             mock.patch.object(aligner, "transcribe", return_value=heard):
+            status, j = self.call("/api/narration/recognize", {"segment": "s1"})
+            self.assertEqual(status, 200, j)
+            self.assertEqual((j["text"], j["script"]), ("去年全国。", ZH))
+            self.assertEqual(j["total"], len(aligner.tokenize(ZH)))
+            self.assertLess(j["hits"] / j["total"], 0.8)
+            st, view = self.call("/api/project")
+            self.assertEqual(view["resolved"]["s1"]["align"]["hits"], j["hits"], "the match rides in the project view")
+            status, _ = self.call("/api/narration/recognize", {"segment": "s1", "apply": "去年全国。"})
+            self.assertEqual(status, 200)
+            self.assertIsNone(self.call("/api/project")[1]["resolved"]["s1"]["align"], "aligned against the old words: stale")
+        self.assertEqual(json.loads((self.td / "project.json").read_text(encoding="utf-8"))["segments"][0]["text"], "去年全国。")
+        self.assertEqual(self.call("/api/narration/recognize", {"segment": "s2"})[0], 400, "a TTS segment has no take")
+        self.assertEqual(self.call("/api/narration/recognize", {"segment": "s1", "apply": " "})[0], 400)
 
     def test_voicefx_lists_presets_and_the_current_one(self):
         status, j = self.call("/api/voicefx")

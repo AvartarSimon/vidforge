@@ -100,7 +100,7 @@ def _key(source: Path, text: str, trim: bool) -> str:
     st = source.stat()
     model = os.environ.get("VIDFORGE_WHISPER_MODEL", aligner.DEFAULT_MODEL)
     digest = hashlib.sha1(re.sub(r"\s+", " ", text).strip().encode("utf-8")).hexdigest()[:12]
-    return f"own:{source.name}:{st.st_size}:{int(st.st_mtime)}:{digest}:{model}:trim={trim}"
+    return f"own:{source.name}:{st.st_size}:{int(st.st_mtime)}:{digest}:{model}:trim={trim}:v{aligner.VERSION}"
 
 
 # One alignment at a time: the studio warms a fresh take in the background while a build may be
@@ -127,17 +127,34 @@ def _prepare(source: Path, out: Path, text: str, *, lang: str | None, trim: bool
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
             if meta.get("key") == key and meta.get("words"):
+                hits, total = meta.get("hits"), meta.get("total")
+                if log and hits is not None and total and hits < total * aligner.LOW_MATCH:
+                    log(f"warning: 这段录音只对上脚本的 {round(100 * hits / total)}%——字幕显示的是脚本，"
+                        f"会和声音对不上。去「渲染 → 字幕」点「按录音识别文字」")
                 return [Word(**w) for w in meta["words"]]
         except (json.JSONDecodeError, KeyError, TypeError):
             pass          # corrupt sidecar -> redo it
 
     extract(source, out, trim=trim, log=log)
-    words = aligner.align(out, text, lang=lang, log=log)
+    stats: dict = {}
+    words = aligner.align(out, text, lang=lang, log=log, stats=stats)
     meta_path.write_text(json.dumps({
         "key": key, "provider": "own", "source": str(source),
-        "words": [asdict(w) for w in words],
+        "words": [asdict(w) for w in words], **stats,
     }, ensure_ascii=False, indent=1), encoding="utf-8")
     return words
+
+
+def match(source: Path, out: Path, text: str, trim: bool = True) -> dict | None:
+    """How much of `text` the last alignment of this take heard ({"hits", "total"}), from the
+    sidecar — None when it is not aligned yet, or was aligned against different words."""
+    try:
+        meta = json.loads(Path(out).with_suffix(".json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if meta.get("key") != _key(Path(source), text, trim) or not meta.get("total"):
+        return None
+    return {"hits": meta.get("hits", 0), "total": meta["total"]}
 
 
 def save_upload(root: Path, seg_id: str, data: bytes, suffix: str) -> Path:

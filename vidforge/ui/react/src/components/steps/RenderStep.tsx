@@ -1,6 +1,7 @@
 import { Alert, Stack, Typography } from '@mui/material'
 import { useProject } from '../../state/ProjectContext'
 import { RetentionBanner } from '../shared/RetentionBanner'
+import { SubtitleMatchAlert } from '../shared/SubtitleMatchAlert'
 import { ThemePicker } from '../shared/ThemePicker'
 import { BuildPanel } from './render/BuildPanel'
 import { LearningEditionCard } from './render/LearningEditionCard'
@@ -20,6 +21,7 @@ export function RenderStep() {
   return (
     <Stack spacing={2}>
       <RetentionBanner />
+      <SubtitleMatchAlert />
       {missing.length > 0 && (
         <Alert severity="info">
           {missing.length === raw.segments.length ? '所有段落都还没有画面' : `有 ${missing.length} 段还没有画面`}（{missing.slice(0, 8).join('、')}

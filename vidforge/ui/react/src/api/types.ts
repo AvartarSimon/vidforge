@@ -165,6 +165,8 @@ export interface ResolvedSegment {
   keywords: string[]
   audio?: string | null
   audio_fresh?: boolean
+  /** how much of the script this segment's own take was heard saying (null: TTS, or not aligned yet) */
+  align?: { hits: number; total: number } | null
   clips?: ResolvedClip[]
   [key: string]: unknown
 }

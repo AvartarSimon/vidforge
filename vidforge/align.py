@@ -100,6 +100,39 @@ def _key(token: str) -> str:
     return re.sub(r"\s+", "", t).translate(_DIGITS)
 
 
+def simplified(text: str) -> str:
+    """Traditional characters to simplified, when a converter is installed (zhconv, in the
+    `align` extra; OpenCC also works). Whisper's Chinese drifts into 繁体 now and then — 「代償」
+    for 「代偿」 — and a character that differs only in form must still count as the same word."""
+    try:
+        import zhconv
+        return zhconv.convert(text, "zh-hans")
+    except ImportError:
+        pass
+    try:
+        import opencc
+        return opencc.OpenCC("t2s").convert(text)
+    except Exception:  # noqa: BLE001  not installed, or a build without its config files
+        return text
+
+
+# bumped when the way timings are found changes, so takes aligned the old way are aligned again
+# (2: a style prompt, 繁体 folded into 简体, and how much of the script was heard kept in the sidecar)
+VERSION = 2
+
+def style_prompt(text: str) -> str | None:
+    """A prompt that sets how Whisper writes (简体, with punctuation), never what it hears.
+
+    Not the script itself: Whisper takes a prompt as text already spoken, and on a take read
+    faithfully it then skipped most of the audio — measured on a real 40 s segment, 81 % of the
+    script found without a prompt, 3 % with the script as the prompt. A sentence of style has
+    the same match as no prompt and gives back punctuation, which 按录音识别 needs."""
+    return "以下是普通话的句子，使用简体中文，带标点。" if is_cjk(text) else None
+
+
+LOW_MATCH = 0.8      # below this share of the script heard, the subtitles show words not spoken
+
+
 def tokenize(text: str) -> list[str]:
     """The units a subtitle is built from: characters for CJK, whitespace words otherwise."""
     if is_cjk(text):
@@ -162,11 +195,13 @@ def even_spread(text: str, seconds: float) -> list[Word]:
     return [Word(text=t, start=i * step, duration=step * 0.92) for i, t in enumerate(tokens)]
 
 
-def align(audio: Path, text: str, *, lang: str | None = None, log=None) -> list[Word]:
+def align(audio: Path, text: str, *, lang: str | None = None, log=None, stats: dict | None = None) -> list[Word]:
     """Word timings for `text` as actually spoken in `audio`.
 
     Falls back to an even spread when faster-whisper is missing or hears nothing at all, so a
-    build never fails just because alignment is unavailable."""
+    build never fails just because alignment is unavailable. `stats`, when given, is filled with
+    how much of the script was heard ({"hits", "total"}) — a low share means the take strayed
+    from the script, and the subtitles show words that were never said."""
     audio = Path(audio)
     if not audio.is_file():
         raise AlignError(f"找不到音频：{audio}")
@@ -180,7 +215,7 @@ def align(audio: Path, text: str, *, lang: str | None = None, log=None) -> list[
             log("  没装 faster-whisper，字幕按时长平均摊（不会帧级准确）")
         return even_spread(text, seconds)
 
-    heard = transcribe(audio, (lang or "")[:2] or None)
+    heard = transcribe(audio, (lang or "")[:2] or None, prompt=style_prompt(text))
     if not heard:
         if log:
             log("  这段音频里没听到语音，字幕按时长平均摊")
@@ -189,15 +224,20 @@ def align(audio: Path, text: str, *, lang: str | None = None, log=None) -> list[
     cjk = is_cjk(text)
     flat: list[tuple[str, float, float]] = []
     for token, start, end in heard:
-        flat.extend(_spread(token, start, end, cjk))
+        flat.extend(_spread(simplified(token) if cjk else token, start, end, cjk))
     if not flat:
         return even_spread(text, seconds)
 
     matched = _match(tokens, flat)
     filled = _interpolate(matched, seconds)
+    hits = sum(1 for m in matched if m is not None)
+    if stats is not None:
+        stats.update(hits=hits, total=len(tokens))
     if log:
-        hits = sum(1 for m in matched if m is not None)
         log(f"  对齐 {hits}/{len(tokens)} 个词命中转写（其余按相邻词插值）")
+        if hits < len(tokens) * LOW_MATCH:
+            log(f"warning: 这段录音只对上脚本的 {round(100 * hits / len(tokens))}%——录的时候说法和脚本不一样，"
+                f"字幕显示的是脚本，会和声音对不上。去「渲染 → 字幕」点「按录音识别文字」")
     return [Word(text=t, start=s, duration=max(0.01, e - s)) for t, (s, e) in zip(tokens, filled)]
 
 
@@ -265,3 +305,31 @@ def _interpolate(matched: list[tuple[float, float] | None], seconds: float) -> l
         clamped.append((start, max(end, start)))
         prev = start
     return clamped
+
+
+def recognize(audio: Path, script: str, *, lang: str | None = None) -> str:
+    """What was actually said in `audio`, as text to put in place of `script` after a look.
+
+    For a take that strayed from its script. Never used unseen: Whisper mishears names, so the
+    studio shows it beside the script and the user edits before it replaces it. Measured on three
+    real takes (37 %, 62 % and 81 % of their scripts heard), the recognised text aligned 100 %."""
+    if not available():
+        raise AlignError("要先装 faster-whisper 才能识别录音（pip install faster-whisper）")
+    heard = transcribe(Path(audio), (lang or "")[:2] or None, prompt=style_prompt(script))
+    if not heard:
+        return ""
+    cjk = is_cjk(script) or is_cjk("".join(t for t, _, _ in heard))
+    text = "".join(t for t, _, _ in heard) if cjk else " ".join(t for t, _, _ in heard)
+    if cjk:
+        # Whisper mixes half- and full-width marks in Chinese; the script uses full-width, and a
+        # comparison flooded with ,/， differences hides the words that actually changed
+        # NFKC first: Whisper also writes the small-form ﹐ (U+FE50), which no table of commas
+        # lists. A mark between digits (1.5, 1,000) is part of the number and stays.
+        text = unicodedata.normalize("NFKC", simplified(text))
+        text = re.sub(r"(?<!\d)[.](?!\d)", "。", re.sub(r"(?<!\d),(?!\d)", "，", text))
+        text = text.translate(str.maketrans("?!:;", "？！：；"))
+        text = re.sub(r"\s+", "", text)
+        text = re.sub(r"[，、；：]+$", "", text)
+        if text and text[-1] not in "。！？…":
+            text += "。"
+    return re.sub(r"\s+", " ", text).strip()

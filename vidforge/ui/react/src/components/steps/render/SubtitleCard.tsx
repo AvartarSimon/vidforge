@@ -5,6 +5,7 @@ import type { RawProject } from '../../../api/types'
 import { useProject } from '../../../state/ProjectContext'
 import SubtitlesIcon from '@mui/icons-material/Subtitles'
 import { PanelTitle } from '../../shared/ui'
+import { RecognizeButton } from '../../shared/SubtitleMatchAlert'
 
 type Palette = { id: string; box: string; text: string; accent: string }
 
@@ -114,7 +115,10 @@ export function SubtitleCard() {
   return (
     <Card variant="outlined">
       <CardContent>
-        <PanelTitle icon={<SubtitlesIcon />} tone="teal" mb={1} title={<>字幕和开场大字</>} />
+        <Stack direction="row" alignItems="center" justifyContent="space-between">
+          <PanelTitle icon={<SubtitlesIcon />} tone="teal" mb={1} title={<>字幕和开场大字</>} />
+          <RecognizeButton />
+        </Stack>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={3} alignItems="flex-start">
           <Box
             sx={{

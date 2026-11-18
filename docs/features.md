@@ -149,6 +149,7 @@
 | **分段缓存** | ✅ | `pipeline._segment_key()` — 把段落定义、音频文件的**大小+mtime**、渲染设置一起哈希。改一段只重渲那一段。实测重建 0.6s |
 | **按段叠字幕（dress）** | ✅ | `pipeline._stage_dress` + `render.dress_segment` — 字幕（每段从 0 写 .ass/.srt）、系列角标、开场大字、进度条按段叠加，缓存为 `clips/<seg>.<key>.d<k>.mp4`（`_dress_key`）；`finalize(dressed=True)` 画面直接拷贝、只混音。`merged.mp4`（没烧字幕）仍由未叠加的段拼成，给竖版切片用。实测 M1、128 秒视频：无改动重渲 4s（以前约 19s），全部重叠 23s。单个硬件编码器，并发 1/2/4 一样快 |
 | **两遍响度** | ✅ | `voicefx.loudnorm` — 先 `print_format=json` 量整段，再 `linear=true` 固定增益；量不出（静音）回到单遍动态。`render.AUDIO_FORMAT` 在分段缓存键里，旧缓存自动重做一次 |
+| **按录音识别文字** | ✅ | `align.recognize` + `/api/narration/recognize`（`apply` 写回脚本并后台重新对齐）+ `RecognizeDialog`。字幕仍然说脚本说的——只是让脚本变成实际说的，且先给人看（逐字 diff、可改）。对齐命中率存进 sidecar（`hits/total`，`narration.match`），项目视图 `resolved[seg].align`，低于 `align.LOW_MATCH`(0.8) 时渲染日志和第 4 步提醒。Whisper 只用风格提示（`style_prompt`）：用脚本当提示词时，照稿念的一段从 81% 掉到 3%（Whisper 把提示当成已说过的话，跳过音频）。`align.VERSION` 在对齐缓存键里 |
 | **硬编自动选择** | ✅ | `render.pick_encoder()` — nvenc / qsv / amf / videotoolbox / libx264 按序探测。实测 30 分钟 40 段约 2.7–4.5 分钟渲完 |
 | **并行段渲染** | ✅ | `_stage_render` 多 worker |
 | **字幕** | ✅ | [`subtitles.py`](../vidforge/subtitles.py) — SRT + ASS。`write_ass()` 支持 `none`/`keywords`/`karaoke`/`word`（逐词：正在说的词变色放大 112%，竖屏模板默认）四种高亮；**数字和关键词自动高亮**；双语字幕；可选烧入。⚠ 实测烧字幕从 45s 涨到 89s，**瓶颈是字幕滤镜本身，不是编码器** |

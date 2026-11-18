@@ -19,8 +19,10 @@ dev = ["playwright>=1.45"]
 browser = ["playwright>=1.45"]
 video = ["opencv-python>=4.8"]   # face detection for `vidforge video heads` (installed on first use too)
 voxcpm = ["voxcpm", "soundfile"]   # free/local Voice Design alt to ElevenLabs; pulls in PyTorch, install on the render machine only
-align = ["faster-whisper>=1.0"]   # (see above)
-refs = ["yt-dlp[default]>=2025.1"]   # 参考视频: download from YouTube / TikTok / … (B站 goes through its own API); [default] brings the JS-challenge solver YouTube now asks for   # force-align your own narration to the script (`Segment.narration`); without it subtitle times are spread evenly
+# force-align your own narration to the script (`Segment.narration`); without it subtitle times are spread
+# evenly. zhconv folds Whisper's stray 繁体 into 简体 so it matches the script (pure Python, optional).
+align = ["faster-whisper>=1.0", "zhconv>=1.4"]
+refs = ["yt-dlp[default]>=2025.1"]   # 参考视频: download from YouTube / TikTok / … (B站 goes through its own API); [default] brings the JS-challenge solver YouTube now asks for
 
 [project.scripts]
 vidforge = "vidforge.cli:main"

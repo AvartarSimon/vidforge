@@ -1005,6 +1005,8 @@ def make_handler(state: State):
                     return self.narration_clear(body)
                 if path == "/api/narration/align":
                     return self.narration_align(body)
+                if path == "/api/narration/recognize":
+                    return self.narration_recognize(body)
                 if path == "/api/structure/apply":
                     from .. import structure as st
                     try:
@@ -1067,6 +1069,7 @@ def make_handler(state: State):
                     p = state.load(base)
                 from ..tts import get_provider
                 from ..assets import Library
+                from ..narration import match as narr_match
                 prov = get_provider(p.tts.provider, rate=p.rate, config=p.tts.__dict__)
                 lib = Library(state.root)
                 for s in p.segments:
@@ -1119,6 +1122,9 @@ def make_handler(state: State):
                         "audio": state.rel(audio) if audio.exists() else None, "audio_fresh": fresh,
                         "duration": dur, "need": round(need, 2), "fixed_total": round(fixed_total, 2),
                         "keywords": keywords.suggest(s.text),
+                        # how much of the script this segment's own take was heard saying
+                        "align": narr_match(s.narration, bd / "audio" / f"{pipeline._safe(s.id)}.own.mp3", s.text,
+                                            p.narration_trim) if s.narration else None,
                     }
             except proj.ProjectError as e:
                 issues = str(e)
@@ -2148,6 +2154,40 @@ def make_handler(state: State):
             state.warm_narration(seg_id)
             return self._json({"segment": seg_id, "narration": rel,
                                "seconds": ffmpeg.duration(saved)})
+
+        def narration_recognize(self, body: dict):
+            """按录音识别文字: what a take actually says, beside the script, to replace it after a look.
+
+            A take that strays from its script gets subtitles of words never said, timed by
+            guesswork in between. The fix is to make the script what was said — shown first,
+            because Whisper mishears names. With `apply`, that (edited) text becomes the segment's
+            script and the take is aligned again in the background."""
+            from .. import align as aligner
+            seg_id = body.get("segment")
+            if "apply" in body:
+                text = str(body.get("apply") or "").strip()
+                if not text:
+                    return self._error("文字是空的")
+                raw = state.read_raw()
+                seg = next((x for x in (raw.get("segments") or []) if x.get("id") == seg_id), None)
+                if seg is None:
+                    return self._error(f"没有段落 '{seg_id}'")
+                seg["text"] = text
+                state.write_raw(raw, snapshot=True)
+                state.warm_narration(seg_id)
+                return self._json({"segment": seg_id, "text": text})
+            p = state.load(body.get("lang"))
+            seg = next((x for x in p.segments if x.id == seg_id), None)
+            if seg is None or not seg.narration:
+                return self._error(f"'{seg_id}' 不是用自己录音的段落")
+            try:
+                audio = self.segment_audio(p, seg, body.get("lang"))      # aligned (and cached) on the way
+                heard = aligner.recognize(audio, seg.text, lang=p.language)
+            except (aligner.AlignError, proj.ProjectError, ffmpeg.FfmpegError, OSError) as e:
+                return self._error(str(e))
+            from ..narration import match
+            m = match(seg.narration, audio, seg.text, p.narration_trim) or {}
+            return self._json({"segment": seg_id, "script": seg.text, "text": heard, **m})
 
         def narration_clear(self, body: dict):
             seg_id = body.get("segment")

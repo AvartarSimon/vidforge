@@ -35,7 +35,7 @@ User-facing manual: `QUICKSTART.zh.md`. Roadmap: `docs/roadmap-v0.4-plan.md`.
 | Data | `data/` — `worldbank.py`, `from_csv()` | public datasets → chart props. World Bank: no key, ~16k indicators, cached 30 days in `~/.vidforge/data-cache/`. Values auto-scaled to 万亿/亿/万 and every series carries its source through to the caption. `vidforge data search|chart`, `/api/data/*`, UI: 画面 → 动画 tab |
 | Video tools | `video/heads.py`, `video/face.py` | heads: detect (OpenCV YuNet, weights auto-downloaded to `~/.vidforge/models/`) → track/smooth → cover each face with a still **or an animated head** (`cover_video=`, oval-masked, frame-locked). face: photo → talking head, `motion` (audio-envelope puppet, no GPU) or `cmd` (`PHOTO_TALK_CMD` → SadTalker/EchoMimic/Hallo, needs a GPU). `vidforge video heads|detect|face` + `/api/video/heads/*`, `/api/video/face`. UI: the 视频 section |
 | Presenter | `me.py`, `lipsync.py`, `avatar/` | own-footage library `~/.vidforge/me/`, optional lip-sync providers |
-| Tests | `tests/` — `python -m unittest discover -s tests` (490 tests, offline; providers/TTS/alignment/hot-lists mocked — the real-alignment tests skip without faster-whisper) | e2e browser test skips without playwright |
+| Tests | `tests/` — `python -m unittest discover -s tests` (494 tests, offline; providers/TTS/alignment/hot-lists mocked — the real-alignment tests skip without faster-whisper) | e2e browser test skips without playwright |
 
 Data locations: projects `~/vidforge-projects/` (`VIDFORGE_WORKSPACE`), per-project `assets/`, `build*/`,
 `.history/`; user-wide `~/.vidforge/` (browser profile, `me/`, `categories/`, `voices/`, YouTube
@@ -50,6 +50,10 @@ Data locations: projects `~/vidforge-projects/` (`VIDFORGE_WORKSPACE`), per-proj
   build (`pipeline._stage_retention`) and auto-runs in the UI — never blocking, never silent.
 - Subtitles say what the *script* says. A transcription is only ever consulted about *when* a word
   was spoken, never about what it was — Whisper mishears names and drops punctuation.
+  When a take strays from its script, the fix is 按录音识别文字 (`align.recognize`): the user reviews
+  the transcript and it *becomes* the script — never applied unseen. Never pass the script as
+  Whisper's `initial_prompt`: it treats it as already spoken and skips the audio (a faithful take
+  went from 81 % matched to 3 %); `align.style_prompt` only sets 简体 + punctuation.
 - `subtitles.font_size` / `margin_v` are counted on a 288-line script (`subtitles.SCRIPT_LINES`), not in pixels —
   the units ffmpeg gives a burned .srt. `write_ass` and `theme.apply` both scale by `height / 288`.
 - Every encode goes through `render.video_codec_args`, which ends in `-color_range tv`: JPEGs and Remotion renders are full

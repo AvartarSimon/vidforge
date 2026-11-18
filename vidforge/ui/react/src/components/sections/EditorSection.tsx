@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Box, Button, Divider, IconButton, Paper, Slider, Stack, Tab, Tabs, TextField, Tooltip, Typography } from '@mui/material'
+import { Box, Button, Chip, Divider, IconButton, Paper, Slider, Stack, Tab, Tabs, TextField, Tooltip, Typography } from '@mui/material'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import PauseIcon from '@mui/icons-material/Pause'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
@@ -13,6 +13,8 @@ import VideocamIcon from '@mui/icons-material/Videocam'
 import { apiPost } from '../../api/client'
 import type { Segment } from '../../api/types'
 import { useProject } from '../../state/ProjectContext'
+import { matchShare } from '../shared/RecognizeDialog'
+import { RecognizeButton } from '../shared/SubtitleMatchAlert'
 import { fileUrl } from '../../utils'
 import { ClipStrip } from '../steps/visuals/ClipStrip'
 import { PickerPanel } from '../steps/visuals/PickerPanel'
@@ -267,6 +269,18 @@ export function EditorSection({ onOpen }: { onOpen: (where: 'studio' | 'render')
                 onChange={(e) => setField('text', e.target.value)}
                 helperText={seg.narration ? '这一段用的是你自己的录音：改了文字只影响字幕，要重录才会改声音。' : '改了文字，下次渲染会重新配音。'}
               />
+              {seg.narration && (() => {
+                // the take against its script: under 80 % the subtitles show words that were not said
+                const share = matchShare(view?.resolved?.[seg.id]?.align)
+                return (
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    {share != null && (
+                      <Chip size="small" variant="outlined" color={share < 0.8 ? 'error' : share < 0.95 ? 'warning' : 'success'} label={`录音对上脚本 ${Math.round(share * 100)}%`} />
+                    )}
+                    <RecognizeButton only={[seg.id]} label="按录音识别文字" />
+                  </Stack>
+                )
+              })()}
               <TextField size="small" type="number" label="说完停顿（秒）" value={seg.pause_after ?? 0.5} onChange={(e) => setField('pause_after', Math.max(0, parseFloat(e.target.value) || 0))} inputProps={{ step: 0.1 }} />
               <Divider />
               <Typography variant="caption" color="text.secondary">
