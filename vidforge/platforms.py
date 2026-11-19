@@ -227,6 +227,10 @@ def script_numbers(text: str) -> set[str]:
     out = {m.replace(",", "") for m in re.findall(r"\d[\d,]*(?:\.\d+)?", text)}
     for run in re.findall(r"[零〇一二两三四五六七八九十百千万亿]+", text):
         n = cn_number(run)
+        # a unit on its own (the 万 of "680 万", the 亿 of "3.5亿") is not a number: read as 0 it
+        # made every figure written that way look invented, and the title or point was dropped
+        if not n and not set(run) & {"零", "〇"}:
+            continue
         if n is not None and (n >= 10 or len(run) == 1):
             out.add(str(n))
             if n >= 10_000:                                   # 八十五万 may be written 85万
@@ -247,7 +251,7 @@ def suggest_text(project, *, n: int = 5) -> dict:
     local model is running."""
     import re
     from . import llm
-    script = "\n".join(s.text for s in project.segments).strip()
+    script = "\n".join(s.said for s in project.segments).strip()      # what viewers hear, not the plan
     if not script:
         raise PlatformError("还没有脚本——先在第 1 步写好旁白，标题要从旁白里来")
     zh = (project.language or "zh").startswith("zh")

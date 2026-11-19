@@ -124,6 +124,24 @@ class Segment:
     narration: Path | None = None    # your own recording instead of TTS; force-aligned to `text`
     label: str | None = None         # chapter name (defaults to a prettified id)
     alt_text: str | None = None      # the other language's narration (bilingual subtitles)
+    # What the take actually says, when it is spoken in your own words rather than read out:
+    # `text` stays the plan (the script, the points to make), this is what the subtitles show.
+    # Bound to the take it was heard from — re-record and it no longer applies.
+    spoken: str | None = None
+    spoken_take: Path | None = None
+    spoken_checked: bool = False     # looked over by the user (names, terms), not just Whisper's
+    points: list[str] = field(default_factory=list)   # 要点 for the teleprompter in free mode
+
+    @property
+    def spoken_fresh(self) -> bool:
+        return bool(self.spoken and self.narration and self.spoken_take
+                    and Path(self.spoken_take).resolve() == Path(self.narration).resolve())
+
+    @property
+    def said(self) -> str:
+        """What the viewer hears: the words of this take when they are known, else the script.
+        Subtitles, the retention check and the upload text read this, not `text`."""
+        return self.spoken if self.spoken_fresh else self.text
 
     # -- conveniences for code that only needs "the" visual (thumbnail, UI card) --------
     @property
@@ -260,6 +278,9 @@ class Project:
     voice_fx: str = "none"           # voicefx preset applied before loudnorm (own recordings and TTS alike)
     voice_pitch: float = 0.0         # semitones, +-4; pitch only, length untouched (rubberband)
     narration_trim: bool = True      # cut the silence at either end of an own recording
+    # script: takes read the script out, subtitles say the script (timed by alignment).
+    # free: takes say the points in your own words, subtitles say what was said (recognised).
+    narration_mode: str = "script"
     take_look: str = "clean"         # videofx preset applied to takes saved from the recording studio
     parallel: int = 0                # segments rendered at once; 0 = auto (cores / 2)
     out_dir: Path = Path("build")
@@ -539,7 +560,12 @@ def load(path: str | Path, lang: str | None = None) -> Project:
             narration = resolve(str(s["narration"]))
             if not narration.is_file():
                 raise ProjectError(f"{ctx}: narration file not found: {narration}")
+        sp = s.get("spoken") if isinstance(s.get("spoken"), dict) else {}
+        spoken_take = resolve(str(sp["take"])) if sp.get("take") else None
         segments.append(Segment(
+            spoken=(str(sp.get("text") or "").strip() or None), spoken_take=spoken_take,
+            spoken_checked=bool(sp.get("checked")),
+            points=[str(x).strip() for x in (s.get("points") or []) if str(x).strip()],
             id=sid, text=text, clips=clips, fit=fit,
             pause_after=float(s.get("pause_after", 0.5)), voice=s.get("voice"),
             narration=narration,
@@ -627,6 +653,7 @@ def load(path: str | Path, lang: str | None = None) -> Project:
         voice_fx=_voice_fx(data.get("voice_fx", "none")),
         voice_pitch=_voice_pitch(data.get("voice_pitch", 0.0)),
         narration_trim=bool(data.get("narration_trim", True)),
+        narration_mode="free" if data.get("narration_mode") == "free" else "script",
         take_look=_take_look(data.get("take_look", "clean")),
         parallel=int(data.get("parallel", 0)),
         out_dir=Path(data.get("out_dir", "build")),
@@ -714,7 +741,7 @@ def blank(title: str, language: str | None = None) -> dict[str, Any]:
 SERIES_KEYS = ("language", "voice", "rate", "tts", "width", "height", "fps", "quality", "encoder", "theme",
                "subtitles", "punch_in", "transition_sfx", "progress_bar", "look", "look_strength", "transition",
                "transition_style", "segment_fade", "normalize_audio", "voice_fx", "voice_pitch", "brand", "bgm",
-               "category", "presenter", "lipsync", "take_look", "variants")
+               "category", "presenter", "lipsync", "take_look", "variants", "narration_mode")
 
 
 def next_episode(raw: dict, title: str = "") -> dict:

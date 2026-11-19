@@ -34,6 +34,8 @@ import { useProject } from '../../../state/ProjectContext'
 import { micConstraints, micNatural, setMicNatural } from '../../../utils'
 import { FxPanel } from '../../../fx/FxPanel'
 import { PrompterLine, Teleprompter, type PrompterPlace } from '../../../fx/Teleprompter'
+import { PointsPrompter, sentencePoints } from '../../../fx/PointsPrompter'
+import { PointsEditor } from './PointsEditor'
 import { TakesLibrary } from './TakesLibrary'
 import { VoiceFxPanel } from './VoiceFxPanel'
 import { loadFx, saveFx, type FxSettings } from '../../../fx/settings'
@@ -83,7 +85,7 @@ function loadPrefs(): Prefs {
  * to perform the same paragraph twice is how a channel dies.
  */
 export function RecordStudio() {
-  const { raw, view } = useProject()
+  const { raw, view, patch } = useProject()
   const [cams, setCams] = useState<Device[]>([])
   const [mics, setMics] = useState<Device[]>([])
   const [cam, setCam] = useState('')
@@ -372,6 +374,8 @@ export function RecordStudio() {
   }
 
   const text = seg?.text || ''
+  const free = raw.narration_mode === 'free'
+  const points = seg?.points?.length ? seg.points : sentencePoints(text)
   const chars = text.replace(/\s/g, '').length
   const expected = (chars / prefs.cpm) * 60
   // the pace the dubbed narration of this segment was read at: recording at it keeps the
@@ -412,9 +416,31 @@ export function RecordStudio() {
           <Chip size="small" label={live ? '设备已打开' : '未打开'} color={live ? 'success' : 'default'} variant="outlined" />
         </Stack>
 
-        {live && withVideo && prefs.place === 'line' && (
+        {/* 照稿念 reads the script out; 按要点说 speaks the points in your own words — then the
+            subtitles come from the recording, and the script stays the plan */}
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={free ? 'free' : 'script'}
+            onChange={(_, v) =>
+              v &&
+              patch((r) => {
+                r.narration_mode = v === 'free' ? 'free' : undefined
+              })
+            }
+          >
+            <ToggleButton value="script">照稿念</ToggleButton>
+            <ToggleButton value="free">按要点说</ToggleButton>
+          </ToggleButtonGroup>
+          <Typography variant="caption" color="text.secondary">
+            {free ? '提词器只显示要点，用自己的话说；字幕按录音自动识别，录完核对一下人名和术语。' : '提词器滚动整段脚本，字幕就是脚本。'}
+          </Typography>
+        </Stack>
+        {live && withVideo && prefs.place === 'line' && !free && (
           <PrompterLine text={text || '这一段还没有文字——先在第 1 步写脚本。'} fontSize={prefs.fontSize} cpm={prefs.cpm} running={scrolling} mirror={prefs.mirrorText} resetKey={resetKey} />
         )}
+        {live && withVideo && prefs.place === 'line' && free && <PointsPrompter points={points} fontSize={prefs.fontSize} mirror={prefs.mirrorText} place="line" />}
         <Box
           sx={{
             position: 'relative',
@@ -457,7 +483,10 @@ export function RecordStudio() {
               </Typography>
             </Stack>
           )}
-          {live && !(withVideo && prefs.place === 'line') && (
+          {live && !(withVideo && prefs.place === 'line') && free && (
+            <PointsPrompter points={points} fontSize={prefs.fontSize} mirror={prefs.mirrorText} place={withVideo ? prefs.place : 'full'} />
+          )}
+          {live && !(withVideo && prefs.place === 'line') && !free && (
             <Teleprompter text={text || '这一段还没有文字——先在第 1 步写脚本。'} fontSize={prefs.fontSize} cpm={prefs.cpm} running={scrolling} mirror={prefs.mirrorText} place={withVideo ? prefs.place : 'full'} resetKey={resetKey} />
           )}
           {countdown > 0 && (
@@ -597,6 +626,11 @@ export function RecordStudio() {
               </Button>
             </Stack>
           </Paper>
+        )}
+        {free && segId && (
+          <Box sx={{ mt: 1.5 }}>
+            <PointsEditor segId={segId} />
+          </Box>
         )}
         <SaveQueueList sx={{ mt: 1.5 }} />
         {status && (

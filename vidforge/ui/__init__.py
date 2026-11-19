@@ -324,10 +324,32 @@ class State:
                     return
                 out = p.build_dir / "audio" / f"{pipeline._safe(seg.id)}.own.mp3"
                 out.parent.mkdir(parents=True, exist_ok=True)
-                narration.prepare(seg.narration, out, seg.text, lang=p.language, trim=p.narration_trim)
+                said, against = seg.said, ("录音" if seg.spoken_fresh else "脚本")
+                if p.narration_mode == "free" and not seg.spoken_fresh:
+                    # spoken in your own words: what the take says becomes the subtitles at once,
+                    # marked unchecked — the studio shows it with the doubtful words to look at
+                    heard = narration.spoken(seg.narration, out, lang=p.language, trim=p.narration_trim, hint=seg.text)
+                    if heard["text"]:
+                        self.set_spoken(seg_id, heard["text"], seg.narration, checked=False, doubt=heard["doubt"])
+                        said, against = heard["text"], "录音"
+                narration.prepare(seg.narration, out, said, lang=p.language, trim=p.narration_trim, against=against)
             except Exception:  # noqa: BLE001  only a head start; the build does it properly anyway
                 pass
         threading.Thread(target=run, daemon=True).start()
+
+    def set_spoken(self, seg_id: str, text: str, take: Path, *, checked: bool, doubt: list | None = None) -> bool:
+        """Record what `take` says as `seg_id`'s subtitles — only while it is still that segment's
+        take: a re-recording made meanwhile must not get the words of the one before it."""
+        with self.doc_lock:
+            raw = self.read_raw()
+            seg = next((x for x in (raw.get("segments") or []) if x.get("id") == seg_id), None)
+            if seg is None or not seg.get("narration"):
+                return False
+            if (self.root / seg["narration"]).resolve() != Path(take).resolve():
+                return False
+            seg["spoken"] = {"text": text, "take": seg["narration"], "checked": checked, **({"doubt": doubt} if doubt else {})}
+            self.write_raw(raw, snapshot=True)
+            return True
 
     def start_build(self, lang: str | None, burn: bool | None) -> bool:
         with self.lock:
@@ -671,7 +693,12 @@ def make_handler(state: State):
                                          for t in json.loads(tl.read_text(encoding="utf-8"))}
                         except (json.JSONDecodeError, KeyError):
                             durations = {}
-                    issues = st.check(raw.get("segments") or [], durations or None)
+                    def said(s2):
+                        # what the viewer hears (Segment.said): the take's words while they are its words
+                        sp = s2.get("spoken") or {}
+                        fresh = sp.get("text") and s2.get("narration") and sp.get("take") == s2.get("narration")
+                        return {**s2, "text": sp["text"]} if fresh else s2
+                    issues = st.check([said(x) for x in raw.get("segments") or []], durations or None)
                     return self._json({"issues": [asdict(i) for i in issues],
                                        "measured": bool(durations)})
                 if path == "/api/short/suggest":
@@ -1007,6 +1034,8 @@ def make_handler(state: State):
                     return self.narration_align(body)
                 if path == "/api/narration/recognize":
                     return self.narration_recognize(body)
+                if path == "/api/narration/points":
+                    return self.narration_points(body)
                 if path == "/api/structure/apply":
                     from .. import structure as st
                     try:
@@ -1125,6 +1154,10 @@ def make_handler(state: State):
                         # how much of the script this segment's own take was heard saying
                         "align": narr_match(s.narration, bd / "audio" / f"{pipeline._safe(s.id)}.own.mp3", s.text,
                                             p.narration_trim) if s.narration else None,
+                        # whose words the subtitles are: none (TTS / the script), auto (heard, not
+                        # checked), checked, or stale (heard from a take since replaced)
+                        "spoken": ("checked" if s.spoken_checked else "auto") if s.spoken_fresh
+                                  else ("stale" if s.spoken else None),
                     }
             except proj.ProjectError as e:
                 issues = str(e)
@@ -2156,14 +2189,17 @@ def make_handler(state: State):
                                "seconds": ffmpeg.duration(saved)})
 
         def narration_recognize(self, body: dict):
-            """按录音识别文字: what a take actually says, beside the script, to replace it after a look.
+            """按录音识别文字: what a take actually says, to check and keep.
 
-            A take that strays from its script gets subtitles of words never said, timed by
-            guesswork in between. The fix is to make the script what was said — shown first,
-            because Whisper mishears names. With `apply`, that (edited) text becomes the segment's
-            script and the take is aligned again in the background."""
-            from .. import align as aligner
+            Two uses, one hearing. Reading the script (`narration_mode: script`) and straying from
+            it: what was said replaces the script (`to: script`). Speaking from points (`free`):
+            what was said becomes the segment's subtitles and the script stays the plan
+            (`to: spoken`, checked). Either way it is shown first — Whisper mishears names — with
+            the words it was least sure of, which is where the check should look."""
+            from .. import narration as narr
             seg_id = body.get("segment")
+            raw0 = state.read_raw()
+            free = raw0.get("narration_mode") == "free"
             if "apply" in body:
                 text = str(body.get("apply") or "").strip()
                 if not text:
@@ -2172,22 +2208,40 @@ def make_handler(state: State):
                 seg = next((x for x in (raw.get("segments") or []) if x.get("id") == seg_id), None)
                 if seg is None:
                     return self._error(f"没有段落 '{seg_id}'")
-                seg["text"] = text
-                state.write_raw(raw, snapshot=True)
+                to = body.get("to") or ("spoken" if free else "script")
+                if to == "spoken":
+                    if not seg.get("narration") or not state.set_spoken(seg_id, text, state.root / seg["narration"], checked=True):
+                        return self._error(f"'{seg_id}' 没有录音")
+                else:
+                    seg["text"] = text
+                    state.write_raw(raw, snapshot=True)
                 state.warm_narration(seg_id)
-                return self._json({"segment": seg_id, "text": text})
+                return self._json({"segment": seg_id, "text": text, "to": to})
             p = state.load(body.get("lang"))
             seg = next((x for x in p.segments if x.id == seg_id), None)
             if seg is None or not seg.narration:
                 return self._error(f"'{seg_id}' 不是用自己录音的段落")
+            out = state.build_dir(body.get("lang")) / "audio" / f"{pipeline._safe(seg.id)}.own.mp3"
+            out.parent.mkdir(parents=True, exist_ok=True)
             try:
-                audio = self.segment_audio(p, seg, body.get("lang"))      # aligned (and cached) on the way
-                heard = aligner.recognize(audio, seg.text, lang=p.language)
-            except (aligner.AlignError, proj.ProjectError, ffmpeg.FfmpegError, OSError) as e:
+                heard = narr.spoken(seg.narration, out, lang=p.language, trim=p.narration_trim, hint=seg.text)
+                narr.prepare(seg.narration, out, seg.text, lang=p.language, trim=p.narration_trim)   # the match, from the same hearing
+            except (narr.NarrationError, proj.ProjectError, ffmpeg.FfmpegError, OSError) as e:
                 return self._error(str(e))
-            from ..narration import match
-            m = match(seg.narration, audio, seg.text, p.narration_trim) or {}
-            return self._json({"segment": seg_id, "script": seg.text, "text": heard, **m})
+            m = narr.match(seg.narration, out, seg.text, p.narration_trim) or {}
+            return self._json({"segment": seg_id, "script": seg.text, "text": heard["text"], "doubt": heard["doubt"],
+                               "spoken": seg.spoken if seg.spoken_fresh else None, "checked": seg.spoken_fresh and seg.spoken_checked,
+                               "mode": "free" if free else "script", **m})
+
+        def narration_points(self, body: dict):
+            """要点 for the teleprompter: the script condensed by the local model, or its sentences."""
+            from .. import points as pts
+            raw = state.read_raw()
+            seg = next((x for x in (raw.get("segments") or []) if x.get("id") == body.get("segment")), None)
+            if seg is None:
+                return self._error(f"没有段落 '{body.get('segment')}'")
+            got, how = pts.condense(seg.get("text") or "")
+            return self._json({"segment": seg["id"], "points": got, "by": how})
 
         def narration_clear(self, body: dict):
             seg_id = body.get("segment")

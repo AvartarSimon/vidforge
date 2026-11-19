@@ -35,7 +35,7 @@ User-facing manual: `QUICKSTART.zh.md`. Roadmap: `docs/roadmap-v0.4-plan.md`.
 | Data | `data/` — `worldbank.py`, `from_csv()` | public datasets → chart props. World Bank: no key, ~16k indicators, cached 30 days in `~/.vidforge/data-cache/`. Values auto-scaled to 万亿/亿/万 and every series carries its source through to the caption. `vidforge data search|chart`, `/api/data/*`, UI: 画面 → 动画 tab |
 | Video tools | `video/heads.py`, `video/face.py` | heads: detect (OpenCV YuNet, weights auto-downloaded to `~/.vidforge/models/`) → track/smooth → cover each face with a still **or an animated head** (`cover_video=`, oval-masked, frame-locked). face: photo → talking head, `motion` (audio-envelope puppet, no GPU) or `cmd` (`PHOTO_TALK_CMD` → SadTalker/EchoMimic/Hallo, needs a GPU). `vidforge video heads|detect|face` + `/api/video/heads/*`, `/api/video/face`. UI: the 视频 section |
 | Presenter | `me.py`, `lipsync.py`, `avatar/` | own-footage library `~/.vidforge/me/`, optional lip-sync providers |
-| Tests | `tests/` — `python -m unittest discover -s tests` (494 tests, offline; providers/TTS/alignment/hot-lists mocked — the real-alignment tests skip without faster-whisper) | e2e browser test skips without playwright |
+| Tests | `tests/` — `python -m unittest discover -s tests` (505 tests, offline; providers/TTS/alignment/hot-lists mocked — the real-alignment tests skip without faster-whisper) | e2e browser test skips without playwright |
 
 Data locations: projects `~/vidforge-projects/` (`VIDFORGE_WORKSPACE`), per-project `assets/`, `build*/`,
 `.history/`; user-wide `~/.vidforge/` (browser profile, `me/`, `categories/`, `voices/`, YouTube
@@ -48,8 +48,11 @@ Data locations: projects `~/vidforge-projects/` (`VIDFORGE_WORKSPACE`), per-proj
 - Accuracy over quantity for pictures: never insert an unrelated or watermarked image; leave the slot empty.
 - Retention rules are enforced where they cannot be skipped: `structure.check()` runs on every
   build (`pipeline._stage_retention`) and auto-runs in the UI — never blocking, never silent.
-- Subtitles say what the *script* says. A transcription is only ever consulted about *when* a word
-  was spoken, never about what it was — Whisper mishears names and drops punctuation.
+- Subtitles say what was *said*, and a person decides what that is. `narration_mode: script`: the
+  script is read out, the subtitles are the script, a transcription only says *when* each word fell.
+  `free` (按要点说): `Segment.text` is the plan, `Segment.spoken` — heard from that take, marked
+  unchecked until the user looks — is the subtitles. Code that wants "the words" reads `Segment.said`,
+  never `text`. Whisper mishears names, so heard text is always shown before it is trusted.
   When a take strays from its script, the fix is 按录音识别文字 (`align.recognize`): the user reviews
   the transcript and it *becomes* the script — never applied unseen. Never pass the script as
   Whisper's `initial_prompt`: it treats it as already spoken and skips the audio (a faithful take

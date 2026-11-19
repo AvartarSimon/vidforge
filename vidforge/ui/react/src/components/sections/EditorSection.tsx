@@ -259,17 +259,57 @@ export function EditorSection({ onOpen }: { onOpen: (where: 'studio' | 'render')
           {seg && rightTab === 0 && (
             <Stack spacing={1.5}>
               <TextField size="small" label="章节名" value={seg.label || ''} onChange={(e) => setField('label', e.target.value || null)} />
-              <TextField
-                size="small"
-                label={`旁白（${(seg.text || '').length} 字）`}
-                multiline
-                minRows={6}
-                maxRows={16}
-                value={seg.text || ''}
-                onChange={(e) => setField('text', e.target.value)}
-                helperText={seg.narration ? '这一段用的是你自己的录音：改了文字只影响字幕，要重录才会改声音。' : '改了文字，下次渲染会重新配音。'}
-              />
-              {seg.narration && (() => {
+              {(() => {
+                // 按要点说: the script is the plan and the subtitles are what the take says —
+                // two texts, so two fields; editing the subtitles counts as checking them
+                const free = raw?.narration_mode === 'free' && !!seg.narration
+                const sp = seg.spoken && seg.spoken.take === seg.narration ? seg.spoken : null
+                return (
+                  <>
+                    <TextField
+                      size="small"
+                      label={free ? `脚本 / 要点（准备说的，${(seg.text || '').length} 字）` : `旁白（${(seg.text || '').length} 字）`}
+                      multiline
+                      minRows={free ? 3 : 6}
+                      maxRows={16}
+                      value={seg.text || ''}
+                      onChange={(e) => setField('text', e.target.value)}
+                      helperText={
+                        free
+                          ? '你准备的内容，不进字幕：留着给提词器的要点和以后重录用。'
+                          : seg.narration
+                            ? '这一段用的是你自己的录音：改了文字只影响字幕，要重录才会改声音。'
+                            : '改了文字，下次渲染会重新配音。'
+                      }
+                    />
+                    {free && sp && (
+                      <TextField
+                        size="small"
+                        label={`字幕（实际说的${sp.checked ? ' · 已核对' : ' · 自动识别，还没核对'}）`}
+                        multiline
+                        minRows={4}
+                        maxRows={16}
+                        color={sp.checked ? 'success' : 'warning'}
+                        focused={!sp.checked || undefined}
+                        value={sp.text}
+                        onChange={(e) =>
+                          patch((r) => {
+                            const s2 = r.segments.find((x) => x.id === seg.id)
+                            if (s2?.spoken) s2.spoken = { ...s2.spoken, text: e.target.value, checked: true }
+                          })
+                        }
+                        helperText="改错字只重叠字幕，不重画画面，很快。"
+                      />
+                    )}
+                    {free && !sp && (
+                      <Typography variant="caption" color="warning.main">
+                        这条录音还没识别成字幕（录完会在后台自动识别；也可以点下面的「核对字幕」）。
+                      </Typography>
+                    )}
+                  </>
+                )
+              })()}
+              {seg.narration && raw?.narration_mode !== 'free' && (() => {
                 // the take against its script: under 80 % the subtitles show words that were not said
                 const share = matchShare(view?.resolved?.[seg.id]?.align)
                 return (
@@ -281,6 +321,7 @@ export function EditorSection({ onOpen }: { onOpen: (where: 'studio' | 'render')
                   </Stack>
                 )
               })()}
+              {seg.narration && raw?.narration_mode === 'free' && <RecognizeButton only={[seg.id]} />}
               <TextField size="small" type="number" label="说完停顿（秒）" value={seg.pause_after ?? 0.5} onChange={(e) => setField('pause_after', Math.max(0, parseFloat(e.target.value) || 0))} inputProps={{ step: 0.1 }} />
               <Divider />
               <Typography variant="caption" color="text.secondary">

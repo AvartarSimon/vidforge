@@ -326,42 +326,55 @@ class NarrationTest(unittest.TestCase):
         with self.assertRaises(narration.NarrationError):
             narration.extract(bad, self.td / "out.mp3")
 
+    def hearing(self):
+        heard = [(c, i * 0.15, i * 0.15 + 0.15, 0.9) for i, c in enumerate(aligner.tokenize(ZH))]
+        return mock.patch.object(narration.aligner, "available", return_value=True), \
+            mock.patch.object(narration.aligner, "transcribe", return_value=heard)
+
     def test_prepare_caches_so_whisper_runs_once(self):
         src = tone(self.td / "take.mp3", 4.0)
         out = self.td / "seg1.own.mp3"
-        calls = []
-
-        def fake(audio, text, *, lang=None, log=None, stats=None):
-            calls.append(text)
-            return aligner.even_spread(text, 4.0)
-
-        with mock.patch.object(narration.aligner, "align", side_effect=fake):
+        avail, tr = self.hearing()
+        with avail, tr as heard:
             first = narration.prepare(src, out, ZH)
             second = narration.prepare(src, out, ZH)
-        self.assertEqual(len(calls), 1, "second call should come from the sidecar")
+        self.assertEqual(heard.call_count, 1, "second call should come from the sidecar")
         self.assertEqual([w.text for w in first], [w.text for w in second])
 
-    def test_editing_the_line_re_aligns(self):
+    def test_editing_the_line_lines_it_up_again_without_hearing_the_take_again(self):
+        # fixing a misheard name used to be a whole Whisper pass; now it is a string comparison
         src = tone(self.td / "take.mp3", 4.0)
         out = self.td / "seg1.own.mp3"
-        calls = []
-
-        def fake(audio, text, *, lang=None, log=None, stats=None):
-            calls.append(text)
-            return aligner.even_spread(text, 4.0)
-
-        with mock.patch.object(narration.aligner, "align", side_effect=fake):
+        avail, tr = self.hearing()
+        with avail, tr as heard:
             narration.prepare(src, out, ZH)
-            narration.prepare(src, out, ZH + "还有一句。")
-        self.assertEqual(len(calls), 2)
+            mtime = out.stat().st_mtime_ns
+            words = narration.prepare(src, out, ZH + "还有一句。")
+        self.assertEqual(heard.call_count, 1)
+        self.assertEqual(len(words), len(aligner.tokenize(ZH + "还有一句。")))
+        self.assertEqual(out.stat().st_mtime_ns, mtime, "the audio is not decoded again for a text edit")
+
+    def test_what_was_said_comes_from_the_same_hearing_with_the_doubtful_words(self):
+        src = tone(self.td / "take.mp3", 4.0)
+        out = self.td / "seg1.own.mp3"
+        heard = [("今年", 0.0, 0.5, 0.95), ("房价", 0.5, 1.0, 0.31), ("跌了", 1.0, 1.4, 0.9)]
+        with mock.patch.object(narration.aligner, "available", return_value=True), \
+             mock.patch.object(narration.aligner, "transcribe", return_value=heard) as tr:
+            said = narration.spoken(src, out, lang="zh")
+            words = narration.prepare(src, out, said["text"], lang="zh", against="录音")
+        self.assertEqual(said["text"], "今年房价跌了。")
+        self.assertEqual(said["doubt"], [["房价", 0.31]])
+        self.assertEqual(tr.call_count, 1)
+        self.assertEqual(len(words), len(aligner.tokenize("今年房价跌了。")))
 
     def test_a_corrupt_sidecar_is_redone_not_raised(self):
         src = tone(self.td / "take.mp3", 4.0)
         out = self.td / "seg1.own.mp3"
-        with mock.patch.object(narration.aligner, "align",
-                               side_effect=lambda a, t, **k: aligner.even_spread(t, 4.0)):
+        avail, tr = self.hearing()
+        with avail, tr:
             narration.prepare(src, out, ZH)
             out.with_suffix(".json").write_text("{ not json", encoding="utf-8")
+            out.with_suffix(".heard.json").write_text("{ not json", encoding="utf-8")
             words = narration.prepare(src, out, ZH)
         self.assertTrue(words)
 

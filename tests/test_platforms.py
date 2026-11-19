@@ -121,6 +121,9 @@ class SuggestText(unittest.TestCase):
         self.assertEqual(platforms.cn_number("八十五万"), 850000)
         self.assertIsNone(platforms.cn_number("百分之五"))
         self.assertTrue({"2022", "61", "85"} <= platforms.script_numbers(self.SCRIPT))
+        # a unit standing alone is no number: "85 万" used to bring a 0 with it and look invented
+        self.assertEqual(platforms.script_numbers("少了 85 万人"), {"85"})
+        self.assertEqual(platforms.script_numbers("零下五度"), {"0", "5"})
 
     def test_a_title_with_a_number_the_script_never_said_is_dropped(self):
         out, _ = self.answer({"titles": ["中国人口61年来首次减少", "人口减少了100万？", "2022年发生了什么", "人口少了三千万"],

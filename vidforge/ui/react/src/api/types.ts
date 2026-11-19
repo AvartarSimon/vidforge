@@ -43,6 +43,9 @@ export interface Segment {
   fit?: string
   voice?: string // per-segment override of the project's global voice
   narration?: string // own recording read aloud by you, force-aligned to `text` instead of TTS
+  /** what that take says, when spoken in your own words: the subtitles; `text` stays the plan */
+  spoken?: { text: string; take: string; checked?: boolean; doubt?: [string, number][] }
+  points?: string[] // 要点 for the teleprompter in free mode
   [key: string]: unknown // text_<lang> / label_<lang> variant keys
 }
 
@@ -77,6 +80,7 @@ export interface RawProject {
   voice_fx?: string
   voice_pitch?: number
   narration_trim?: boolean
+  narration_mode?: 'script' | 'free' // read the script out / say the points in your own words
   take_look?: string
   encoder?: string
   parallel?: number
@@ -167,6 +171,8 @@ export interface ResolvedSegment {
   audio_fresh?: boolean
   /** how much of the script this segment's own take was heard saying (null: TTS, or not aligned yet) */
   align?: { hits: number; total: number } | null
+  /** whose words the subtitles are: the take's, checked or not, or from a take since replaced */
+  spoken?: 'auto' | 'checked' | 'stale' | null
   clips?: ResolvedClip[]
   [key: string]: unknown
 }

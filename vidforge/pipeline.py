@@ -153,6 +153,7 @@ class _Ctx:
         self.narration: dict[str, float] = {}       # narration + pause, per segment
         self.clips: dict[str, Path] = {}
         self.durations: dict[str, float] = {}       # real muxed length per segment
+        self.said: dict[str, str] = {}              # what each segment's subtitles say (seg.said, or heard now)
 
 
 def _stage_vocab(project: Project) -> None:
@@ -209,9 +210,21 @@ def _stage_tts(ctx: _Ctx) -> None:
         _check_cancel()
         audio = ctx.bd / "audio" / f"{_safe(seg.id)}.own.mp3"
         _log(f"  own  {seg.id:<12} {Path(seg.narration).name}")
-        words = prepare_own(seg.narration, audio, seg.text, lang=p.language,
-                            trim=p.narration_trim, log=_log)
-        return seg, audio, subtitles.restore_punctuation(words, seg.text)
+        said, against = seg.said, ("录音" if seg.spoken_fresh else "脚本")
+        if not seg.spoken_fresh and p.narration_mode == "free":
+            # spoken in your own words and not heard yet: the subtitles are what the take says,
+            # not the script it was planned from. Said in the log, because nobody has checked it.
+            from .narration import NarrationError, spoken as hear_spoken
+            try:
+                said = hear_spoken(seg.narration, audio, lang=p.language, trim=p.narration_trim, hint=seg.text)["text"] or seg.text
+                against = "录音" if said != seg.text else against
+                _log(f"  字幕来自录音（自动识别，还没核对）：{said[:24]}…")
+            except NarrationError as e:
+                _log(f"warning: {seg.id} 没法识别录音（{e}），字幕先用脚本")
+        ctx.said[seg.id] = said
+        words = prepare_own(seg.narration, audio, said, lang=p.language,
+                            trim=p.narration_trim, log=_log, against=against)
+        return seg, audio, subtitles.restore_punctuation(words, said)
 
     synth = [s for s in p.segments if not s.narration]
     results: dict[str, tuple] = {}
@@ -248,7 +261,8 @@ def _stage_retention(ctx: _Ctx) -> None:
     known. This never blocks a build — it is the author's call whether a 41-second opening is
     worth it — but it does not let the decision be made by accident either."""
     from . import structure
-    segs = [{"id": s.id, "text": s.text, "label": s.label or ""} for s in ctx.project.segments]
+    # what the viewer hears: a hook with a number in the script but not in the take does not hook
+    segs = [{"id": s.id, "text": ctx.said.get(s.id, s.said), "label": s.label or ""} for s in ctx.project.segments]
     issues = structure.check(segs, dict(ctx.narration))
     problems = [i for i in issues if i.level == "problem"]
     if not issues:
@@ -413,7 +427,7 @@ def _stage_presenter(ctx: _Ctx) -> None:
         _log(f"  host {seg.id:<12} {p.presenter.provider}")
 
 
-def _segment_key(project: Project, seg: Segment, audio: Path, encoder: str) -> str:
+def _segment_key(project: Project, seg: Segment, audio: Path, encoder: str, beats: list[float] | None = None) -> str:
     """Everything that changes a segment's rendered clip: its definition (clips, overlays, pause),
     the narration file, and the render settings. Same key => reuse the cached clip."""
     import dataclasses
@@ -440,7 +454,12 @@ def _segment_key(project: Project, seg: Segment, audio: Path, encoder: str) -> s
                 project.look, project.look_strength, project.punch_in, project.normalize_audio,
                 project.voice_fx, project.voice_pitch, project.presenter.provider, render.CLIP_FORMAT,
                 render.AUDIO_FORMAT]
-    blob = json.dumps([enc(seg), enc(audio), settings], sort_keys=True, ensure_ascii=False, default=str)
+    # The words are not in it: they reach the picture only through the narration audio (here) and
+    # the sentence breaks 口播推近 cuts on (`beats`, when it is on). A fixed typo in the subtitles,
+    # or the spoken text checked, re-dresses the segment instead of drawing it again.
+    shape = {k: v for k, v in enc(seg).items() if k not in ("text", "spoken", "spoken_checked", "points", "alt_text")}
+    blob = json.dumps([shape, enc(audio), settings, beats if project.punch_in else None],
+                      sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:10]
 
 
@@ -461,15 +480,15 @@ def _stage_render(ctx: _Ctx) -> None:
 
     def one(seg):
         _check_cancel()
-        key = _segment_key(p, seg, ctx.audio[seg.id], ctx.encoder)
+        beats = _sentence_breaks(ctx.words.get(seg.id) or [])
+        key = _segment_key(p, seg, ctx.audio[seg.id], ctx.encoder, beats)
         clip = ctx.bd / "clips" / f"{_safe(seg.id)}.{key}.mp4"
         if clip.exists() and clip.stat().st_size > 0:
             try:
                 return seg.id, clip, ffmpeg.duration(clip), True
             except ffmpeg.FfmpegError:
                 clip.unlink(missing_ok=True)
-        dur = render.render_segment(p, seg, ctx.audio[seg.id], clip, encoder=ctx.encoder,
-                                    beats=_sentence_breaks(ctx.words.get(seg.id) or []))
+        dur = render.render_segment(p, seg, ctx.audio[seg.id], clip, encoder=ctx.encoder, beats=beats)
         # <seg>.<key>.mp4 only: the dressed copies (<seg>.<key>.d<k>.mp4) go with their clip
         siblings = sorted((f for f in (ctx.bd / "clips").glob(f"{_safe(seg.id)}.*.mp4") if f.stem.count(".") == 1),
                           key=lambda f: f.stat().st_mtime)

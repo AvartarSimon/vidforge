@@ -166,8 +166,10 @@ def _samples(audio: Path):
     return np.frombuffer(raw, dtype="<f4").astype("float32")
 
 
-def transcribe(audio: Path, lang: str | None = None, *, prompt: str | None = None) -> list[tuple[str, float, float]]:
-    """Whisper's own words with timestamps, flattened to (text, start, end).
+def transcribe(audio: Path, lang: str | None = None, *, prompt: str | None = None,
+               sure: bool = False) -> list[tuple]:
+    """Whisper's own words with timestamps, flattened to (text, start, end) — with `sure`, a
+    fourth field: how sure Whisper was of the word (0–1), which is where a check should look.
     `prompt` primes the style it writes in (jumpcut passes one full of 嗯/呃 so it keeps them)."""
     model = _load_model()
     data = _samples(audio)
@@ -175,11 +177,12 @@ def transcribe(audio: Path, lang: str | None = None, *, prompt: str | None = Non
         return []
     segments, _info = model.transcribe(data, language=lang, word_timestamps=True,
                                        vad_filter=True, beam_size=5, initial_prompt=prompt)
-    out: list[tuple[str, float, float]] = []
+    out: list[tuple] = []
     for seg in segments:
         for w in (seg.words or []):
             if w.word and w.word.strip():
-                out.append((w.word.strip(), float(w.start), float(w.end)))
+                row = (w.word.strip(), float(w.start), float(w.end))
+                out.append(row + (round(float(w.probability), 3),) if sure else row)
     return out
 
 
@@ -216,14 +219,26 @@ def align(audio: Path, text: str, *, lang: str | None = None, log=None, stats: d
         return even_spread(text, seconds)
 
     heard = transcribe(audio, (lang or "")[:2] or None, prompt=style_prompt(text))
+    return align_heard(heard, text, seconds, log=log, stats=stats)
+
+
+def align_heard(heard: list[tuple], text: str, seconds: float, *, log=None, stats: dict | None = None,
+                against: str = "脚本") -> list[Word]:
+    """`text` timed against words Whisper already heard — no Whisper run of its own.
+
+    Split out so one hearing of a take serves every text it is lined up with: the script, what
+    was recognised, that text after a typo was fixed. Fixing a name used to mean another full
+    Whisper pass; now it is a string comparison. `against` names the text in the log."""
+    tokens = tokenize(text)
+    if not tokens:
+        return []
     if not heard:
         if log:
             log("  这段音频里没听到语音，字幕按时长平均摊")
         return even_spread(text, seconds)
-
     cjk = is_cjk(text)
     flat: list[tuple[str, float, float]] = []
-    for token, start, end in heard:
+    for token, start, end, *_ in heard:
         flat.extend(_spread(simplified(token) if cjk else token, start, end, cjk))
     if not flat:
         return even_spread(text, seconds)
@@ -235,7 +250,7 @@ def align(audio: Path, text: str, *, lang: str | None = None, log=None, stats: d
         stats.update(hits=hits, total=len(tokens))
     if log:
         log(f"  对齐 {hits}/{len(tokens)} 个词命中转写（其余按相邻词插值）")
-        if hits < len(tokens) * LOW_MATCH:
+        if hits < len(tokens) * LOW_MATCH and against == "脚本":
             log(f"warning: 这段录音只对上脚本的 {round(100 * hits / len(tokens))}%——录的时候说法和脚本不一样，"
                 f"字幕显示的是脚本，会和声音对不上。去「渲染 → 字幕」点「按录音识别文字」")
     return [Word(text=t, start=s, duration=max(0.01, e - s)) for t, (s, e) in zip(tokens, filled)]
@@ -316,10 +331,15 @@ def recognize(audio: Path, script: str, *, lang: str | None = None) -> str:
     if not available():
         raise AlignError("要先装 faster-whisper 才能识别录音（pip install faster-whisper）")
     heard = transcribe(Path(audio), (lang or "")[:2] or None, prompt=style_prompt(script))
+    return text_from_heard(heard, script)
+
+
+def text_from_heard(heard: list[tuple], script: str = "") -> str:
+    """Whisper's words as a sentence the subtitles can show: 简体, full-width marks, an end mark."""
     if not heard:
         return ""
-    cjk = is_cjk(script) or is_cjk("".join(t for t, _, _ in heard))
-    text = "".join(t for t, _, _ in heard) if cjk else " ".join(t for t, _, _ in heard)
+    cjk = is_cjk(script) or is_cjk("".join(h[0] for h in heard))
+    text = "".join(h[0] for h in heard) if cjk else " ".join(h[0] for h in heard)
     if cjk:
         # Whisper mixes half- and full-width marks in Chinese; the script uses full-width, and a
         # comparison flooded with ,/， differences hides the words that actually changed

@@ -110,16 +110,51 @@ _PREPARE_LOCK = threading.Lock()
 
 
 def prepare(source: Path, out: Path, text: str, *, lang: str | None = None,
-            trim: bool = True, log=None) -> list[Word]:
-    """The mp3 at `out` plus word timings for `text`, reusing both when nothing changed."""
+            trim: bool = True, log=None, against: str = "脚本") -> list[Word]:
+    """The mp3 at `out` plus word timings for `text`, reusing both when nothing changed.
+    `against` says what `text` is — the script, or what was said (no "it strayed" warning then)."""
     source, out = Path(source), Path(out)
     if not source.is_file():
         raise NarrationError(f"找不到录音文件：{source}")
     with _PREPARE_LOCK:
-        return _prepare(source, out, text, lang=lang, trim=trim, log=log)
+        return _prepare(source, out, text, lang=lang, trim=trim, log=log, against=against)
 
 
-def _prepare(source: Path, out: Path, text: str, *, lang: str | None, trim: bool, log) -> list[Word]:
+def _take_key(source: Path, trim: bool) -> str:
+    st = source.stat()
+    model = os.environ.get("VIDFORGE_WHISPER_MODEL", aligner.DEFAULT_MODEL)
+    return f"take:{source.name}:{st.st_size}:{int(st.st_mtime)}:{model}:trim={trim}:v{aligner.VERSION}"
+
+
+def _hear(source: Path, out: Path, *, lang: str | None, trim: bool, hint: str, log) -> tuple[list, float]:
+    """The take as Whisper heard it — (words with times and sureness, seconds) — once per take.
+
+    Kept beside the mp3 (`<seg>.own.heard.json`) and keyed by the take alone, not by any text:
+    the script, what was recognised and that text with a name fixed are all lined up against
+    this one hearing. The mp3 is only decoded again when the take itself changed, so editing a
+    subtitle leaves the audio file — and every cache keyed on it — alone."""
+    path = out.with_suffix(".heard.json")
+    key = _take_key(source, trim)
+    try:
+        meta = json.loads(path.read_text(encoding="utf-8"))
+        # a hearing made before faster-whisper was installed heard nothing: hear it again now
+        if meta.get("key") == key and out.exists() and meta.get("whisper") == aligner.available():
+            return [tuple(h) for h in meta["heard"]], float(meta["seconds"])
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    extract(source, out, trim=trim, log=log)
+    seconds = ffmpeg.duration(out)
+    heard: list = []
+    if aligner.available():
+        heard = aligner.transcribe(out, (lang or "")[:2] or None, prompt=aligner.style_prompt(hint), sure=True)
+    elif log:
+        log("  没装 faster-whisper，字幕按时长平均摊（不会帧级准确）")
+    path.write_text(json.dumps({"key": key, "seconds": seconds, "heard": heard, "whisper": aligner.available()},
+                               ensure_ascii=False), encoding="utf-8")
+    return heard, seconds
+
+
+def _prepare(source: Path, out: Path, text: str, *, lang: str | None, trim: bool, log, against: str) -> list[Word]:
     meta_path = out.with_suffix(".json")
     key = _key(source, text, trim)
 
@@ -128,21 +163,45 @@ def _prepare(source: Path, out: Path, text: str, *, lang: str | None, trim: bool
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
             if meta.get("key") == key and meta.get("words"):
                 hits, total = meta.get("hits"), meta.get("total")
-                if log and hits is not None and total and hits < total * aligner.LOW_MATCH:
+                if log and against == "脚本" and hits is not None and total and hits < total * aligner.LOW_MATCH:
                     log(f"warning: 这段录音只对上脚本的 {round(100 * hits / total)}%——字幕显示的是脚本，"
                         f"会和声音对不上。去「渲染 → 字幕」点「按录音识别文字」")
                 return [Word(**w) for w in meta["words"]]
         except (json.JSONDecodeError, KeyError, TypeError):
             pass          # corrupt sidecar -> redo it
 
-    extract(source, out, trim=trim, log=log)
+    heard, seconds = _hear(source, out, lang=lang, trim=trim, hint=text, log=log)
     stats: dict = {}
-    words = aligner.align(out, text, lang=lang, log=log, stats=stats)
+    if heard:
+        words = aligner.align_heard(heard, text, seconds, log=log, stats=stats, against=against)
+    else:
+        words = aligner.even_spread(text, seconds)
     meta_path.write_text(json.dumps({
         "key": key, "provider": "own", "source": str(source),
         "words": [asdict(w) for w in words], **stats,
     }, ensure_ascii=False, indent=1), encoding="utf-8")
     return words
+
+
+def spoken(source: Path, out: Path, *, lang: str | None = None, trim: bool = True, hint: str = "",
+           log=None) -> dict:
+    """What the take says, for subtitles of a segment spoken in your own words.
+
+    {"text": the sentence, "doubt": [[word, sureness], ...] for the words Whisper was least sure
+    of — the names and terms a check should look at first}. One Whisper run per take, shared with
+    the alignment."""
+    source, out = Path(source), Path(out)
+    if not source.is_file():
+        raise NarrationError(f"找不到录音文件：{source}")
+    if not aligner.available():
+        raise NarrationError("要先装 faster-whisper 才能识别录音（pip install faster-whisper）")
+    with _PREPARE_LOCK:
+        heard, _ = _hear(source, out, lang=lang, trim=trim, hint=hint or ("中文" if (lang or "").startswith("zh") else ""), log=log)
+    doubt = [[h[0], h[3]] for h in heard if len(h) > 3 and h[3] < DOUBT]
+    return {"text": aligner.text_from_heard(heard, hint), "doubt": doubt}
+
+
+DOUBT = 0.5      # Whisper's own sureness below which a word is worth a look (3–8 a segment, measured)
 
 
 def match(source: Path, out: Path, text: str, trim: bool = True) -> dict | None:
